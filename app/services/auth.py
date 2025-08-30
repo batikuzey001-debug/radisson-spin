@@ -137,3 +137,24 @@ def login_with_credentials(db: Session, username: str, password: str) -> AdminUs
         db.add(user); db.commit()
 
     return user
+
+import logging
+logger = logging.getLogger("uvicorn")
+
+def login_with_credentials(db: Session, username: str, password: str) -> AdminUser:
+    logger.info(f"[LOGIN TRY] username={username!r}")
+    user = db.query(AdminUser).filter(
+        AdminUser.username == username,
+        AdminUser.is_active == True  # noqa: E712
+    ).first()
+
+    if not user:
+        logger.warning(f"[LOGIN] user not found: {username!r}")
+        raise HTTPException(status_code=401, detail="Geçersiz kullanıcı adı veya şifre.")
+
+    ok = verify_password(password, user.password_hash or "")
+    logger.info(f"[LOGIN] matched user={user.username!r} verify={ok} hash_prefix={(user.password_hash or '')[:4]}")
+
+    if not ok:
+        raise HTTPException(status_code=401, detail="Geçersiz kullanıcı adı veya şifre.")
+    return user
