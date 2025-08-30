@@ -18,7 +18,7 @@ router = APIRouter()
 
 # ========== Flash Helpers ==========
 def flash(request: Request, message: str, level: str = "info") -> None:
-    message = _escape(message)  # XSS koruması
+    message = _escape(message)
     request.session.setdefault("_flash", [])
     request.session["_flash"].append({"message": message, "level": level})
 
@@ -50,7 +50,6 @@ def _layout(body: str, title: str = "Radisson Spin – Admin", notice: str = "")
   <title>{title}</title>
   <style>
     :root {{
-      /* Neon kırmızı & siyah tema */
       --bg:#050607; --bg-2:#0a0b0f; --card:#0a0a0a; --muted:#a1a1aa; --text:#f5f5f5;
       --brand:#ff0033; --brand-2:#ff4d6d; --ok:#16a34a; --warn:#f59e0b; --err:#ef4444;
       --border: rgba(255,255,255,.08);
@@ -98,7 +97,6 @@ def _layout(body: str, title: str = "Radisson Spin – Admin", notice: str = "")
       .span-12 {{ grid-column: span 12; }}
     }}
     h3 {{ margin:0 0 12px 0; font-size:16px; letter-spacing:.2px; }}
-    /* "label" yerine daha güncel metin stili */
     .field-label {{ display:block; margin:6px 0 6px; color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.4px; }}
 
     input, select {{
@@ -144,10 +142,9 @@ def _layout(body: str, title: str = "Radisson Spin – Admin", notice: str = "")
     .spacer {{ height:8px; }}
 
     .status-icon {{ font-size:16px; line-height:1; display:inline-block; }}
-    .status-issued {{ color:#f59e0b; }}  /* ⏳ */
-    .status-used   {{ color:#16a34a; }}  /* ✅ */
+    .status-issued {{ color:#f59e0b; }}
+    .status-used   {{ color:#16a34a; }}
 
-    /* Kopyalama tostu */
     .toast {{
       position: fixed; right: 16px; bottom: 16px; background: #111015; color:#fff;
       border:1px solid rgba(255,0,51,.4); padding:10px 12px; border-radius:12px;
@@ -158,7 +155,6 @@ def _layout(body: str, title: str = "Radisson Spin – Admin", notice: str = "")
     @keyframes toast-in {{ to {{ opacity:1; transform: translateY(0); }} }}
     @keyframes toast-out {{ to {{ opacity:0; transform: translateY(8px); }} }}
 
-    /* Neon başlık alt-ışıltı */
     h3::after {{
       content:""; display:block; height:1px; margin-top:8px;
       background: linear-gradient(90deg, rgba(255,0,51,.5), rgba(255,0,51,0));
@@ -167,7 +163,6 @@ def _layout(body: str, title: str = "Radisson Spin – Admin", notice: str = "")
     }}
   </style>
   <script>
-    // Kopyalama geri bildirimi daha belirgin (neon toast + butonda durum)
     function showToast(msg) {{
       const t = document.createElement('div');
       t.className = 'toast';
@@ -276,7 +271,7 @@ def admin_logout(request: Request):
     flash(request, "Güvenli şekilde çıkış yapıldı.", level="success")
     return RedirectResponse(url="/admin/login", status_code=303)
 
-# ========== Kod Yönetimi (sol form + sağ tablo) ==========
+# ========== Kod Yönetimi ==========
 @router.get("/admin", response_class=HTMLResponse, response_model=None)
 def admin_home(
     request: Request,
@@ -286,10 +281,8 @@ def admin_home(
     prizes = db.query(Prize).order_by(Prize.wheel_index).all()
     last = db.query(Code).order_by(Code.created_at.desc()).limit(20).all()
 
-    # Son üretilen kod (oturum bazlı)
     last_code = request.session.get("_last_code")
 
-    # Sol: Tek kod formu + son kod kutusu
     html_form_single = [
         "<div class='card span-4'>",
         "<h3>Tek Kod Oluştur</h3>",
@@ -307,7 +300,6 @@ def admin_home(
         "<button class='btn' type='submit'>Oluştur</button>",
         "</form>",
     ]
-    # Son kod kutusu (kopyalama geri bildirimi belirgin)
     if last_code:
         html_form_single += [
             "<div class='spacer'></div>",
@@ -319,7 +311,6 @@ def admin_home(
         ]
     html_form_single += ["</div>"]
 
-    # Sağ: Son 20 kod küçük tablo (durum ikonlu)
     def status_icon(s: str) -> str:
         return "<span class='status-icon status-used'>✅</span>" if s == "used" else "<span class='status-icon status-issued'>⏳</span>"
 
@@ -362,16 +353,12 @@ async def admin_create_code(
     form = await request.form()
     username = (form.get("username") or "").strip() or None
     prize_id = int(form.get("prize_id"))
-    code = gen_code()  # her zaman otomatik üret
+    code = gen_code()
 
     db.add(Code(code=code, username=username, prize_id=prize_id, status="issued"))
     db.commit()
 
-    # Son kodu oturuma yaz ki form yanında gösterelim
     request.session["_last_code"] = code
-
-    # İSTEK: "üstteki kod oluşturuldu" bildirimini kaldır -> flash gönderme
-    # flash(request, f"Kod oluşturuldu: {code}", level="success")
     return RedirectResponse(url="/admin", status_code=303)
 
 # ========== Admin Yönetimi ==========
@@ -476,14 +463,21 @@ def prizes_page(
     ]
     for p in prizes:
         raw_url = getattr(p, "image_url", None)
+
+        # Görsel URL'sini OLDUĞU GİBİ kullan: http/https CDN, data URL, vs.
+        # Herhangi bir sağlayıcıya (örn. imgur) özel rewrite/dönüşüm yok.
         thumb = "-"
         if raw_url:
             safe_url = _escape(raw_url)
             thumb = (
                 f"<img src='{safe_url}' "
+                f"alt='{_escape(p.label)}' "
                 f"style='height:24px;border-radius:6px' "
-                f"loading='lazy' decoding='async' referrerpolicy='no-referrer'/>"
+                f"loading='lazy' decoding='async' referrerpolicy='no-referrer' crossorigin='anonymous' "
+                # Yükleme hatasında arayüz bozulmasın:
+                f"onerror=\"this.replaceWith(document.createTextNode('yüklenemedi'))\"/>"
             )
+
         rows.append(
             f"<tr>"
             f"<td>{_escape(p.label)}</td>"
@@ -500,7 +494,6 @@ def prizes_page(
         )
     rows += ["</table></div></div>"]
 
-    # Form (ID input yok; edit varsa hidden input ile)
     eid = editing.id if editing else ""
     elabel = (editing.label if editing else "")
     ewi = (editing.wheel_index if editing else "")
@@ -522,14 +515,12 @@ def prizes_page(
           </div>
         </div>
         <span class='field-label'>Görsel URL (opsiyonel)</span>
-        <input name='image_url' placeholder='https://...' value='{_escape(eurl)}'>
+        <input name='image_url' placeholder='https://... veya data:image/...;base64,...' value='{_escape(eurl)}'>
         <div class='spacer'></div>
         <button class='btn' type='submit'>Kaydet</button>
       </form>
     </div>
     """
-
-    # İSTEK: "Wheel index nedir?" açıklamasını tamamen kaldırdık.
 
     flash_blocks = _render_flash_blocks(request)
     body = f"{flash_blocks}<div class='grid'>{''.join(rows)}{form}</div>"
@@ -546,6 +537,8 @@ async def prizes_upsert(
     _id = (form.get("id") or "").strip()
     label = (form.get("label") or "").strip()
     wheel_index = int(form.get("wheel_index"))
+
+    # Görsel URL'i opsiyonel – herhangi bir URL ya da data URL olabilir.
     image_url = (form.get("image_url") or "").strip() or None
 
     if not label:
@@ -559,7 +552,7 @@ async def prizes_upsert(
             return RedirectResponse(url="/admin/prizes", status_code=303)
         prize.label = label
         prize.wheel_index = wheel_index
-        prize.image_url = image_url
+        prize.image_url = image_url  # olduğu gibi kaydet
         db.add(prize)
         msg = f"Ödül güncellendi."
     else:
@@ -568,7 +561,6 @@ async def prizes_upsert(
 
     db.commit()
     flash(request, msg, level="success")
-    # edit tamamlandıktan sonra edit parametresi olmadan dön
     return RedirectResponse(url="/admin/prizes", status_code=303)
 
 @router.post("/admin/prizes/delete", response_model=None)
@@ -584,7 +576,6 @@ async def prizes_delete(
         flash(request, "Ödül bulunamadı.", level="error")
         return RedirectResponse(url="/admin/prizes", status_code=303)
 
-    # Önce bu ödüle bağlı kodları sil (FK hatasını engeller)
     deleted_count = db.query(Code).filter(Code.prize_id == pid).delete(synchronize_session=False)
 
     db.delete(prize)
