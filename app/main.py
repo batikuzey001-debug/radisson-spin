@@ -1,13 +1,14 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 
 from app.core.config import settings
 from app.api.routers.health import router as health_router
 from app.api.routers.spin import router as spin_router
 from app.api.routers.admin import router as admin_router
-from app.db.session import SessionLocal
-from app.db.models import Base, Prize, Code
-from app.db.session import engine
+from app.db.session import SessionLocal, engine
+from app.db.models import Base, Prize, Code, AdminUser, AdminRole
+from app.services.auth import hash_password
 
 app = FastAPI()
 
@@ -17,6 +18,14 @@ app.add_middleware(
     allow_origins=settings.CORS_ALLOW_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+# Session (admin login için)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.SECRET_KEY,
+    same_site="lax",
+    https_only=False,  # prod'da True yapabilirsiniz (HTTPS üzerinde)
 )
 
 # Routers
@@ -29,6 +38,7 @@ app.include_router(admin_router)
 def on_startup():
     Base.metadata.create_all(engine)
     with SessionLocal() as db:
+        # Ödüller
         if db.query(Prize).count() == 0:
             db.add_all([
                 Prize(label="₺100",  wheel_index=0),
@@ -37,6 +47,8 @@ def on_startup():
                 Prize(label="₺1000", wheel_index=3),
             ])
             db.commit()
+
+        # Örnek kodlar
         if db.query(Code).count() == 0:
             p1000 = db.query(Prize).filter_by(label="₺1000").first()
             p500  = db.query(Prize).filter_by(label="₺500").first()
@@ -46,18 +58,12 @@ def on_startup():
             ])
             db.commit()
 
-    # --- Süper admin seed ---
-    from app.db.models import AdminUser, AdminRole
-    from app.services.auth import sha256
-
-    boot_token = settings.ADMIN_TOKEN
-    if boot_token:
-        token_hash = sha256(boot_token)
-        if not db.query(AdminUser).filter_by(username="root").first():
+        # Süper admin bootstrap (ilk kurulum)
+        if db.query(AdminUser).count() == 0:
             db.add(AdminUser(
-                username="root",
+                username=settings.ADMIN_BOOT_USERNAME,
                 role=AdminRole.super_admin,
-                token_hash=token_hash,
+                password_hash=hash_password(settings.ADMIN_BOOT_PASSWORD),
                 is_active=True,
             ))
             db.commit()
