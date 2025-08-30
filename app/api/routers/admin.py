@@ -357,14 +357,16 @@ def prizes_page(
         "<div class='card span-12'>",
         "<h3>Ödül Dilimleri</h3>",
         "<div class='table-wrap'><table>",
-        "<tr><th>ID</th><th>Label</th><th>Wheel Index</th><th>İşlem</th></tr>"
+        "<tr><th>ID</th><th>Label</th><th>Wheel Index</th><th>Görsel</th><th>İşlem</th></tr>"
     ]
     for p in prizes:
+        thumb = f"<img src='{getattr(p, 'image_url', None)}' style='height:28px;border-radius:6px'/>" if getattr(p, "image_url", None) else "-"
         rows.append(
             f"<tr>"
             f"<td>{p.id}</td>"
             f"<td>{p.label}</td>"
             f"<td>{p.wheel_index}</td>"
+            f"<td>{thumb}</td>"
             f"<td>"
             f"<form method='post' action='/admin/prizes/delete' style='display:inline' onsubmit='return confirm(\"Silinsin mi?\")'>"
             f"<input type='hidden' name='id' value='{p.id}'>"
@@ -391,6 +393,8 @@ def prizes_page(
         </div>
         <label>Label</label>
         <input name='label' placeholder='₺250' required>
+        <label>Görsel URL (opsiyonel)</label>
+        <input name='image_url' placeholder='https://...'>
         <div class='spacer'></div>
         <button class='btn' type='submit'>Kaydet</button>
       </form>
@@ -410,6 +414,7 @@ async def prizes_upsert(
     _id = (form.get("id") or "").strip()
     label = (form.get("label") or "").strip()
     wheel_index = int(form.get("wheel_index"))
+    image_url = (form.get("image_url") or "").strip() or None  # YENİ
 
     if not label:
         raise HTTPException(status_code=400, detail="Label zorunludur.")
@@ -420,9 +425,10 @@ async def prizes_upsert(
             raise HTTPException(status_code=404, detail="Ödül bulunamadı.")
         prize.label = label
         prize.wheel_index = wheel_index
+        prize.image_url = image_url
         db.add(prize)
     else:
-        db.add(Prize(label=label, wheel_index=wheel_index))
+        db.add(Prize(label=label, wheel_index=wheel_index, image_url=image_url))
 
     db.commit()
     return RedirectResponse(url="/admin/prizes", status_code=303)
