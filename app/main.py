@@ -8,8 +8,7 @@ from app.api.routers.health import router as health_router
 from app.api.routers.spin import router as spin_router
 from app.api.routers.admin import router as admin_router
 from app.db.session import SessionLocal, engine
-from app.db.models import Base, Prize, Code, AdminUser, AdminRole
-from app.services.auth import hash_password
+from app.db.models import Base, Prize, Code
 
 app = FastAPI()
 
@@ -78,21 +77,3 @@ def on_startup():
                 Code(code="TEST500", username=None,    prize_id=p500.id,  status="issued"),
             ])
             db.commit()
-
-        # Süper admin bootstrap (ilk kurulum) veya eksik hash'leri doldur
-        if db.query(AdminUser).count() == 0:
-            db.add(AdminUser(
-                username=settings.ADMIN_BOOT_USERNAME,
-                role=AdminRole.super_admin,
-                password_hash=hash_password(settings.ADMIN_BOOT_PASSWORD),
-                is_active=True,
-            ))
-            db.commit()
-        else:
-            # password_hash'ı boş olan eski kayıtlar varsa, boot şifresiyle doldur
-            missing = db.query(AdminUser).filter(AdminUser.password_hash == None).all()  # noqa: E711
-            if missing:
-                ph = hash_password(settings.ADMIN_BOOT_PASSWORD)
-                for u in missing:
-                    u.password_hash = ph
-                db.commit()
