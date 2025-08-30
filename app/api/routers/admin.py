@@ -229,3 +229,31 @@ def __debug_admins(db: Annotated[Session, Depends(get_db)]):
             } for u in rows
         ],
     }
+    # --- DEBUG: login denemesi (geçici) ---
+from typing import Annotated
+from fastapi import Query, Depends
+from sqlalchemy.orm import Session
+from app.db.session import get_db
+from app.db.models import AdminUser
+from app.services.auth import verify_password
+
+@router.get("/__debug/try-login")
+def __debug_try_login(
+    u: str = Query(..., alias="u"),
+    p: str = Query(..., alias="p"),
+    db: Annotated[Session, Depends(get_db)] = None,
+):
+    user = db.query(AdminUser).filter(
+        AdminUser.username == u,
+        AdminUser.is_active == True  # noqa: E712
+    ).first()
+    if not user:
+        return {"found": False, "verify": False, "reason": "user_not_found", "u": u}
+    ok = verify_password(p, user.password_hash or "")
+    return {
+        "found": True,
+        "verify": ok,
+        "username": user.username,
+        "role": str(user.role),
+        "hash_prefix": (user.password_hash or "")[:4],
+    }
