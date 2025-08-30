@@ -39,7 +39,7 @@ def verify_spin(
         spinToken=token,
     )
 
-@router.post("/commit-spin")
+@router.post("/commit-spin", response_model=None)
 def commit_spin(
     payload: CommitIn,
     request: Request,
@@ -62,7 +62,7 @@ def commit_spin(
     db.add(row)
 
     spin = Spin(
-        id=token,  # ya da str(uuid4()) kullanılabilir ama token zaten uuid4
+        id=token,
         code=code,
         username=row.username or "",
         prize_id=row.prize_id,
