@@ -342,3 +342,21 @@ async def create_admin_user(
     ))
     db.commit()
     return RedirectResponse(url="/admin/users", status_code=303)
+
+def _header_html(current: AdminUser | None, active: str = "") -> str:
+    if not current:
+        return ""
+    links = [
+        ("Kod Yönetimi", "/admin", active == "codes"),
+        ("Ödüller", "/admin/prizes", active == "prizes"),
+        ("Adminler", "/admin/users", active == "users" if current.role == AdminRole.super_admin else False),
+        ("Çıkış", "/admin/logout", False),
+    ]
+    items = []
+    items.append(f"<span class='nav-user'>Giriş: <b>{current.username}</b> ({current.role})</span>")
+    for title, href, is_active in links:
+        if title == "Adminler" and current.role != AdminRole.super_admin:
+            continue
+        cls = "active" if is_active else ""
+        items.append(f"<a class='{cls}' href='{href}'>{title}</a>")
+    return " | ".join(items)
