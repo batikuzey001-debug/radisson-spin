@@ -475,10 +475,18 @@ def prizes_page(
         "<tr><th>Ad</th><th>Sıralama</th><th>Görsel</th><th>İşlem</th></tr>"
     ]
     for p in prizes:
-        thumb = f"<img src='{getattr(p, 'image_url', None)}' style='height:24px;border-radius:6px'/>" if getattr(p, "image_url", None) else "-"
+        raw_url = getattr(p, "image_url", None)
+        thumb = "-"
+        if raw_url:
+            safe_url = _escape(raw_url)
+            thumb = (
+                f"<img src='{safe_url}' "
+                f"style='height:24px;border-radius:6px' "
+                f"loading='lazy' decoding='async' referrerpolicy='no-referrer'/>"
+            )
         rows.append(
             f"<tr>"
-            f"<td>{p.label}</td>"
+            f"<td>{_escape(p.label)}</td>"
             f"<td>{p.wheel_index}</td>"
             f"<td>{thumb}</td>"
             f"<td class='stack'>"
