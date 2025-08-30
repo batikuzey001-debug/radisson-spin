@@ -15,7 +15,6 @@ from app.services.auth import (
 
 router = APIRouter()
 
-# === Basit HTML şablonları ===
 def _layout(body: str, notice: str = "") -> str:
     return f"""
     <div style='max-width:900px;margin:32px auto;font-family:sans-serif'>
@@ -35,8 +34,7 @@ def _header_html(current: AdminUser | None) -> str:
     ]
     return f"<div style='margin-bottom:12px'>Giriş: <b>{current.username}</b> ({current.role}) | {' | '.join([n for n in nav if n])}</div>"
 
-# === Giriş ekranı ===
-@router.get("/admin/login", response_class=HTMLResponse)
+@router.get("/admin/login", response_class=HTMLResponse, response_model=None)
 def admin_login_form(request: Request):
     body = """
     <form method='post' action='/admin/login'>
@@ -50,7 +48,7 @@ def admin_login_form(request: Request):
     """
     return HTMLResponse(_layout(body))
 
-@router.post("/admin/login")
+@router.post("/admin/login", response_model=None)
 async def admin_login(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
@@ -62,13 +60,12 @@ async def admin_login(
     login_session(request, user)
     return RedirectResponse(url="/admin", status_code=303)
 
-@router.get("/admin/logout")
+@router.get("/admin/logout", response_model=None)
 def admin_logout(request: Request):
     logout_session(request)
     return RedirectResponse(url="/admin/login", status_code=303)
 
-# === Kod yönetimi (admin ve üzeri) ===
-@router.get("/admin", response_class=HTMLResponse)
+@router.get("/admin", response_class=HTMLResponse, response_model=None)
 def admin_home(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
@@ -114,7 +111,7 @@ def admin_home(
     html.append("</table>")
     return HTMLResponse(_layout("".join(html)))
 
-@router.post("/admin/create-code")
+@router.post("/admin/create-code", response_model=None)
 async def admin_create_code(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
@@ -133,7 +130,7 @@ async def admin_create_code(
 
     return RedirectResponse(url="/admin", status_code=303)
 
-@router.post("/admin/bulk-codes")
+@router.post("/admin/bulk-codes", response_model=None)
 async def admin_bulk_codes(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
@@ -154,8 +151,7 @@ async def admin_bulk_codes(
     db.commit()
     return JSONResponse({"ok": True, "created": created})
 
-# === Admin yönetimi (sadece süper admin) ===
-@router.get("/admin/users", response_class=HTMLResponse)
+@router.get("/admin/users", response_class=HTMLResponse, response_model=None)
 def list_admins(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
@@ -167,8 +163,6 @@ def list_admins(
     for u in users:
         html.append(f"<tr><td>{u.username}</td><td>{u.role}</td><td>{'aktif' if u.is_active else 'pasif'}</td></tr>")
     html.append("</table><hr>")
-
-    # Yeni admin formu
     html.append("""
     <h4>Yeni Admin Oluştur</h4>
     <form method='post' action='/admin/users/create'>
@@ -186,7 +180,7 @@ def list_admins(
     """)
     return HTMLResponse(_layout("".join(html)))
 
-@router.post("/admin/users/create")
+@router.post("/admin/users/create", response_model=None)
 async def create_admin_user(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
