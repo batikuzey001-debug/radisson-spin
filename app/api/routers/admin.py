@@ -1,8 +1,10 @@
 from typing import Annotated
 from html import escape as _escape
+from urllib.parse import urlencode, urlparse, urljoin
+import re
 
-from fastapi import APIRouter, Depends, Request, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, Request, HTTPException, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -14,11 +16,13 @@ from app.services.auth import (
     hash_password
 )
 
+import httpx  # proxy için
+
 router = APIRouter()
 
 # ========== Flash Helpers ==========
 def flash(request: Request, message: str, level: str = "info") -> None:
-    message = _escape(message)
+    message = _escape(message)  # XSS koruması
     request.session.setdefault("_flash", [])
     request.session["_flash"].append({"message": message, "level": level})
 
@@ -37,6 +41,82 @@ def _render_flash_blocks(request: Request) -> str:
         if level == "warn":    return "notice warn"
         return "notice"
     return "".join(f"<div class='{cls(m.get('level','info'))}'>{m['message']}</div>" for m in msgs)
+
+# ========== Görsel Yardımcıları ==========
+IMG_CONTENT_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp", "image/avif", "image/svg+xml"}
+
+def resolve_image_url(raw_url: str | None) -> str | None:
+    """
+    Bazı servislerin sayfa URL'lerini doğrudan görsel URL'sine çevirir.
+    - imgur.com/<id> (veya .gifv) -> https://i.imgur.com/<id>.jpg/.gif
+    - i.imgur.com/<id> (uzantısız) -> .jpg
+    Diğerleri olduğu gibi döner. Albüm/galeri vb. için proxy HTML'den og:image çıkarır.
+    """
+    if not raw_url:
+        return None
+    raw_url = raw_url.strip()
+    if raw_url.startswith("data:"):
+        return raw_url
+
+    p = urlparse(raw_url)
+    if p.scheme not in ("http", "https"):
+        return raw_url
+
+    host = p.netloc.lower()
+    path = p.path.rstrip("/")
+
+    if host.endswith("imgur.com"):
+        m = re.match(r"^/([A-Za-z0-9]+)(?:\.(jpg|jpeg|png|gif|webp|avif|gifv))?$", path)
+        if m:
+            img_id, ext = m.group(1), m.group(2)
+            if ext == "gifv":
+                ext = "gif"
+            if not ext:
+                ext = "jpg"
+            return f"https://i.imgur.com/{img_id}.{ext}"
+
+    if host.endswith("i.imgur.com"):
+        m = re.match(r"^/([A-Za-z0-9]+)$", path)
+        if m:
+            return f"https://i.imgur.com/{m.group(1)}.jpg"
+
+    return raw_url
+
+def extract_og_image(html: str, base: str) -> str | None:
+    """
+    HTML içinden olası resim meta'larını bulur (og/twitter/link).
+    """
+    patterns = [
+        r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<link[^>]+rel=["\']image_src["\'][^>]+href=["\']([^"\']+)["\']',
+    ]
+    for pat in patterns:
+        m = re.search(pat, html, re.IGNORECASE | re.DOTALL)
+        if m:
+            return urljoin(base, m.group(1).strip().strip('"').strip("'"))
+    return None
+
+def proxied_src(url: str) -> str:
+    """Proxy üzerinden görüntülemek için src üret (data: ise direkt kullan)."""
+    if not url:
+        return ""
+    if url.startswith("data:"):
+        return url
+    return f"/media/proxy?{urlencode({'u': url})}"
+
+def img_thumb_tag(url: str | None, alt: str, h: int = 24) -> str:
+    if not url:
+        return "-"
+    safe_alt = _escape(alt)
+    resolved = resolve_image_url(url) or url
+    src = _escape(proxied_src(resolved))
+    return (
+        f"<img src='{src}' alt='{safe_alt}' "
+        f"style='height:{h}px;border-radius:6px' "
+        f"loading='lazy' decoding='async' "
+        f"onerror=\"this.replaceWith(document.createTextNode('yüklenemedi'))\"/>"
+    )
 
 # ========== UI Helpers ==========
 def _layout(body: str, title: str = "Radisson Spin – Admin", notice: str = "") -> str:
@@ -327,7 +407,7 @@ def admin_home(
             f"<tr>"
             f"<td><code>{c.code}</code></td>"
             f"<td>{c.username or '-'}</td>"
-            f"<td>{pr.label}</td>"
+            f"<td>{_escape(pr.label)}</td>"
             f"<td>{status_icon(c.status)}</td>"
             f"</tr>"
         )
@@ -378,7 +458,7 @@ def list_admins(
     ]
     for u in users:
         role_txt = "Süper" if u.role == AdminRole.super_admin else "Admin"
-        table.append(f"<tr><td>{u.username}</td><td>{role_txt}</td><td>{'aktif' if u.is_active else 'pasif'}</td></tr>")
+        table.append(f"<tr><td>{_escape(u.username)}</td><td>{role_txt}</td><td>{'aktif' if u.is_active else 'pasif'}</td></tr>")
     table += ["</table></div></div>"]
 
     form = """
@@ -463,21 +543,7 @@ def prizes_page(
     ]
     for p in prizes:
         raw_url = getattr(p, "image_url", None)
-
-        # Görsel URL'sini OLDUĞU GİBİ kullan: http/https CDN, data URL, vs.
-        # Herhangi bir sağlayıcıya (örn. imgur) özel rewrite/dönüşüm yok.
-        thumb = "-"
-        if raw_url:
-            safe_url = _escape(raw_url)
-            thumb = (
-                f"<img src='{safe_url}' "
-                f"alt='{_escape(p.label)}' "
-                f"style='height:24px;border-radius:6px' "
-                f"loading='lazy' decoding='async' referrerpolicy='no-referrer' crossorigin='anonymous' "
-                # Yükleme hatasında arayüz bozulmasın:
-                f"onerror=\"this.replaceWith(document.createTextNode('yüklenemedi'))\"/>"
-            )
-
+        thumb = img_thumb_tag(raw_url, alt=p.label) if raw_url else "-"
         rows.append(
             f"<tr>"
             f"<td>{_escape(p.label)}</td>"
@@ -515,7 +581,7 @@ def prizes_page(
           </div>
         </div>
         <span class='field-label'>Görsel URL (opsiyonel)</span>
-        <input name='image_url' placeholder='https://... veya data:image/...;base64,...' value='{_escape(eurl)}'>
+        <input name='image_url' placeholder='https://... (sayfa veya görsel) / data:image/...;base64,...' value='{_escape(eurl)}'>
         <div class='spacer'></div>
         <button class='btn' type='submit'>Kaydet</button>
       </form>
@@ -537,8 +603,6 @@ async def prizes_upsert(
     _id = (form.get("id") or "").strip()
     label = (form.get("label") or "").strip()
     wheel_index = int(form.get("wheel_index"))
-
-    # Görsel URL'i opsiyonel – herhangi bir URL ya da data URL olabilir.
     image_url = (form.get("image_url") or "").strip() or None
 
     if not label:
@@ -552,7 +616,7 @@ async def prizes_upsert(
             return RedirectResponse(url="/admin/prizes", status_code=303)
         prize.label = label
         prize.wheel_index = wheel_index
-        prize.image_url = image_url  # olduğu gibi kaydet
+        prize.image_url = image_url
         db.add(prize)
         msg = f"Ödül güncellendi."
     else:
@@ -583,3 +647,59 @@ async def prizes_delete(
     msg = f"Ödül silindi. Bağlı {deleted_count} kod temizlendi." if deleted_count else "Ödül silindi."
     flash(request, msg, level="success")
     return RedirectResponse(url="/admin/prizes", status_code=303)
+
+# ========== MEDIA PROXY ==========
+@router.get("/media/proxy")
+async def media_proxy(u: str):
+    """
+    Görsel proxy:
+      - http/https URL'leri indirir; eğer sayfa ise HTML'den og:image/twitter:image yakalayıp gerçek görseli çeker.
+      - Imgur kısa/albüm/galeri linkleri bu yolla çalışır.
+      - Sadece image/* tiplerini döndürür; 5MB sınır.
+    """
+    if not u:
+        return PlainTextResponse("missing url", status_code=400)
+    if u.startswith("data:"):
+        return PlainTextResponse("data url not proxied", status_code=400)
+
+    target = resolve_image_url(u) or u
+    p = urlparse(target)
+    if p.scheme not in ("http", "https"):
+        return PlainTextResponse("unsupported scheme", status_code=400)
+
+    timeout = httpx.Timeout(12.0, read=12.0)
+    limits = httpx.Limits(max_keepalive_connections=10, max_connections=20)
+
+    async with httpx.AsyncClient(timeout=timeout, limits=limits, follow_redirects=True) as client:
+        try:
+            r = await client.get(target, headers={"User-Agent": "Mozilla/5.0"})
+        except httpx.HTTPError:
+            return PlainTextResponse("fetch error", status_code=502)
+
+        ctype = r.headers.get("content-type", "").split(";")[0].strip().lower()
+
+        # HTML sayfasıysa og:image bul
+        if not ctype.startswith("image/"):
+            html = r.text if r.encoding else r.content.decode("utf-8", errors="ignore")
+            og = extract_og_image(html, str(r.url))
+            if not og:
+                return PlainTextResponse("no image in page", status_code=422)
+            try:
+                r = await client.get(og, headers={"User-Agent": "Mozilla/5.0"})
+            except httpx.HTTPError:
+                return PlainTextResponse("og fetch error", status_code=502)
+            ctype = r.headers.get("content-type", "").split(";")[0].strip().lower()
+
+        if ctype not in IMG_CONTENT_TYPES:
+            return PlainTextResponse("unsupported content-type", status_code=415)
+
+        # 5MB sınır – stream ederek oku
+        max_bytes = 5 * 1024 * 1024
+        data = bytearray()
+        async for chunk in r.aiter_bytes():
+            data += chunk
+            if len(data) > max_bytes:
+                return PlainTextResponse("too large", status_code=413)
+
+    headers = {"Cache-Control": "public, max-age=300"}
+    return Response(bytes(data), media_type=ctype, headers=headers)
