@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, List
 
 from fastapi import APIRouter, HTTPException, Depends, Request
 from sqlalchemy.orm import Session
@@ -7,10 +7,29 @@ from sqlalchemy.orm import Session
 from app.db.models import Code, Prize, Spin
 from app.db.session import get_db
 from app.schemas.spin import VerifyIn, VerifyOut, CommitIn
+from app.schemas.prize import PrizeOut
 from app.services.spin import RESERVED, new_token
 
 router = APIRouter()
 
+# ===================== Dinamik Ödül Listesi =====================
+@router.get("/prizes", response_model=List[PrizeOut])
+def list_prizes(
+    db: Annotated[Session, Depends(get_db)],
+):
+    rows = db.query(Prize).order_by(Prize.wheel_index).all()
+    return [
+        PrizeOut(
+            id=p.id,
+            label=p.label,
+            wheelIndex=p.wheel_index,
+            imageUrl=getattr(p, "image_url", None),  # kolon varsa döner
+        )
+        for p in rows
+    ]
+
+
+# ===================== Verify =====================
 @router.post("/verify-spin", response_model=VerifyOut)
 def verify_spin(
     payload: VerifyIn,
@@ -33,12 +52,16 @@ def verify_spin(
     token = new_token()
     RESERVED[code] = token
 
+    # prizeImage alanı VerifyOut şemanda tanımlıysa görünür; değilse response_model filtreler.
     return VerifyOut(
         targetIndex=prize.wheel_index,
         prizeLabel=prize.label,
         spinToken=token,
+        prizeImage=getattr(prize, "image_url", None),  # <-- görsel (opsiyonel)
     )
 
+
+# ===================== Commit =====================
 @router.post("/commit-spin", response_model=None)
 def commit_spin(
     payload: CommitIn,
@@ -62,7 +85,7 @@ def commit_spin(
     db.add(row)
 
     spin = Spin(
-        id=token,
+        id=token,  # token zaten uuid4
         code=code,
         username=row.username or "",
         prize_id=row.prize_id,
@@ -74,6 +97,3 @@ def commit_spin(
 
     RESERVED.pop(code, None)
     return {"ok": True}
-
-from typing import List
-from app.schemas.prize import PrizeOut
