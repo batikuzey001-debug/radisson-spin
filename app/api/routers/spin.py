@@ -1,4 +1,6 @@
 from datetime import datetime, timezone
+from typing import Annotated
+
 from fastapi import APIRouter, HTTPException, Depends, Request
 from sqlalchemy.orm import Session
 
@@ -10,7 +12,10 @@ from app.services.spin import RESERVED, new_token
 router = APIRouter()
 
 @router.post("/verify-spin", response_model=VerifyOut)
-def verify_spin(payload: VerifyIn, db: Session = Depends(get_db)):
+def verify_spin(
+    payload: VerifyIn,
+    db: Annotated[Session, Depends(get_db)],
+):
     code = payload.code.strip()
     username = payload.username.strip()
 
@@ -35,7 +40,11 @@ def verify_spin(payload: VerifyIn, db: Session = Depends(get_db)):
     )
 
 @router.post("/commit-spin")
-def commit_spin(payload: CommitIn, request: Request, db: Session = Depends(get_db)):
+def commit_spin(
+    payload: CommitIn,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+):
     code = payload.code.strip()
     token = payload.spinToken.strip()
 
