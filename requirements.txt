@@ -3,3 +3,5 @@ uvicorn
 sqlalchemy>=2.0
 psycopg2-binary>=2.9
 python-multipart
+passlib[bcrypt]
+itsdangerous>=2.1
