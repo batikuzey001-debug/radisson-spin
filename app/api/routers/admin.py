@@ -16,7 +16,7 @@ from app.services.auth import (
 
 router = APIRouter()
 
-# ========== Flash Helpers ==========
+# ================= Flash Helpers =================
 def flash(request: Request, message: str, level: str = "info") -> None:
     message = _escape(message)
     request.session.setdefault("_flash", [])
@@ -38,7 +38,7 @@ def _render_flash_blocks(request: Request) -> str:
         return "notice"
     return "".join(f"<div class='{cls(m.get('level','info'))}'>{m['message']}</div>" for m in msgs)
 
-# ========== UI Helpers ==========
+# ================= UI Helpers =================
 def _layout(body: str, title: str = "Radisson Spin – Admin", notice: str = "") -> str:
     logo_url = "https://cdn.prod.website-files.com/68ad80d65417514646edf3a3/68adb798dfed270f5040c714_logowhite.png"
     return f"""
@@ -202,7 +202,34 @@ def _header_html(current: AdminUser | None, active: str = "") -> str:
         items.append(f"<a class='{cls}' href='{href}'>{title}</a>")
     return " ".join(items)
 
-# ========== Auth ==========
+# ============== Helpers: URL normalize ==============
+def _normalize_image_url(raw: str | None) -> str | None:
+    """
+    Herhangi bir görsel linkini (http/https, //scheme-relative, /relative, data:) kabul eder.
+    - '  https://...  ' -> https://...
+    - '//cdn...'       -> https://cdn...
+    - '/static/...'    -> /static/...
+    - 'cdn.com/a.png'  -> https://cdn.com/a.png  (protokolsüzse https varsay)
+    - ''/None          -> None
+    """
+    if not raw:
+        return None
+    url = raw.strip()
+    if not url:
+        return None
+    low = url.lower()
+    if url.startswith("data:"):
+        return url
+    if low.startswith("http://") or low.startswith("https://"):
+        return url
+    if url.startswith("//"):
+        return "https:" + url
+    if url.startswith("/"):
+        return url
+    # çıplak domain/yol ise https varsay
+    return "https://" + url
+
+# ================= Auth =================
 @router.get("/admin/login", response_class=HTMLResponse, response_model=None)
 def admin_login_form(request: Request):
     flash_blocks = _render_flash_blocks(request)
@@ -250,7 +277,7 @@ def admin_logout(request: Request):
     flash(request, "Güvenli şekilde çıkış yapıldı.", level="success")
     return RedirectResponse(url="/admin/login", status_code=303)
 
-# ========== Kod Yönetimi ==========
+# ============== Kod Yönetimi ==============
 @router.get("/admin", response_class=HTMLResponse, response_model=None)
 def admin_home(
     request: Request,
@@ -340,7 +367,7 @@ async def admin_create_code(
     request.session["_last_code"] = code
     return RedirectResponse(url="/admin", status_code=303)
 
-# ========== Admin Yönetimi ==========
+# ============== Admin Yönetimi ==============
 @router.get("/admin/users", response_class=HTMLResponse, response_model=None)
 def list_admins(
     request: Request,
@@ -463,7 +490,7 @@ async def delete_admin_user(
     flash(request, "Kullanıcı silindi.", level="success")
     return RedirectResponse(url="/admin/users", status_code=303)
 
-# ========== ÖDÜLLER ==========
+# ============== ÖDÜLLER ==============
 @router.get("/admin/prizes", response_class=HTMLResponse, response_model=None)
 def prizes_page(
     request: Request,
@@ -483,7 +510,8 @@ def prizes_page(
     for p in prizes:
         thumb = "-"
         if getattr(p, "image_url", None):
-            safe_url = _escape(p.image_url)
+            normalized = _normalize_image_url(p.image_url) or ""
+            safe_url = _escape(normalized)
             thumb = (
                 f"<img src='{safe_url}' alt='{_escape(p.label)}' "
                 f"style='height:24px;border-radius:6px' loading='lazy' decoding='async' "
@@ -509,7 +537,7 @@ def prizes_page(
     eid = editing.id if editing else ""
     elabel = (editing.label if editing else "")
     ewi = (editing.wheel_index if editing else "")
-    eurl = (editing.image_url if getattr(editing, "image_url", None) else "")
+    eurl = _normalize_image_url(editing.image_url) if getattr(editing, "image_url", None) else ""
 
     # SADECE LİNK – upload yok
     form = f"""
@@ -550,7 +578,8 @@ async def prizes_upsert(
     _id = (form.get("id") or "").strip()
     label = (form.get("label") or "").strip()
     wheel_index = int(form.get("wheel_index"))
-    image_url = (form.get("image_url") or "").strip() or None  # link olduğu gibi kaydedilir
+    image_url_raw = (form.get("image_url") or "").strip()
+    image_url = _normalize_image_url(image_url_raw)
 
     if not label:
         flash(request, "Ad zorunludur.", level="error")
