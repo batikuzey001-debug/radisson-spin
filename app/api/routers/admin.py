@@ -72,7 +72,7 @@ def _layout(body: str, title: str = "Radisson Spin – Admin", notice: str = "")
   <div class="container">
     <div class="header">
       <div class="brand">🎯 Radisson Spin – Admin</div>
-      <div class="nav">{{NAV}}</div>
+      <div class="nav">__NAV__</div>
     </div>
     {"<div class='notice'>" + notice + "</div>" if notice else ""}
     {body}
@@ -121,7 +121,7 @@ def admin_login_form(request: Request):
       </div>
     </div>
     """
-    html = _layout(body).replace("{{NAV}}", "")
+    html = _layout(body).replace("__NAV__", "")
     return HTMLResponse(html)
 
 @router.post("/admin/login", response_model=None)
@@ -227,7 +227,7 @@ def admin_home(
       {''.join(html_table)}
     </div>
     """
-    html = _layout(body).replace("{{NAV}}", _header_html(current, active="codes"))
+    html = _layout(body).replace("__NAV__", _header_html(current, active="codes"))
     return HTMLResponse(html)
 
 @router.post("/admin/create-code", response_model=None)
@@ -314,7 +314,7 @@ def list_admins(
     """
 
     body = f"<div class='grid'>{''.join(table)}{form}</div>"
-    html = _layout(body).replace("{{NAV}}", _header_html(current, active="users"))
+    html = _layout(body).replace("__NAV__", _header_html(current, active="users"))
     return HTMLResponse(html)
 
 @router.post("/admin/users/create", response_model=None)
@@ -397,7 +397,7 @@ def prizes_page(
       <p class='note'>Not: Çark sırası <b>wheel_index</b> değerine göredir (0 en üstte başlar).</p>
     </div>
     """
-    html = _layout(f"<div class='grid'>{''.join(rows)}{form}</div>").replace("{{NAV}}", _header_html(current, active="prizes"))
+    html = _layout(f"<div class='grid'>{''.join(rows)}{form}</div>").replace("__NAV__", _header_html(current, active="prizes"))
     return HTMLResponse(html)
 
 @router.post("/admin/prizes/upsert", response_model=None)
