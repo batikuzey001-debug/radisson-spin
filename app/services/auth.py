@@ -1,10 +1,11 @@
-from typing import Optional, Callable
-from fastapi import HTTPException, Request
+from typing import Optional, Callable, Annotated
+from fastapi import HTTPException, Request, Depends
 from sqlalchemy.orm import Session
 from starlette.status import HTTP_401_UNAUTHORIZED, HTTP_403_FORBIDDEN
 from passlib.context import CryptContext
 
 from app.db.models import AdminUser, AdminRole
+from app.db.session import get_db
 
 pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -15,7 +16,10 @@ def verify_password(password: str, password_hash: str) -> bool:
     return pwd_ctx.verify(password, password_hash)
 
 def login_with_credentials(db: Session, username: str, password: str) -> AdminUser:
-    user = db.query(AdminUser).filter(AdminUser.username == username, AdminUser.is_active == True).first()  # noqa: E712
+    user = db.query(AdminUser).filter(
+        AdminUser.username == username,
+        AdminUser.is_active == True  # noqa: E712
+    ).first()
     if not user or not verify_password(password, user.password_hash):
         raise HTTPException(status_code=HTTP_401_UNAUTHORIZED, detail="Geçersiz kullanıcı adı veya şifre.")
     return user
@@ -36,7 +40,11 @@ def get_current_admin(request: Request, db: Session) -> AdminUser:
     return user
 
 def require_role(min_role: AdminRole) -> Callable:
-    def _dep(request: Request, db: Session):
+    # DİKKAT: db artık Depends(get_db) ile enjekte ediliyor
+    def _dep(
+        request: Request,
+        db: Annotated[Session, Depends(get_db)],
+    ) -> AdminUser:
         user = get_current_admin(request, db)
         if min_role == AdminRole.super_admin and user.role != AdminRole.super_admin:
             raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Bu işlem için süper admin yetkisi gerekir.")
