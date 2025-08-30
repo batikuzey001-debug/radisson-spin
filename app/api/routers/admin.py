@@ -1,8 +1,8 @@
 from typing import Annotated
 from html import escape as _escape
 
-from fastapi import APIRouter, Depends, Request, HTTPException, Query
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi import APIRouter, Depends, Request, HTTPException
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -21,8 +21,7 @@ def flash(request: Request, message: str, level: str = "info") -> None:
     """
     level: 'info' | 'success' | 'warn' | 'error'
     """
-    # XSS'e karşı: sadece güvenli metin bas (HTML'i kaçır)
-    message = _escape(message)
+    message = _escape(message)  # XSS koruması
     request.session.setdefault("_flash", [])
     request.session["_flash"].append({"message": message, "level": level})
 
@@ -36,20 +35,15 @@ def _render_flash_blocks(request: Request) -> str:
     if not msgs:
         return ""
     def cls(level: str) -> str:
-        if level == "error":
-            return "notice error"
-        if level == "success":
-            return "notice success"
-        if level == "warn":
-            return "notice"
+        if level == "error":   return "notice error"
+        if level == "success": return "notice success"
+        if level == "warn":    return "notice"
         return "notice"
-    return "".join(
-        f"<div class='{cls(m.get('level','info'))}'>{m['message']}</div>"
-        for m in msgs
-    )
+    return "".join(f"<div class='{cls(m.get('level','info'))}'>{m['message']}</div>" for m in msgs)
 
 # ========== UI Helpers ==========
 def _layout(body: str, title: str = "Radisson Spin – Admin", notice: str = "") -> str:
+    logo_url = "https://cdn.prod.website-files.com/68ad80d65417514646edf3a3/68adb798dfed270f5040c714_logowhite.png"
     return f"""
 <!doctype html>
 <html lang="tr">
@@ -70,8 +64,8 @@ def _layout(body: str, title: str = "Radisson Spin – Admin", notice: str = "")
     }}
     .container {{ max-width: 1100px; margin: 32px auto; padding: 0 16px; }}
     .header {{ display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; gap:12px; }}
-    .brand {{ font-weight:700; font-size:20px; letter-spacing:.3px; }}
-    .nav a {{ color:var(--muted); text-decoration:none; margin-left:14px; padding:6px 10px; border-radius:10px; border:1px solid transparent; }}
+    .brand img{{ height:28px; display:block; }}
+    .nav a {{ color:var(--muted); text-decoration:none; margin-left:10px; padding:6px 10px; border-radius:10px; border:1px solid transparent; }}
     .nav a.active, .nav a:hover {{ color:var(--text); border-color:var(--border); background:rgba(124,58,237,.12); }}
     .notice {{ padding:10px 12px; background:rgba(124,58,237,.12); border:1px solid var(--border); border-radius:12px; margin-bottom:16px; }}
     .grid {{ display:grid; grid-template-columns: repeat(12, 1fr); gap:16px; }}
@@ -104,7 +98,7 @@ def _layout(body: str, title: str = "Radisson Spin – Admin", notice: str = "")
 <body>
   <div class="container">
     <div class="header">
-      <div class="brand">🎯 Radisson Spin – Admin</div>
+      <div class="brand"><img src="{logo_url}" alt="logo"></div>
       <div class="nav">__NAV__</div>
     </div>
     {"<div class='notice'>" + notice + "</div>" if notice else ""}
@@ -125,13 +119,14 @@ def _header_html(current: AdminUser | None, active: str = "") -> str:
         ("Çıkış", "/admin/logout", False),
     ]
     items = []
-    items.append(f"<span class='nav-user'>Giriş: <b>{current.username}</b> ({current.role})</span>")
+    role_txt = "Süper" if current.role == AdminRole.super_admin else "Admin"
+    items.append(f"<span class='nav-user'>Giriş: <b>{current.username}</b> ({role_txt})</span>")
     for title, href, is_active in links:
         if title == "Adminler" and current.role != AdminRole.super_admin:
             continue
         cls = "active" if is_active else ""
         items.append(f"<a class='{cls}' href='{href}'>{title}</a>")
-    return " | ".join(items)
+    return " ".join(items)
 
 # ========== Auth ==========
 @router.get("/admin/login", response_class=HTMLResponse, response_model=None)
@@ -144,15 +139,13 @@ def admin_login_form(request: Request):
         <h3>Giriş</h3>
         <form method='post' action='/admin/login'>
           <label>Kullanıcı adı</label>
-          <input name='username' placeholder='örn: Admin' required>
+          <input name='username' required>
           <div class="spacer"></div>
           <label>Şifre</label>
-          <input name='password' type='password' placeholder='••••••••' required>
+          <input name='password' type='password' required>
           <div class="spacer"></div>
           <button class='btn' type='submit'>Giriş Yap</button>
         </form>
-        <div class="spacer"></div>
-        <p class="muted" style="color:#94a3b8">Giriş sonrası üst menüden Kod Yönetimi, Ödüller ve Adminler'e erişebilirsiniz.</p>
       </div>
     </div>
     """
@@ -170,7 +163,6 @@ async def admin_login(
     try:
         user = login_with_credentials(db, username, password)
     except HTTPException as e:
-        # Hatalı giriş aynı sayfada gösterilsin
         flash(request, e.detail if getattr(e, "detail", None) else "Giriş başarısız.", level="error")
         return RedirectResponse(url="/admin/login", status_code=303)
 
@@ -194,13 +186,13 @@ def admin_home(
     prizes = db.query(Prize).order_by(Prize.wheel_index).all()
     last = db.query(Code).order_by(Code.created_at.desc()).limit(20).all()
 
-    # Tek kod formu
+    # Tek kod formu (sadece kullanıcı adı + ödül, kod otomatik)
     html_form_single = [
         "<div class='card span-4'>",
         "<h3>Tek Kod Oluştur</h3>",
         "<form method='post' action='/admin/create-code'>",
-        "<label>Kullanıcı adı (opsiyonel)</label>",
-        "<input name='username' placeholder='örn: yasin'>",
+        "<label>Kullanıcı adı</label>",
+        "<input name='username' placeholder='' required>",
         "<label>Ödül</label>",
         "<select name='prize_id'>",
     ]
@@ -208,49 +200,19 @@ def admin_home(
         html_form_single.append(f"<option value='{p.id}'>[{p.wheel_index}] {p.label}</option>")
     html_form_single += [
         "</select>",
-        "<label>Kod (boşsa otomatik)</label>",
-        "<input name='code' placeholder='örn: ABC123'>",
         "<div class='spacer'></div>",
         "<button class='btn' type='submit'>Oluştur</button>",
         "</form>",
         "</div>"
     ]
 
-    # Toplu kod formu
-    html_form_bulk = [
-        "<div class='card span-8'>",
-        "<h3>Toplu Kod Üret</h3>",
-        "<form method='post' action='/admin/bulk-codes'>",
-        "<div class='row'>",
-        "<div>",
-        "<label>Adet</label>",
-        "<input name='count' type='number' value='10' min='1' max='1000'>",
-        "</div>",
-        "<div>",
-        "<label>Prefix (opsiyonel)</label>",
-        "<input name='prefix' placeholder='RAD-'>",
-        "</div>",
-        "</div>",
-        "<label>Ödül</label>",
-        "<select name='prize_id'>",
-    ]
-    for p in prizes:
-        html_form_bulk.append(f"<option value='{p.id}'>[{p.wheel_index}] {p.label}</option>")
-    html_form_bulk += [
-        "</select>",
-        "<div class='spacer'></div>",
-        "<button class='btn' type='submit'>Üret</button>",
-        "</form>",
-        "</div>"
-    ]
-
-    # Son 20 kod tablosu
+    # Son 20 kod tablosu (sade)
     html_table = [
         "<div class='card span-12'>",
         "<h3>Son 20 Kod</h3>",
         "<div class='table-wrap'>",
         "<table>",
-        "<tr><th>Kod</th><th>Kullanıcı</th><th>Ödül</th><th>Durum</th><th>Tarih</th></tr>"
+        "<tr><th>Kod</th><th>Kullanıcı</th><th>Ödül</th><th>Durum</th></tr>"
     ]
     for c in last:
         pr = db.get(Prize, c.prize_id)
@@ -258,8 +220,7 @@ def admin_home(
             f"<tr><td><code>{c.code}</code></td>"
             f"<td>{c.username or '-'}</td>"
             f"<td>{pr.label}</td>"
-            f"<td>{c.status}</td>"
-            f"<td>{c.created_at}</td></tr>"
+            f"<td>{c.status}</td></tr>"
         )
     html_table += ["</table></div></div>"]
 
@@ -268,7 +229,6 @@ def admin_home(
     {flash_blocks}
     <div class="grid">
       {''.join(html_form_single)}
-      {''.join(html_form_bulk)}
       {''.join(html_table)}
     </div>
     """
@@ -284,43 +244,11 @@ async def admin_create_code(
     form = await request.form()
     username = (form.get("username") or "").strip() or None
     prize_id = int(form.get("prize_id"))
-    code = (form.get("code") or "").strip() or gen_code()
-
-    if db.get(Code, code):
-        flash(request, "Bu kod zaten mevcut.", level="error")
-        return RedirectResponse(url="/admin", status_code=303)
+    code = gen_code()  # her zaman otomatik üret
 
     db.add(Code(code=code, username=username, prize_id=prize_id, status="issued"))
     db.commit()
     flash(request, f"Kod oluşturuldu: {code}", level="success")
-    return RedirectResponse(url="/admin", status_code=303)
-
-@router.post("/admin/bulk-codes", response_model=None)
-async def admin_bulk_codes(
-    request: Request,
-    db: Annotated[Session, Depends(get_db)],
-    current: Annotated[AdminUser, Depends(require_role(AdminRole.admin))],
-):
-    form = await request.form()
-    count = max(1, min(1000, int(form.get("count", 10))))
-    prize_id = int(form.get("prize_id"))
-    prefix = (form.get("prefix") or "").strip()
-
-    created = []
-    for _ in range(count):
-        code = prefix + gen_code()
-        if db.get(Code, code):
-            continue
-        db.add(Code(code=code, username=None, prize_id=prize_id, status="issued"))
-        created.append(code)
-    db.commit()
-
-    if not created:
-        flash(request, "Yeni kod üretilemedi (muhtemelen çakışma). Tekrar deneyin.", level="warn")
-    else:
-        flash(request, f"{len(created)} adet kod üretildi.", level="success")
-
-    # Aynı sayfaya dön ve notice göster
     return RedirectResponse(url="/admin", status_code=303)
 
 # ========== Admin Yönetimi ==========
@@ -339,7 +267,8 @@ def list_admins(
         "<tr><th>Kullanıcı</th><th>Rol</th><th>Durum</th></tr>"
     ]
     for u in users:
-        table.append(f"<tr><td>{u.username}</td><td>{u.role}</td><td>{'aktif' if u.is_active else 'pasif'}</td></tr>")
+        role_txt = "Süper" if u.role == AdminRole.super_admin else "Admin"
+        table.append(f"<tr><td>{u.username}</td><td>{role_txt}</td><td>{'aktif' if u.is_active else 'pasif'}</td></tr>")
     table += ["</table></div></div>"]
 
     form = """
@@ -474,7 +403,7 @@ async def prizes_upsert(
     _id = (form.get("id") or "").strip()
     label = (form.get("label") or "").strip()
     wheel_index = int(form.get("wheel_index"))
-    image_url = (form.get("image_url") or "").strip() or None  # YENİ
+    image_url = (form.get("image_url") or "").strip() or None
 
     if not label:
         flash(request, "Label zorunludur.", level="error")
@@ -511,13 +440,11 @@ async def prizes_delete(
         flash(request, "Ödül bulunamadı.", level="error")
         return RedirectResponse(url="/admin/prizes", status_code=303)
 
-    # Bu ödüle bağlı kod varsa silmeyi engelle (isteğe bağlı güvenlik)
-    has_codes = db.query(Code).filter(Code.prize_id == pid).first()
-    if has_codes:
-        flash(request, "Bu ödüle bağlı kodlar var; önce kodları güncelleyin.", level="error")
-        return RedirectResponse(url="/admin/prizes", status_code=303)
+    # Önce bu ödüle bağlı kodları sil (FK hatasını engelle)
+    deleted_count = db.query(Code).filter(Code.prize_id == pid).delete(synchronize_session=False)
 
     db.delete(prize)
     db.commit()
-    flash(request, "Ödül silindi.", level="success")
+    msg = f"Ödül silindi. Bağlı {deleted_count} kod temizlendi." if deleted_count else "Ödül silindi."
+    flash(request, msg, level="success")
     return RedirectResponse(url="/admin/prizes", status_code=303)
