@@ -1,8 +1,15 @@
 from datetime import datetime
-from sqlalchemy import Integer, String, Text, DateTime, ForeignKey, text
+import enum
+
+from sqlalchemy import (
+    Integer, String, Text, DateTime, ForeignKey, text, Enum, Boolean
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.db.session import Base
 
+
+# === Çekiliş Modelleri ===
 class Prize(Base):
     __tablename__ = "prizes"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -29,10 +36,9 @@ class Spin(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
     client_ip: Mapped[str | None] = mapped_column(Text, nullable=True)
     user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
-# === Admin RBAC ===
-import enum
-from sqlalchemy import Enum, Boolean
 
+
+# === Admin RBAC ===
 class AdminRole(str, enum.Enum):
     super_admin = "super_admin"
     admin = "admin"
@@ -42,27 +48,6 @@ class AdminUser(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     username: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     role: Mapped[AdminRole] = mapped_column(Enum(AdminRole), default=AdminRole.admin, index=True)
-    token_hash: Mapped[str] = mapped_column(String(128), unique=True, index=True)  # SHA256(token)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
-
-# === Admin RBAC ===
-import enum
-from sqlalchemy import Enum, Boolean
-from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import Integer, String, DateTime, text
-from datetime import datetime
-from app.db.session import Base
-
-class AdminRole(str, enum.Enum):
-    super_admin = "super_admin"
-    admin = "admin"
-
-class AdminUser(Base):
-    __tablename__ = "admin_users"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    username: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    role: Mapped[AdminRole] = mapped_column(Enum(AdminRole), default=AdminRole.admin, index=True)
-    password_hash: Mapped[str] = mapped_column(String(255))
+    password_hash: Mapped[str] = mapped_column(String(255))  # bcrypt hash
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
