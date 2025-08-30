@@ -206,3 +206,26 @@ async def create_admin_user(
     ))
     db.commit()
     return RedirectResponse(url="/admin/users", status_code=303)
+
+# admin.py en altına ekle
+from typing import Annotated
+from fastapi import Depends
+from sqlalchemy.orm import Session
+from app.db.session import get_db
+from app.db.models import AdminUser
+
+@router.get("/__debug/admins")
+def __debug_admins(db: Annotated[Session, Depends(get_db)]):
+    rows = db.query(AdminUser).order_by(AdminUser.id).all()
+    return {
+        "count": len(rows),
+        "users": [
+            {
+                "id": u.id,
+                "username": u.username,
+                "role": str(u.role),
+                "active": u.is_active,
+                "hash_prefix": (u.password_hash or "")[:4],  # "$2b$" bekleriz
+            } for u in rows
+        ],
+    }
