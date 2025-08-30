@@ -5,9 +5,7 @@ from typing import Dict
 
 from fastapi import FastAPI, HTTPException, Depends, Request
 from pydantic import BaseModel
-from sqlalchemy import (
-    create_engine, Integer, String, Text, DateTime, ForeignKey, text
-)
+from sqlalchemy import create_engine, Integer, String, Text, DateTime, ForeignKey, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker, Session
 
 # ---------- DB ----------
@@ -15,6 +13,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL env var is required")
 
+# psycopg2-binary ile direkt kullanıyoruz (postgresql://... formatı)
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
