@@ -1,3 +1,5 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
@@ -6,7 +8,7 @@ from app.db.session import get_db
 from app.db.models import Prize, Code, AdminUser, AdminRole
 from app.services.codes import gen_code
 from app.services.auth import (
-    require_role, get_current_admin,
+    require_role,
     login_with_credentials, login_session, logout_session,
     hash_password
 )
@@ -49,7 +51,10 @@ def admin_login_form(request: Request):
     return HTMLResponse(_layout(body))
 
 @router.post("/admin/login")
-async def admin_login(request: Request, db: Session = Depends(get_db)):
+async def admin_login(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+):
     form = await request.form()
     username = (form.get("username") or "").strip()
     password = (form.get("password") or "").strip()
@@ -66,8 +71,8 @@ def admin_logout(request: Request):
 @router.get("/admin", response_class=HTMLResponse)
 def admin_home(
     request: Request,
-    db: Session = Depends(get_db),
-    current: AdminUser = Depends(require_role(AdminRole.admin)),
+    db: Annotated[Session, Depends(get_db)],
+    current: Annotated[AdminUser, Depends(require_role(AdminRole.admin))],
 ):
     prizes = db.query(Prize).order_by(Prize.wheel_index).all()
     last = db.query(Code).order_by(Code.created_at.desc()).limit(20).all()
@@ -112,8 +117,8 @@ def admin_home(
 @router.post("/admin/create-code")
 async def admin_create_code(
     request: Request,
-    db: Session = Depends(get_db),
-    current: AdminUser = Depends(require_role(AdminRole.admin)),
+    db: Annotated[Session, Depends(get_db)],
+    current: Annotated[AdminUser, Depends(require_role(AdminRole.admin))],
 ):
     form = await request.form()
     username = (form.get("username") or "").strip() or None
@@ -131,8 +136,8 @@ async def admin_create_code(
 @router.post("/admin/bulk-codes")
 async def admin_bulk_codes(
     request: Request,
-    db: Session = Depends(get_db),
-    current: AdminUser = Depends(require_role(AdminRole.admin)),
+    db: Annotated[Session, Depends(get_db)],
+    current: Annotated[AdminUser, Depends(require_role(AdminRole.admin))],
 ):
     form = await request.form()
     count = max(1, min(1000, int(form.get("count", 10))))
@@ -153,8 +158,8 @@ async def admin_bulk_codes(
 @router.get("/admin/users", response_class=HTMLResponse)
 def list_admins(
     request: Request,
-    db: Session = Depends(get_db),
-    current: AdminUser = Depends(require_role(AdminRole.super_admin)),
+    db: Annotated[Session, Depends(get_db)],
+    current: Annotated[AdminUser, Depends(require_role(AdminRole.super_admin))],
 ):
     users = db.query(AdminUser).order_by(AdminUser.username).all()
     html = [_header_html(current), "<h3>Admin Kullanıcıları</h3>"]
@@ -184,8 +189,8 @@ def list_admins(
 @router.post("/admin/users/create")
 async def create_admin_user(
     request: Request,
-    db: Session = Depends(get_db),
-    current: AdminUser = Depends(require_role(AdminRole.super_admin)),
+    db: Annotated[Session, Depends(get_db)],
+    current: Annotated[AdminUser, Depends(require_role(AdminRole.super_admin))],
 ):
     form = await request.form()
     username = (form.get("username") or "").strip()
