@@ -16,13 +16,13 @@ def verify_spin(payload: VerifyIn, db: Session = Depends(get_db)):
 
     row = db.get(Code, code)
     if not row:
-        raise HTTPException(status_code=400, detail="invalid")
+        raise HTTPException(status_code=400, detail="Geçersiz kod girdiniz.")
     if row.status == "used":
-        raise HTTPException(status_code=409, detail="already_used")
+        raise HTTPException(status_code=409, detail="Bu kod daha önce kullanılmış.")
     if row.expires_at and row.expires_at < datetime.now(timezone.utc):
-        raise HTTPException(status_code=410, detail="expired")
+        raise HTTPException(status_code=410, detail="Bu kodun süresi dolmuş.")
     if row.username and row.username != username:
-        raise HTTPException(status_code=403, detail="username_mismatch")
+        raise HTTPException(status_code=403, detail="Kod farklı bir kullanıcıya ait.")
 
     prize = db.get(Prize, row.prize_id)
     token = new_token()
@@ -41,19 +41,19 @@ def commit_spin(payload: CommitIn, request: Request, db: Session = Depends(get_d
 
     row = db.get(Code, code)
     if not row:
-        raise HTTPException(status_code=400, detail="invalid")
+        raise HTTPException(status_code=400, detail="Geçersiz kod girdiniz.")
     if row.status == "used":
         return {"ok": True}  # idempotent
 
     saved = RESERVED.get(code)
     if not saved or saved != token:
-        raise HTTPException(status_code=400, detail="invalid_or_stale_token")
+        raise HTTPException(status_code=400, detail="Geçersiz veya süresi dolmuş doğrulama tokenı.")
 
     row.status = "used"
     db.add(row)
 
     spin = Spin(
-        id=token,  # ya da str(uuid4()) ama token zaten uuid4
+        id=token,  # ya da str(uuid4()) kullanılabilir ama token zaten uuid4
         code=code,
         username=row.username or "",
         prize_id=row.prize_id,
