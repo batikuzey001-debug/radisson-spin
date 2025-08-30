@@ -1,7 +1,10 @@
 from typing import Annotated
 from html import escape as _escape
+from pathlib import Path
+import secrets
+import os
 
-from fastapi import APIRouter, Depends, Request, HTTPException
+from fastapi import APIRouter, Depends, Request, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -15,6 +18,65 @@ from app.services.auth import (
 )
 
 router = APIRouter()
+
+# ====== Upload ayarları ======
+UPLOAD_DIR = Path("static/uploads")  # /static mount'lu olmalı
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+ALLOWED_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".svg"}
+
+def _safe_ext(filename: str) -> str:
+    ext = Path(filename).suffix.lower()
+    return ext if ext in ALLOWED_EXTS else ""
+
+def _save_image_upload(file: UploadFile | None) -> str | None:
+    """
+    Bir resim dosyasını static/uploads altına kaydeder ve
+    tarayıcıdan erişilecek URL'i döner (/static/uploads/..).
+    Koşullar:
+      - Dosya yoksa None döner.
+      - Sadece image/* content-type ve izinli uzantılar kabul edilir.
+      - Maksimum ~6MB (temel koruma).
+    """
+    if not file or not getattr(file, "filename", ""):
+        return None
+
+    # İçerik tipi kontrolü
+    ctype = (file.content_type or "").lower()
+    if not ctype.startswith("image/"):
+        return None
+
+    ext = _safe_ext(file.filename or "")
+    if not ext:
+        # content-type'a göre tahmin (son çare)
+        if "/jpeg" in ctype:
+            ext = ".jpg"
+        elif "/png" in ctype:
+            ext = ".png"
+        elif "/gif" in ctype:
+            ext = ".gif"
+        elif "/webp" in ctype:
+            ext = ".webp"
+        elif "/avif" in ctype:
+            ext = ".avif"
+        elif "/svg" in ctype:
+            ext = ".svg"
+        else:
+            return None
+
+    # İçeriği oku (boyut sınırı)
+    data = file.file.read()
+    if not data:
+        return None
+    if len(data) > 6 * 1024 * 1024:
+        return None
+
+    # Benzersiz isim
+    name = f"img_{secrets.token_hex(8)}{ext}"
+    path = UPLOAD_DIR / name
+    with open(path, "wb") as f:
+        f.write(data)
+
+    return f"/static/uploads/{name}"
 
 # ========== Flash Helpers ==========
 def flash(request: Request, message: str, level: str = "info") -> None:
@@ -144,23 +206,6 @@ def _layout(body: str, title: str = "Radisson Spin – Admin", notice: str = "")
     .status-icon {{ font-size:16px; line-height:1; display:inline-block; }}
     .status-issued {{ color:#f59e0b; }}
     .status-used   {{ color:#16a34a; }}
-
-    .toast {{
-      position: fixed; right: 16px; bottom: 16px; background: #111015; color:#fff;
-      border:1px solid rgba(255,0,51,.4); padding:10px 12px; border-radius:12px;
-      box-shadow: 0 0 12px rgba(255,0,51,.5), inset 0 0 8px rgba(255,0,51,.2);
-      opacity:0; transform: translateY(8px); animation: toast-in .2s forwards, toast-out .2s 2.2s forwards;
-      z-index: 9999;
-    }}
-    @keyframes toast-in {{ to {{ opacity:1; transform: translateY(0); }} }}
-    @keyframes toast-out {{ to {{ opacity:0; transform: translateY(8px); }} }}
-
-    h3::after {{
-      content:""; display:block; height:1px; margin-top:8px;
-      background: linear-gradient(90deg, rgba(255,0,51,.5), rgba(255,0,51,0));
-      box-shadow: 0 0 10px rgba(255,0,51,.6);
-      opacity:.5;
-    }}
   </style>
   <script>
     function showToast(msg) {{
@@ -327,7 +372,7 @@ def admin_home(
             f"<tr>"
             f"<td><code>{c.code}</code></td>"
             f"<td>{c.username or '-'}</td>"
-            f"<td>{pr.label}</td>"
+            f"<td>{_escape(pr.label)}</td>"
             f"<td>{status_icon(c.status)}</td>"
             f"</tr>"
         )
@@ -378,7 +423,7 @@ def list_admins(
     ]
     for u in users:
         role_txt = "Süper" if u.role == AdminRole.super_admin else "Admin"
-        table.append(f"<tr><td>{u.username}</td><td>{role_txt}</td><td>{'aktif' if u.is_active else 'pasif'}</td></tr>")
+        table.append(f"<tr><td>{_escape(u.username)}</td><td>{role_txt}</td><td>{'aktif' if u.is_active else 'pasif'}</td></tr>")
     table += ["</table></div></div>"]
 
     form = """
@@ -463,9 +508,6 @@ def prizes_page(
     ]
     for p in prizes:
         raw_url = getattr(p, "image_url", None)
-
-        # Görsel URL'sini OLDUĞU GİBİ kullan: http/https CDN, data URL, vs.
-        # Herhangi bir sağlayıcıya (örn. imgur) özel rewrite/dönüşüm yok.
         thumb = "-"
         if raw_url:
             safe_url = _escape(raw_url)
@@ -473,11 +515,9 @@ def prizes_page(
                 f"<img src='{safe_url}' "
                 f"alt='{_escape(p.label)}' "
                 f"style='height:24px;border-radius:6px' "
-                f"loading='lazy' decoding='async' referrerpolicy='no-referrer' crossorigin='anonymous' "
-                # Yükleme hatasında arayüz bozulmasın:
+                f"loading='lazy' decoding='async' "
                 f"onerror=\"this.replaceWith(document.createTextNode('yüklenemedi'))\"/>"
             )
-
         rows.append(
             f"<tr>"
             f"<td>{_escape(p.label)}</td>"
@@ -499,10 +539,11 @@ def prizes_page(
     ewi = (editing.wheel_index if editing else "")
     eurl = (editing.image_url if getattr(editing, "image_url", None) else "")
 
+    # DİKKAT: enctype eklendi + file input geldi
     form = f"""
     <div class='card span-12'>
       <h3>{'Ödül Düzenle' if editing else 'Yeni Ödül Ekle'}</h3>
-      <form method='post' action='/admin/prizes/upsert'>
+      <form method='post' action='/admin/prizes/upsert' enctype='multipart/form-data'>
         {'<input type="hidden" name="id" value="'+str(eid)+'">' if editing else ''}
         <div class='row'>
           <div>
@@ -514,7 +555,9 @@ def prizes_page(
             <input name='label' placeholder='Örn: ₺250' value='{_escape(elabel)}' required>
           </div>
         </div>
-        <span class='field-label'>Görsel URL (opsiyonel)</span>
+        <span class='field-label'>Görsel Dosya (tercih edilen)</span>
+        <input name='image_file' type='file' accept='image/*'>
+        <span class='field-label'>Görsel URL (opsiyonel – dosya seçilmezse kullanılır)</span>
         <input name='image_url' placeholder='https://... veya data:image/...;base64,...' value='{_escape(eurl)}'>
         <div class='spacer'></div>
         <button class='btn' type='submit'>Kaydet</button>
@@ -537,9 +580,13 @@ async def prizes_upsert(
     _id = (form.get("id") or "").strip()
     label = (form.get("label") or "").strip()
     wheel_index = int(form.get("wheel_index"))
-
-    # Görsel URL'i opsiyonel – herhangi bir URL ya da data URL olabilir.
     image_url = (form.get("image_url") or "").strip() or None
+
+    # Dosya varsa önce onu kullan
+    upload: UploadFile | None = form.get("image_file")  # Starlette UploadFile
+    saved_url = _save_image_upload(upload) if isinstance(upload, UploadFile) else None
+    if saved_url:
+        image_url = saved_url
 
     if not label:
         flash(request, "Ad zorunludur.", level="error")
@@ -552,9 +599,9 @@ async def prizes_upsert(
             return RedirectResponse(url="/admin/prizes", status_code=303)
         prize.label = label
         prize.wheel_index = wheel_index
-        prize.image_url = image_url  # olduğu gibi kaydet
+        prize.image_url = image_url
         db.add(prize)
-        msg = f"Ödül güncellendi."
+        msg = "Ödül güncellendi."
     else:
         db.add(Prize(label=label, wheel_index=wheel_index, image_url=image_url))
         msg = "Yeni ödül eklendi."
