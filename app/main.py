@@ -77,3 +77,17 @@ def on_startup():
                 Code(code="TEST500", username=None,    prize_id=p500.id,  status="issued"),
             ])
             db.commit()
+from sqlalchemy import text
+# ...
+
+@app.on_event("startup")
+def on_startup():
+    Base.metadata.create_all(engine)
+
+    # --- Mini migration: prizes.image_url kolonu yoksa ekle ---
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE IF EXISTS prizes ADD COLUMN IF NOT EXISTS image_url VARCHAR(512)"))
+
+    with SessionLocal() as db:
+        # (var olan seed kalsın)
+        ...
