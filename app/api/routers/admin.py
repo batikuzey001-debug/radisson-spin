@@ -2,7 +2,7 @@ from typing import Annotated
 from html import escape as _escape
 from pathlib import Path
 import secrets
-import os
+import mimetypes
 
 from fastapi import APIRouter, Depends, Request, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -24,58 +24,41 @@ UPLOAD_DIR = Path("static/uploads")  # /static mount'lu olmalı
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 ALLOWED_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".svg"}
 
-def _safe_ext(filename: str) -> str:
-    ext = Path(filename).suffix.lower()
-    return ext if ext in ALLOWED_EXTS else ""
+def _pick_ext(filename: str, content_type: str | None) -> str:
+    """Dosya uzantısını güvenli şekilde belirle."""
+    ext = Path(filename or "").suffix.lower()
+    if ext in ALLOWED_EXTS:
+        return ext
+    if content_type:
+        ct = content_type.split(";")[0].strip().lower()
+        guessed = mimetypes.guess_extension(ct) or ""
+        if guessed.lower() in ALLOWED_EXTS:
+            return guessed.lower()
+        if "jpeg" in ct: return ".jpg"
+        if "png"  in ct: return ".png"
+        if "gif"  in ct: return ".gif"
+        if "webp" in ct: return ".webp"
+        if "avif" in ct: return ".avif"
+        if "svg"  in ct: return ".svg"
+    return ".png"
 
 def _save_image_upload(file: UploadFile | None) -> str | None:
     """
-    Bir resim dosyasını static/uploads altına kaydeder ve
-    tarayıcıdan erişilecek URL'i döner (/static/uploads/..).
-    Koşullar:
-      - Dosya yoksa None döner.
-      - Sadece image/* content-type ve izinli uzantılar kabul edilir.
-      - Maksimum ~6MB (temel koruma).
+    Dosyayı static/uploads altına kaydeder; URL ("/static/uploads/...") döner.
+    Dosya yoksa None. ~6MB sınırı.
     """
     if not file or not getattr(file, "filename", ""):
         return None
-
-    # İçerik tipi kontrolü
-    ctype = (file.content_type or "").lower()
-    if not ctype.startswith("image/"):
-        return None
-
-    ext = _safe_ext(file.filename or "")
-    if not ext:
-        # content-type'a göre tahmin (son çare)
-        if "/jpeg" in ctype:
-            ext = ".jpg"
-        elif "/png" in ctype:
-            ext = ".png"
-        elif "/gif" in ctype:
-            ext = ".gif"
-        elif "/webp" in ctype:
-            ext = ".webp"
-        elif "/avif" in ctype:
-            ext = ".avif"
-        elif "/svg" in ctype:
-            ext = ".svg"
-        else:
-            return None
-
-    # İçeriği oku (boyut sınırı)
     data = file.file.read()
     if not data:
         return None
     if len(data) > 6 * 1024 * 1024:
         return None
-
-    # Benzersiz isim
+    ext = _pick_ext(file.filename, file.content_type)
     name = f"img_{secrets.token_hex(8)}{ext}"
     path = UPLOAD_DIR / name
     with open(path, "wb") as f:
         f.write(data)
-
     return f"/static/uploads/{name}"
 
 # ========== Flash Helpers ==========
@@ -164,7 +147,6 @@ def _layout(body: str, title: str = "Radisson Spin – Admin", notice: str = "")
     input, select {{
       width:100%; background:#070709; color:#fafafa; border:1px solid var(--border); border-radius:14px;
       padding:10px 12px; outline:none; transition: box-shadow .15s ease, border-color .15s ease, background .15s ease;
-      box-shadow: inset 0 0 0 rgba(0,0,0,0);
     }}
     input::placeholder {{ color:#6b7280; }}
     input:focus, select:focus {{
@@ -194,10 +176,7 @@ def _layout(body: str, title: str = "Radisson Spin – Admin", notice: str = "")
     td {{ font-size:13px; }}
 
     .stack {{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }}
-    .pill {{
-      background:#0d0d11; border:1px solid var(--border); padding:10px 12px; border-radius:12px; font-size:13px;
-      box-shadow: inset 0 0 10px rgba(255,0,51,.12);
-    }}
+    .pill {{ background:#0d0d11; border:1px solid var(--border); padding:10px 12px; border-radius:12px; font-size:13px; }}
     .copy-btn {{ margin-left:8px; position:relative; }}
 
     .footer {{ margin-top:18px; color:var(--muted); font-size:12px; text-align:center; }}
@@ -419,11 +398,22 @@ def list_admins(
         "<div class='card span-12'>",
         "<h3>Admin Kullanıcıları</h3>",
         "<div class='table-wrap'><table>",
-        "<tr><th>Kullanıcı</th><th>Rol</th><th>Durum</th></tr>"
+        "<tr><th>Kullanıcı</th><th>Rol</th><th>Durum</th><th>İşlem</th></tr>"
     ]
     for u in users:
         role_txt = "Süper" if u.role == AdminRole.super_admin else "Admin"
-        table.append(f"<tr><td>{_escape(u.username)}</td><td>{role_txt}</td><td>{'aktif' if u.is_active else 'pasif'}</td></tr>")
+        actions = [
+            "<form method='post' action='/admin/users/delete' onsubmit='return confirm(\"Silinsin mi?\")' style='display:inline'>",
+            f"<input type='hidden' name='id' value='{u.id}'>",
+            "<button class='btn small secondary' type='submit'>Sil</button>",
+            "</form>",
+        ]
+        table.append(
+            f"<tr><td>{_escape(u.username)}</td>"
+            f"<td>{role_txt}</td>"
+            f"<td>{'aktif' if u.is_active else 'pasif'}</td>"
+            f"<td class='stack'>{''.join(actions)}</td></tr>"
+        )
     table += ["</table></div></div>"]
 
     form = """
@@ -487,6 +477,38 @@ async def create_admin_user(
     flash(request, f"Admin oluşturuldu: {username}", level="success")
     return RedirectResponse(url="/admin/users", status_code=303)
 
+@router.post("/admin/users/delete", response_model=None)
+async def delete_admin_user(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    current: Annotated[AdminUser, Depends(require_role(AdminRole.super_admin))],
+):
+    form = await request.form()
+    uid = int(form.get("id"))
+    user = db.get(AdminUser, uid)
+    if not user:
+        flash(request, "Kullanıcı bulunamadı.", level="error")
+        return RedirectResponse(url="/admin/users", status_code=303)
+
+    if user.id == current.id:
+        flash(request, "Kendinizi silemezsiniz.", level="error")
+        return RedirectResponse(url="/admin/users", status_code=303)
+
+    if user.role == AdminRole.super_admin:
+        # sistemde en az 1 başka super_admin kalsın
+        others = db.query(AdminUser).filter(
+            AdminUser.role == AdminRole.super_admin,
+            AdminUser.id != user.id
+        ).count()
+        if others == 0:
+            flash(request, "Son süper admin silinemez.", level="error")
+            return RedirectResponse(url="/admin/users", status_code=303)
+
+    db.delete(user)
+    db.commit()
+    flash(request, "Kullanıcı silindi.", level="success")
+    return RedirectResponse(url="/admin/users", status_code=303)
+
 # ========== ÖDÜLLER ==========
 @router.get("/admin/prizes", response_class=HTMLResponse, response_model=None)
 def prizes_page(
@@ -496,9 +518,7 @@ def prizes_page(
 ):
     prizes = db.query(Prize).order_by(Prize.wheel_index).all()
     edit_id = request.query_params.get("edit")
-    editing = None
-    if edit_id:
-        editing = db.get(Prize, int(edit_id))
+    editing = db.get(Prize, int(edit_id)) if edit_id else None
 
     rows = [
         "<div class='card span-12'>",
@@ -507,15 +527,12 @@ def prizes_page(
         "<tr><th>Ad</th><th>Sıralama</th><th>Görsel</th><th>İşlem</th></tr>"
     ]
     for p in prizes:
-        raw_url = getattr(p, "image_url", None)
         thumb = "-"
-        if raw_url:
-            safe_url = _escape(raw_url)
+        if getattr(p, "image_url", None):
+            safe_url = _escape(p.image_url)
             thumb = (
-                f"<img src='{safe_url}' "
-                f"alt='{_escape(p.label)}' "
-                f"style='height:24px;border-radius:6px' "
-                f"loading='lazy' decoding='async' "
+                f"<img src='{safe_url}' alt='{_escape(p.label)}' "
+                f"style='height:24px;border-radius:6px' loading='lazy' decoding='async' "
                 f"onerror=\"this.replaceWith(document.createTextNode('yüklenemedi'))\"/>"
             )
         rows.append(
@@ -537,9 +554,8 @@ def prizes_page(
     eid = editing.id if editing else ""
     elabel = (editing.label if editing else "")
     ewi = (editing.wheel_index if editing else "")
-    eurl = (editing.image_url if getattr(editing, "image_url", None) else "")
 
-    # DİKKAT: enctype eklendi + file input geldi
+    # SADECE DOSYA YÜKLEME – URL alanı kaldırıldı
     form = f"""
     <div class='card span-12'>
       <h3>{'Ödül Düzenle' if editing else 'Yeni Ödül Ekle'}</h3>
@@ -555,10 +571,8 @@ def prizes_page(
             <input name='label' placeholder='Örn: ₺250' value='{_escape(elabel)}' required>
           </div>
         </div>
-        <span class='field-label'>Görsel Dosya (tercih edilen)</span>
+        <span class='field-label'>Görsel Dosya (zorunlu değil – seçerseniz kaydedilir)</span>
         <input name='image_file' type='file' accept='image/*'>
-        <span class='field-label'>Görsel URL (opsiyonel – dosya seçilmezse kullanılır)</span>
-        <input name='image_url' placeholder='https://... veya data:image/...;base64,...' value='{_escape(eurl)}'>
         <div class='spacer'></div>
         <button class='btn' type='submit'>Kaydet</button>
       </form>
@@ -580,13 +594,10 @@ async def prizes_upsert(
     _id = (form.get("id") or "").strip()
     label = (form.get("label") or "").strip()
     wheel_index = int(form.get("wheel_index"))
-    image_url = (form.get("image_url") or "").strip() or None
 
-    # Dosya varsa önce onu kullan
-    upload: UploadFile | None = form.get("image_file")  # Starlette UploadFile
-    saved_url = _save_image_upload(upload) if isinstance(upload, UploadFile) else None
-    if saved_url:
-        image_url = saved_url
+    # Dosya (varsa)
+    upload = form.get("image_file")
+    new_url = _save_image_upload(upload if isinstance(upload, UploadFile) else None)
 
     if not label:
         flash(request, "Ad zorunludur.", level="error")
@@ -599,11 +610,12 @@ async def prizes_upsert(
             return RedirectResponse(url="/admin/prizes", status_code=303)
         prize.label = label
         prize.wheel_index = wheel_index
-        prize.image_url = image_url
+        if new_url:            # sadece yeni dosya seçildiyse güncelle
+            prize.image_url = new_url
         db.add(prize)
         msg = "Ödül güncellendi."
     else:
-        db.add(Prize(label=label, wheel_index=wheel_index, image_url=image_url))
+        db.add(Prize(label=label, wheel_index=wheel_index, image_url=new_url))
         msg = "Yeni ödül eklendi."
 
     db.commit()
@@ -623,6 +635,7 @@ async def prizes_delete(
         flash(request, "Ödül bulunamadı.", level="error")
         return RedirectResponse(url="/admin/prizes", status_code=303)
 
+    # Önce bu ödüle bağlı kodları sil (FK için)
     deleted_count = db.query(Code).filter(Code.prize_id == pid).delete(synchronize_session=False)
 
     db.delete(prize)
