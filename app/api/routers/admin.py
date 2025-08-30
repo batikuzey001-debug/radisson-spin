@@ -1,4 +1,5 @@
 from typing import Annotated
+from html import escape as _escape
 
 from fastapi import APIRouter, Depends, Request, HTTPException, Query
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
@@ -14,6 +15,38 @@ from app.services.auth import (
 )
 
 router = APIRouter()
+
+# ========== Flash Helpers ==========
+def flash(request: Request, message: str, level: str = "info") -> None:
+    """
+    level: 'info' | 'success' | 'warn' | 'error'
+    """
+    # XSS'e karşı: sadece güvenli metin bas (HTML'i kaçır)
+    message = _escape(message)
+    request.session.setdefault("_flash", [])
+    request.session["_flash"].append({"message": message, "level": level})
+
+def consume_flash(request: Request) -> list[dict]:
+    msgs = request.session.get("_flash") or []
+    request.session["_flash"] = []
+    return msgs
+
+def _render_flash_blocks(request: Request) -> str:
+    msgs = consume_flash(request)
+    if not msgs:
+        return ""
+    def cls(level: str) -> str:
+        if level == "error":
+            return "notice error"
+        if level == "success":
+            return "notice success"
+        if level == "warn":
+            return "notice"
+        return "notice"
+    return "".join(
+        f"<div class='{cls(m.get('level','info'))}'>{m['message']}</div>"
+        for m in msgs
+    )
 
 # ========== UI Helpers ==========
 def _layout(body: str, title: str = "Radisson Spin – Admin", notice: str = "") -> str:
@@ -103,7 +136,9 @@ def _header_html(current: AdminUser | None, active: str = "") -> str:
 # ========== Auth ==========
 @router.get("/admin/login", response_class=HTMLResponse, response_model=None)
 def admin_login_form(request: Request):
-    body = """
+    flash_blocks = _render_flash_blocks(request)
+    body = f"""
+    {flash_blocks}
     <div class="grid">
       <div class="card span-4">
         <h3>Giriş</h3>
@@ -132,13 +167,21 @@ async def admin_login(
     form = await request.form()
     username = (form.get("username") or "").strip()
     password = (form.get("password") or "").strip()
-    user = login_with_credentials(db, username, password)
+    try:
+        user = login_with_credentials(db, username, password)
+    except HTTPException as e:
+        # Hatalı giriş aynı sayfada gösterilsin
+        flash(request, e.detail if getattr(e, "detail", None) else "Giriş başarısız.", level="error")
+        return RedirectResponse(url="/admin/login", status_code=303)
+
     login_session(request, user)
+    flash(request, f"Hoş geldin, {user.username}!", level="success")
     return RedirectResponse(url="/admin", status_code=303)
 
 @router.get("/admin/logout", response_model=None)
 def admin_logout(request: Request):
     logout_session(request)
+    flash(request, "Güvenli şekilde çıkış yapıldı.", level="success")
     return RedirectResponse(url="/admin/login", status_code=303)
 
 # ========== Kod Yönetimi ==========
@@ -220,7 +263,9 @@ def admin_home(
         )
     html_table += ["</table></div></div>"]
 
+    flash_blocks = _render_flash_blocks(request)
     body = f"""
+    {flash_blocks}
     <div class="grid">
       {''.join(html_form_single)}
       {''.join(html_form_bulk)}
@@ -242,10 +287,12 @@ async def admin_create_code(
     code = (form.get("code") or "").strip() or gen_code()
 
     if db.get(Code, code):
-        raise HTTPException(status_code=409, detail="Bu kod zaten mevcut.")
+        flash(request, "Bu kod zaten mevcut.", level="error")
+        return RedirectResponse(url="/admin", status_code=303)
 
     db.add(Code(code=code, username=username, prize_id=prize_id, status="issued"))
     db.commit()
+    flash(request, f"Kod oluşturuldu: {code}", level="success")
     return RedirectResponse(url="/admin", status_code=303)
 
 @router.post("/admin/bulk-codes", response_model=None)
@@ -267,7 +314,14 @@ async def admin_bulk_codes(
         db.add(Code(code=code, username=None, prize_id=prize_id, status="issued"))
         created.append(code)
     db.commit()
-    return JSONResponse({"ok": True, "created": created})
+
+    if not created:
+        flash(request, "Yeni kod üretilemedi (muhtemelen çakışma). Tekrar deneyin.", level="warn")
+    else:
+        flash(request, f"{len(created)} adet kod üretildi.", level="success")
+
+    # Aynı sayfaya dön ve notice göster
+    return RedirectResponse(url="/admin", status_code=303)
 
 # ========== Admin Yönetimi ==========
 @router.get("/admin/users", response_class=HTMLResponse, response_model=None)
@@ -313,7 +367,8 @@ def list_admins(
     </div>
     """
 
-    body = f"<div class='grid'>{''.join(table)}{form}</div>"
+    flash_blocks = _render_flash_blocks(request)
+    body = f"{flash_blocks}<div class='grid'>{''.join(table)}{form}</div>"
     html = _layout(body).replace("__NAV__", _header_html(current, active="users"))
     return HTMLResponse(html)
 
@@ -329,11 +384,14 @@ async def create_admin_user(
     role = (form.get("role") or "admin").strip()
 
     if not username or not password:
-        raise HTTPException(status_code=400, detail="Kullanıcı adı ve şifre zorunludur.")
+        flash(request, "Kullanıcı adı ve şifre zorunludur.", level="error")
+        return RedirectResponse(url="/admin/users", status_code=303)
     if db.query(AdminUser).filter(AdminUser.username == username).first():
-        raise HTTPException(status_code=409, detail="Bu kullanıcı adı zaten mevcut.")
+        flash(request, "Bu kullanıcı adı zaten mevcut.", level="error")
+        return RedirectResponse(url="/admin/users", status_code=303)
     if role not in ("admin", "super_admin"):
-        raise HTTPException(status_code=400, detail="Geçersiz rol.")
+        flash(request, "Geçersiz rol.", level="error")
+        return RedirectResponse(url="/admin/users", status_code=303)
 
     db.add(AdminUser(
         username=username,
@@ -342,6 +400,7 @@ async def create_admin_user(
         is_active=True,
     ))
     db.commit()
+    flash(request, f"Admin oluşturuldu: {username}", level="success")
     return RedirectResponse(url="/admin/users", status_code=303)
 
 # ========== ÖDÜLLER ==========
@@ -401,7 +460,8 @@ def prizes_page(
       <p class='note'>Not: Çark sırası <b>wheel_index</b> değerine göredir (0 en üstte başlar).</p>
     </div>
     """
-    html = _layout(f"<div class='grid'>{''.join(rows)}{form}</div>").replace("__NAV__", _header_html(current, active="prizes"))
+    flash_blocks = _render_flash_blocks(request)
+    html = _layout(f"{flash_blocks}<div class='grid'>{''.join(rows)}{form}</div>").replace("__NAV__", _header_html(current, active="prizes"))
     return HTMLResponse(html)
 
 @router.post("/admin/prizes/upsert", response_model=None)
@@ -417,20 +477,25 @@ async def prizes_upsert(
     image_url = (form.get("image_url") or "").strip() or None  # YENİ
 
     if not label:
-        raise HTTPException(status_code=400, detail="Label zorunludur.")
+        flash(request, "Label zorunludur.", level="error")
+        return RedirectResponse(url="/admin/prizes", status_code=303)
 
     if _id:
         prize = db.get(Prize, int(_id))
         if not prize:
-            raise HTTPException(status_code=404, detail="Ödül bulunamadı.")
+            flash(request, "Ödül bulunamadı.", level="error")
+            return RedirectResponse(url="/admin/prizes", status_code=303)
         prize.label = label
         prize.wheel_index = wheel_index
         prize.image_url = image_url
         db.add(prize)
+        msg = f"Ödül güncellendi (ID: {prize.id})."
     else:
         db.add(Prize(label=label, wheel_index=wheel_index, image_url=image_url))
+        msg = "Yeni ödül eklendi."
 
     db.commit()
+    flash(request, msg, level="success")
     return RedirectResponse(url="/admin/prizes", status_code=303)
 
 @router.post("/admin/prizes/delete", response_model=None)
@@ -443,13 +508,16 @@ async def prizes_delete(
     pid = int(form.get("id"))
     prize = db.get(Prize, pid)
     if not prize:
-        raise HTTPException(status_code=404, detail="Ödül bulunamadı.")
+        flash(request, "Ödül bulunamadı.", level="error")
+        return RedirectResponse(url="/admin/prizes", status_code=303)
 
     # Bu ödüle bağlı kod varsa silmeyi engelle (isteğe bağlı güvenlik)
     has_codes = db.query(Code).filter(Code.prize_id == pid).first()
     if has_codes:
-        raise HTTPException(status_code=409, detail="Bu ödüle bağlı kodlar var; önce kodları güncelleyin.")
+        flash(request, "Bu ödüle bağlı kodlar var; önce kodları güncelleyin.", level="error")
+        return RedirectResponse(url="/admin/prizes", status_code=303)
 
     db.delete(prize)
     db.commit()
+    flash(request, "Ödül silindi.", level="success")
     return RedirectResponse(url="/admin/prizes", status_code=303)
