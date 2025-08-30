@@ -1,9 +1,11 @@
 import os
+import secrets, string
 from uuid import uuid4
 from datetime import datetime, timezone
 from typing import Dict
 
 from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Integer, String, Text, DateTime, ForeignKey, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker, Session
@@ -167,14 +169,10 @@ def commit_spin(payload: CommitIn, request: Request, db: Session = Depends(get_d
     RESERVED.pop(code, None)
     return {"ok": True}
 
-# ===== Admin Panel (çok basit) ===========================================
-import os, secrets, string
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
-
+# ===== Admin Panel (basit) ===============================================
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "changeme")
 
 def _admin_guard(request: Request):
-    # Header: X-Admin: <token>  veya  URL: ?admin=<token>
     token = request.headers.get("x-admin") or request.query_params.get("admin")
     if not token or token != ADMIN_TOKEN:
         raise HTTPException(status_code=401, detail="unauthorized")
@@ -189,21 +187,19 @@ def admin_home(request: Request, db: Session = Depends(get_db)):
     prizes = db.query(Prize).order_by(Prize.wheel_index).all()
     last = db.query(Code).order_by(Code.created_at.desc()).limit(20).all()
 
-    # basit HTML (tek dosya)
     html = [
         "<h2>Radisson Spin – Admin</h2>",
         "<form method='post' action='/admin/create-code'>",
         f"<input type='hidden' name='admin' value='{request.query_params.get('admin','')}'>",
         "<label>Kullanıcı adı (opsiyonel):</label><br>",
         "<input name='username' placeholder='örn: yasin'><br><br>",
-        "<label>Ödül:</label><br>",
-        "<select name='prize_id'>",
+        "<label>Ödül:</label><br><select name='prize_id'>",
     ]
     for p in prizes:
         html.append(f"<option value='{p.id}'>[{p.wheel_index}] {p.label}</option>")
     html += [
         "</select><br><br>",
-        "<label>Kod (boş bırakırsan otomatik):</label><br>",
+        "<label>Kod (boşsa otomatik):</label><br>",
         "<input name='code' placeholder='örn: ABC123'><br><br>",
         "<button type='submit'>Tek Kod Oluştur</button>",
         "</form><hr>",
@@ -229,14 +225,9 @@ def admin_home(request: Request, db: Session = Depends(get_db)):
     return HTMLResponse("".join(html))
 
 @app.post("/admin/create-code")
-def admin_create_code(request: Request, db: Session = Depends(get_db)):
+async def admin_create_code(request: Request, db: Session = Depends(get_db)):
     _admin_guard(request)
-    form = dict((await request.form()).items()) if hasattr(request, "form") else {}
-    # FastAPI sync endpointte form() await edilemez; basitçe yeniden tanımlayalım:
-    from starlette.requests import Request as StarReq
-    if isinstance(request, StarReq):  # Starlette request
-        import asyncio
-        form = asyncio.get_event_loop().run_until_complete(request.form())
+    form = await request.form()
     username = (form.get("username") or "").strip() or None
     prize_id = int(form.get("prize_id"))
     code = (form.get("code") or "").strip() or _gen_code()
@@ -251,15 +242,13 @@ def admin_create_code(request: Request, db: Session = Depends(get_db)):
     return RedirectResponse(url=f"/admin?admin={admin}", status_code=303)
 
 @app.post("/admin/bulk-codes")
-def admin_bulk_codes(request: Request, db: Session = Depends(get_db)):
+async def admin_bulk_codes(request: Request, db: Session = Depends(get_db)):
     _admin_guard(request)
-    from starlette.requests import Request as StarReq
-    if isinstance(request, StarReq):
-        import asyncio
-        form = asyncio.get_event_loop().run_until_complete(request.form())
+    form = await request.form()
     count = max(1, min(1000, int(form.get("count", 10))))
     prize_id = int(form.get("prize_id"))
     prefix = (form.get("prefix") or "").strip()
+
     created = []
     for _ in range(count):
         code = prefix + _gen_code()
