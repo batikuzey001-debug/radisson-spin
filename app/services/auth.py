@@ -114,3 +114,26 @@ def require_role(min_role: AdminRole) -> Callable:
             raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Bu işlem için süper admin yetkisi gerekir.")
         return user
     return _dep
+import logging
+logger = logging.getLogger("uvicorn")
+
+def login_with_credentials(db: Session, username: str, password: str) -> AdminUser:
+    user = db.query(AdminUser).filter(
+        AdminUser.username == username,
+        AdminUser.is_active == True  # noqa: E712
+    ).first()
+    if not user:
+        logger.warning(f"[LOGIN] user not found: {username!r}")
+        raise HTTPException(status_code=401, detail="Geçersiz kullanıcı adı veya şifre.")
+
+    ok = verify_password(password, user.password_hash or "")
+    logger.info(f"[LOGIN] user={user.username!r} verify={ok} hash_prefix={(user.password_hash or '')[:4]}")
+    if not ok:
+        raise HTTPException(status_code=401, detail="Geçersiz kullanıcı adı veya şifre.")
+
+    # (legacy hash yükseltme varsa burada kalabilir)
+    if not user.password_hash.startswith("$2"):
+        user.password_hash = hash_password(password)
+        db.add(user); db.commit()
+
+    return user
