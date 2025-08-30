@@ -51,3 +51,15 @@ class AdminUser(Base):
     password_hash: Mapped[str] = mapped_column(String(255))  # bcrypt hash
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
+
+from sqlalchemy import Integer, String, Text, DateTime, ForeignKey, text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+# ...
+
+class Prize(Base):
+    __tablename__ = "prizes"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    label: Mapped[str] = mapped_column(String(64))
+    wheel_index: Mapped[int] = mapped_column(Integer)
+    image_url: Mapped[str | None] = mapped_column(String(512), nullable=True)  # <-- YENİ
+    codes = relationship("Code", back_populates="prize")
