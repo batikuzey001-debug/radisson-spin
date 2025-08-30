@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
+from sqlalchemy import text
 
 from app.core.config import settings
 from app.api.routers.health import router as health_router
@@ -25,7 +26,7 @@ app.add_middleware(
     SessionMiddleware,
     secret_key=settings.SECRET_KEY,
     same_site="lax",
-    https_only=False,  # prod'da True yapabilirsiniz (HTTPS üzerinde)
+    https_only=False,  # prod'da True önerilir (HTTPS üzerinde)
 )
 
 # Routers
@@ -33,10 +34,30 @@ app.include_router(health_router)
 app.include_router(spin_router, prefix="/api")
 app.include_router(admin_router)
 
-# Startup: tablo oluştur + seed
+# Startup: tablo oluştur + mini migration + seed
 @app.on_event("startup")
 def on_startup():
+    # ORM tabloları oluştur
     Base.metadata.create_all(engine)
+
+    # --- Mini migration: eski 'token_hash' kolonunu 'password_hash' yap + yoksa ekle ---
+    with engine.begin() as conn:
+        # Eğer eski şema varsa güvenli şekilde rename yap
+        conn.execute(text("""
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name='admin_users' AND column_name='token_hash'
+            ) THEN
+                EXECUTE 'ALTER TABLE admin_users RENAME COLUMN token_hash TO password_hash';
+            END IF;
+        END $$;
+        """))
+        # Kolon yoksa ekle (idempotent)
+        conn.execute(text("ALTER TABLE IF EXISTS admin_users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)"))
+
+    # Seed verileri
     with SessionLocal() as db:
         # Ödüller
         if db.query(Prize).count() == 0:
@@ -58,7 +79,7 @@ def on_startup():
             ])
             db.commit()
 
-        # Süper admin bootstrap (ilk kurulum)
+        # Süper admin bootstrap (ilk kurulum) veya eksik hash'leri doldur
         if db.query(AdminUser).count() == 0:
             db.add(AdminUser(
                 username=settings.ADMIN_BOOT_USERNAME,
@@ -67,3 +88,11 @@ def on_startup():
                 is_active=True,
             ))
             db.commit()
+        else:
+            # password_hash'ı boş olan eski kayıtlar varsa, boot şifresiyle doldur
+            missing = db.query(AdminUser).filter(AdminUser.password_hash == None).all()  # noqa: E711
+            if missing:
+                ph = hash_password(settings.ADMIN_BOOT_PASSWORD)
+                for u in missing:
+                    u.password_hash = ph
+                db.commit()
