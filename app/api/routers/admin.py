@@ -1,10 +1,7 @@
 from typing import Annotated
 from html import escape as _escape
-from pathlib import Path
-import secrets
-import mimetypes
 
-from fastapi import APIRouter, Depends, Request, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -18,48 +15,6 @@ from app.services.auth import (
 )
 
 router = APIRouter()
-
-# ====== Upload ayarları ======
-UPLOAD_DIR = Path("static/uploads")  # /static mount'lu olmalı
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-ALLOWED_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".svg"}
-
-def _pick_ext(filename: str, content_type: str | None) -> str:
-    """Dosya uzantısını güvenli şekilde belirle."""
-    ext = Path(filename or "").suffix.lower()
-    if ext in ALLOWED_EXTS:
-        return ext
-    if content_type:
-        ct = content_type.split(";")[0].strip().lower()
-        guessed = mimetypes.guess_extension(ct) or ""
-        if guessed.lower() in ALLOWED_EXTS:
-            return guessed.lower()
-        if "jpeg" in ct: return ".jpg"
-        if "png"  in ct: return ".png"
-        if "gif"  in ct: return ".gif"
-        if "webp" in ct: return ".webp"
-        if "avif" in ct: return ".avif"
-        if "svg"  in ct: return ".svg"
-    return ".png"
-
-def _save_image_upload(file: UploadFile | None) -> str | None:
-    """
-    Dosyayı static/uploads altına kaydeder; URL ("/static/uploads/...") döner.
-    Dosya yoksa None. ~6MB sınırı.
-    """
-    if not file or not getattr(file, "filename", ""):
-        return None
-    data = file.file.read()
-    if not data:
-        return None
-    if len(data) > 6 * 1024 * 1024:
-        return None
-    ext = _pick_ext(file.filename, file.content_type)
-    name = f"img_{secrets.token_hex(8)}{ext}"
-    path = UPLOAD_DIR / name
-    with open(path, "wb") as f:
-        f.write(data)
-    return f"/static/uploads/{name}"
 
 # ========== Flash Helpers ==========
 def flash(request: Request, message: str, level: str = "info") -> None:
@@ -495,7 +450,6 @@ async def delete_admin_user(
         return RedirectResponse(url="/admin/users", status_code=303)
 
     if user.role == AdminRole.super_admin:
-        # sistemde en az 1 başka super_admin kalsın
         others = db.query(AdminUser).filter(
             AdminUser.role == AdminRole.super_admin,
             AdminUser.id != user.id
@@ -533,6 +487,7 @@ def prizes_page(
             thumb = (
                 f"<img src='{safe_url}' alt='{_escape(p.label)}' "
                 f"style='height:24px;border-radius:6px' loading='lazy' decoding='async' "
+                f"referrerpolicy='no-referrer' crossorigin='anonymous' "
                 f"onerror=\"this.replaceWith(document.createTextNode('yüklenemedi'))\"/>"
             )
         rows.append(
@@ -554,12 +509,13 @@ def prizes_page(
     eid = editing.id if editing else ""
     elabel = (editing.label if editing else "")
     ewi = (editing.wheel_index if editing else "")
+    eurl = (editing.image_url if getattr(editing, "image_url", None) else "")
 
-    # SADECE DOSYA YÜKLEME – URL alanı kaldırıldı
+    # SADECE LİNK – upload yok
     form = f"""
     <div class='card span-12'>
       <h3>{'Ödül Düzenle' if editing else 'Yeni Ödül Ekle'}</h3>
-      <form method='post' action='/admin/prizes/upsert' enctype='multipart/form-data'>
+      <form method='post' action='/admin/prizes/upsert'>
         {'<input type="hidden" name="id" value="'+str(eid)+'">' if editing else ''}
         <div class='row'>
           <div>
@@ -571,8 +527,8 @@ def prizes_page(
             <input name='label' placeholder='Örn: ₺250' value='{_escape(elabel)}' required>
           </div>
         </div>
-        <span class='field-label'>Görsel Dosya (zorunlu değil – seçerseniz kaydedilir)</span>
-        <input name='image_file' type='file' accept='image/*'>
+        <span class='field-label'>Görsel URL (https://... veya data:image/...)</span>
+        <input name='image_url' placeholder='https://...' value='{_escape(eurl)}'>
         <div class='spacer'></div>
         <button class='btn' type='submit'>Kaydet</button>
       </form>
@@ -594,10 +550,7 @@ async def prizes_upsert(
     _id = (form.get("id") or "").strip()
     label = (form.get("label") or "").strip()
     wheel_index = int(form.get("wheel_index"))
-
-    # Dosya (varsa)
-    upload = form.get("image_file")
-    new_url = _save_image_upload(upload if isinstance(upload, UploadFile) else None)
+    image_url = (form.get("image_url") or "").strip() or None  # link olduğu gibi kaydedilir
 
     if not label:
         flash(request, "Ad zorunludur.", level="error")
@@ -610,12 +563,11 @@ async def prizes_upsert(
             return RedirectResponse(url="/admin/prizes", status_code=303)
         prize.label = label
         prize.wheel_index = wheel_index
-        if new_url:            # sadece yeni dosya seçildiyse güncelle
-            prize.image_url = new_url
+        prize.image_url = image_url  # boşsa kaldırır, doluysa günceller
         db.add(prize)
         msg = "Ödül güncellendi."
     else:
-        db.add(Prize(label=label, wheel_index=wheel_index, image_url=new_url))
+        db.add(Prize(label=label, wheel_index=wheel_index, image_url=image_url))
         msg = "Yeni ödül eklendi."
 
     db.commit()
@@ -635,7 +587,6 @@ async def prizes_delete(
         flash(request, "Ödül bulunamadı.", level="error")
         return RedirectResponse(url="/admin/prizes", status_code=303)
 
-    # Önce bu ödüle bağlı kodları sil (FK için)
     deleted_count = db.query(Code).filter(Code.prize_id == pid).delete(synchronize_session=False)
 
     db.delete(prize)
