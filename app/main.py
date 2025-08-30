@@ -45,3 +45,19 @@ def on_startup():
                 Code(code="TEST500", username=None,    prize_id=p500.id,  status="issued"),
             ])
             db.commit()
+
+    # --- Süper admin seed ---
+    from app.db.models import AdminUser, AdminRole
+    from app.services.auth import sha256
+
+    boot_token = settings.ADMIN_TOKEN
+    if boot_token:
+        token_hash = sha256(boot_token)
+        if not db.query(AdminUser).filter_by(username="root").first():
+            db.add(AdminUser(
+                username="root",
+                role=AdminRole.super_admin,
+                token_hash=token_hash,
+                is_active=True,
+            ))
+            db.commit()
