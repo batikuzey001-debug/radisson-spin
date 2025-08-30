@@ -74,3 +74,6 @@ def commit_spin(
 
     RESERVED.pop(code, None)
     return {"ok": True}
+
+from typing import List
+from app.schemas.prize import PrizeOut
