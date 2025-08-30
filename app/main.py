@@ -8,6 +8,15 @@ from pydantic import BaseModel
 from sqlalchemy import create_engine, Integer, String, Text, DateTime, ForeignKey, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker, Session
 
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # ilk aşama: herkese açık (sonra domain’e kısaltırız)
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # ---------- DB ----------
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
