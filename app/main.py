@@ -94,3 +94,5 @@ def on_startup():
 
 with engine.begin() as conn:
     conn.execute(text("ALTER TABLE IF EXISTS prizes ADD COLUMN IF NOT EXISTS image_url VARCHAR(512)"))
+    from fastapi.staticfiles import StaticFiles
+app.mount("/static", StaticFiles(directory="static"), name="static")
