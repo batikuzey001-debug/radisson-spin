@@ -91,3 +91,6 @@ def on_startup():
     with SessionLocal() as db:
         # (var olan seed kalsın)
         ...
+
+with engine.begin() as conn:
+    conn.execute(text("ALTER TABLE IF EXISTS prizes ADD COLUMN IF NOT EXISTS image_url VARCHAR(512)"))
