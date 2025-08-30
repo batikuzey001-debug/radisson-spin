@@ -7,12 +7,15 @@ from fastapi import FastAPI, HTTPException, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Integer, String, Text, DateTime, ForeignKey, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker, Session
-
 from fastapi.middleware.cors import CORSMiddleware
 
+# ---------- APP ----------
+app = FastAPI()
+
+# CORS (ilk aşama herkese açık; sonra domainlere daraltırız)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # ilk aşama: herkese açık (sonra domain’e kısaltırız)
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -22,7 +25,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL env var is required")
 
-# psycopg2-binary ile direkt kullanıyoruz (postgresql://... formatı)
+# psycopg2-binary ile (postgresql://... formatı)
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
@@ -62,12 +65,10 @@ def get_db() -> Session:
     finally:
         db.close()
 
-# verify→commit arası geçici rezerve token (sunucu belleğinde)
+# verify→commit arası geçici rezerve token
 RESERVED: Dict[str, str] = {}
 
-# ---------- API ----------
-app = FastAPI()
-
+# ---------- MODELLER ----------
 class VerifyIn(BaseModel):
     username: str
     code: str
@@ -82,20 +83,19 @@ class CommitIn(BaseModel):
     code: str
     spinToken: str
 
+# ---------- STARTUP ----------
 @app.on_event("startup")
 def on_startup():
-    # tabloları oluştur
     Base.metadata.create_all(engine)
-    # basit seed (prizes ve örnek kodlar yoksa ekle)
     with SessionLocal() as db:
         if db.query(Prize).count() == 0:
-            seed = [
+            db.add_all([
                 Prize(label="₺100",  wheel_index=0),
                 Prize(label="₺250",  wheel_index=1),
                 Prize(label="₺500",  wheel_index=2),
                 Prize(label="₺1000", wheel_index=3),
-            ]
-            db.add_all(seed); db.commit()
+            ])
+            db.commit()
         if db.query(Code).count() == 0:
             p1000 = db.query(Prize).filter_by(label="₺1000").first()
             p500  = db.query(Prize).filter_by(label="₺500").first()
@@ -105,6 +105,7 @@ def on_startup():
             ])
             db.commit()
 
+# ---------- ENDPOINTS ----------
 @app.get("/healthz")
 def healthz():
     return "ok"
@@ -149,11 +150,9 @@ def commit_spin(payload: CommitIn, request: Request, db: Session = Depends(get_d
     if not saved or saved != token:
         raise HTTPException(status_code=400, detail="invalid_or_stale_token")
 
-    # kilitle
     row.status = "used"
     db.add(row)
 
-    # logla
     spin = Spin(
         id=str(uuid4()),
         code=code,
