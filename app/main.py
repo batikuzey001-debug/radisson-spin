@@ -27,7 +27,6 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL env var is required")
 
-# psycopg2-binary ile (postgresql://... formatı)
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
@@ -187,10 +186,12 @@ def admin_home(request: Request, db: Session = Depends(get_db)):
     prizes = db.query(Prize).order_by(Prize.wheel_index).all()
     last = db.query(Code).order_by(Code.created_at.desc()).limit(20).all()
 
+    token = request.query_params.get("admin", "")
+
     html = [
         "<h2>Radisson Spin – Admin</h2>",
-        "<form method='post' action='/admin/create-code'>",
-        f"<input type='hidden' name='admin' value='{request.query_params.get('admin','')}'>",
+        # Tek kod formu → token query param ile
+        f"<form method='post' action='/admin/create-code?admin={token}'>",
         "<label>Kullanıcı adı (opsiyonel):</label><br>",
         "<input name='username' placeholder='örn: yasin'><br><br>",
         "<label>Ödül:</label><br><select name='prize_id'>",
@@ -203,8 +204,8 @@ def admin_home(request: Request, db: Session = Depends(get_db)):
         "<input name='code' placeholder='örn: ABC123'><br><br>",
         "<button type='submit'>Tek Kod Oluştur</button>",
         "</form><hr>",
-        "<form method='post' action='/admin/bulk-codes'>",
-        f"<input type='hidden' name='admin' value='{request.query_params.get('admin','')}'>",
+        # Toplu kod formu → token query param ile
+        f"<form method='post' action='/admin/bulk-codes?admin={token}'>",
         "<b>Toplu Kod Üret</b><br>",
         "<label>Adet:</label> <input name='count' type='number' value='10' min='1' max='1000'>",
         "&nbsp; <label>Prefix (opsiyonel):</label> <input name='prefix' placeholder='RAD-'>",
@@ -238,8 +239,9 @@ async def admin_create_code(request: Request, db: Session = Depends(get_db)):
     db.add(Code(code=code, username=username, prize_id=prize_id, status="issued"))
     db.commit()
 
-    admin = form.get("admin", "")
-    return RedirectResponse(url=f"/admin?admin={admin}", status_code=303)
+    # admin token'ı URL'den tekrar alıp geri yönlendir
+    token = request.query_params.get("admin", "")
+    return RedirectResponse(url=f"/admin?admin={token}", status_code=303)
 
 @app.post("/admin/bulk-codes")
 async def admin_bulk_codes(request: Request, db: Session = Depends(get_db)):
