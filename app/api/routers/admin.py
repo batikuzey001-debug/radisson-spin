@@ -34,7 +34,7 @@ def _render_flash_blocks(request: Request) -> str:
     def cls(level: str) -> str:
         if level == "error":   return "notice error"
         if level == "success": return "notice success"
-        if level == "warn":    return "notice"
+        if level == "warn":    return "notice warn"
         return "notice"
     return "".join(f"<div class='{cls(m.get('level','info'))}'>{m['message']}</div>" for m in msgs)
 
@@ -50,49 +50,95 @@ def _layout(body: str, title: str = "Radisson Spin – Admin", notice: str = "")
   <title>{title}</title>
   <style>
     :root {{
-      --bg:#0b1220; --card:#0f172a; --muted:#94a3b8; --text:#e2e8f0;
-      --brand:#7c3aed; --brand-2:#a78bfa; --ok:#16a34a; --warn:#f59e0b; --err:#ef4444;
-      --border: rgba(148,163,184,.2);
+      /* Neon kırmızı & siyah tema */
+      --bg:#050607; --bg-2:#0a0b0f; --card:#0a0a0a; --muted:#a1a1aa; --text:#f5f5f5;
+      --brand:#ff0033; --brand-2:#ff4d6d; --ok:#16a34a; --warn:#f59e0b; --err:#ef4444;
+      --border: rgba(255,255,255,.08);
+      --glow: 0 0 12px rgba(255,0,51,.55), 0 0 24px rgba(255,0,51,.35), inset 0 0 8px rgba(255,0,51,.15);
+      --glow-soft: 0 0 10px rgba(255,255,255,.08), inset 0 0 10px rgba(255,255,255,.04);
     }}
     * {{ box-sizing:border-box; }}
     body {{
-      margin:0; background: linear-gradient(180deg,#0b1220 0%,#0b1220 60%, #0e1528 100%);
-      color:var(--text); font: 14px/1.6 system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial;
+      margin:0;
+      background:
+        radial-gradient(1200px 600px at 20% -10%, rgba(255,0,51,.12), transparent 60%),
+        radial-gradient(1000px 500px at 120% 10%, rgba(255,77,109,.10), transparent 60%),
+        linear-gradient(180deg,var(--bg) 0%,var(--bg) 60%, var(--bg-2) 100%);
+      color:var(--text);
+      font: 14px/1.6 system-ui,-apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial;
     }}
     .container {{ max-width: 1100px; margin: 32px auto; padding: 0 16px; }}
     .header {{ display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; gap:12px; }}
-    .brand img{{ height:28px; display:block; }}
-    .nav a {{ color:var(--muted); text-decoration:none; margin-left:10px; padding:6px 10px; border-radius:10px; border:1px solid transparent; }}
-    .nav a.active, .nav a:hover {{ color:var(--text); border-color:var(--border); background:rgba(124,58,237,.12); }}
-    .notice {{ padding:10px 12px; background:rgba(124,58,237,.12); border:1px solid var(--border); border-radius:12px; margin-bottom:16px; }}
+    .brand img{{ height:28px; display:block; filter: drop-shadow(0 0 10px rgba(255,255,255,.12)); }}
+    .nav a {{
+      color:var(--muted); text-decoration:none; margin-left:10px; padding:6px 10px; border-radius:12px;
+      border:1px solid transparent; transition: all .2s ease;
+    }}
+    .nav a.active, .nav a:hover {{
+      color:var(--text); border-color:var(--border); background:rgba(255,0,51,.10);
+      box-shadow: var(--glow);
+    }}
+
+    .notice {{
+      padding:12px 14px; background:rgba(255,0,51,.08); border:1px solid var(--border);
+      border-radius:14px; margin-bottom:16px; box-shadow: var(--glow-soft);
+    }}
+    .notice.success {{ background: rgba(22,163,74,.10); box-shadow: 0 0 14px rgba(22,163,74,.25); }}
+    .notice.error {{ background: rgba(239,68,68,.12); box-shadow: 0 0 14px rgba(239,68,68,.35); }}
+    .notice.warn {{ background: rgba(245,158,11,.12); box-shadow: 0 0 14px rgba(245,158,11,.35); }}
 
     .grid {{ display:grid; grid-template-columns: repeat(12, 1fr); gap:16px; }}
-    .card {{ grid-column: span 12; background:var(--card); border:1px solid var(--border); border-radius:16px; padding:16px; }}
+    .card {{
+      grid-column: span 12; background:var(--card); border:1px solid var(--border);
+      border-radius:18px; padding:16px; box-shadow: var(--glow-soft);
+    }}
     @media (min-width: 900px) {{
       .span-4 {{ grid-column: span 4; }}
       .span-8 {{ grid-column: span 8; }}
       .span-12 {{ grid-column: span 12; }}
     }}
-    h3 {{ margin:0 0 12px 0; font-size:16px; }}
-    label {{ display:block; margin:6px 0 6px; color:var(--muted); }}
-    input, select {{ width:100%; background:#0b1220; color:#e2e8f0; border:1px solid var(--border); border-radius:12px; padding:10px 12px; outline:none; }}
-    input::placeholder {{ color:#64748b; }}
+    h3 {{ margin:0 0 12px 0; font-size:16px; letter-spacing:.2px; }}
+    /* "label" yerine daha güncel metin stili */
+    .field-label {{ display:block; margin:6px 0 6px; color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.4px; }}
+
+    input, select {{
+      width:100%; background:#070709; color:#fafafa; border:1px solid var(--border); border-radius:14px;
+      padding:10px 12px; outline:none; transition: box-shadow .15s ease, border-color .15s ease, background .15s ease;
+      box-shadow: inset 0 0 0 rgba(0,0,0,0);
+    }}
+    input::placeholder {{ color:#6b7280; }}
+    input:focus, select:focus {{
+      border-color: rgba(255,0,51,.6); box-shadow: 0 0 0 2px rgba(255,0,51,.25), var(--glow);
+      background: #0b0b0e;
+    }}
     .row {{ display:grid; grid-template-columns: 1fr 1fr; gap:12px; }}
-    .btn {{ appearance:none; border:none; background:linear-gradient(135deg,var(--brand),var(--brand-2));
-      color:#fff; padding:10px 14px; border-radius:12px; font-weight:600; cursor:pointer; box-shadow:0 4px 18px rgba(124,58,237,.25); }}
-    .btn.secondary {{ background:transparent; color:var(--text); border:1px solid var(--border); box-shadow:none; }}
+
+    .btn {{
+      appearance:none; border:none; background:linear-gradient(135deg,var(--brand),var(--brand-2));
+      color:#fff; padding:10px 14px; border-radius:14px; font-weight:700; cursor:pointer;
+      box-shadow: 0 6px 24px rgba(255,0,51,.35), 0 0 12px rgba(255,0,51,.55);
+      transition: transform .06s ease, box-shadow .2s ease, filter .2s ease;
+      letter-spacing:.3px;
+    }}
+    .btn:hover {{ transform: translateY(-1px); filter: brightness(1.06); box-shadow: 0 10px 28px rgba(255,0,51,.5), 0 0 16px rgba(255,0,51,.75); }}
+    .btn.secondary {{
+      background:transparent; color:var(--text); border:1px solid var(--border); box-shadow: var(--glow-soft);
+    }}
     .btn.small {{ padding:6px 10px; border-radius:10px; font-size:12px; }}
     .btn:disabled {{ opacity:.6; cursor:not-allowed; }}
 
-    .table-wrap {{ overflow:auto; border:1px solid var(--border); border-radius:12px; }}
+    .table-wrap {{ overflow:auto; border:1px solid var(--border); border-radius:14px; box-shadow: var(--glow-soft); }}
     table {{ width:100%; border-collapse:collapse; min-width:560px; }}
-    th, td {{ padding:8px 10px; border-bottom:1px solid var(--border); text-align:left; white-space:nowrap; }}
-    th {{ color:var(--muted); font-weight:600; font-size:12px; }}
+    th, td {{ padding:10px 10px; border-bottom:1px solid var(--border); text-align:left; white-space:nowrap; }}
+    th {{ color:#c9c9d1; font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.4px; }}
     td {{ font-size:13px; }}
 
-    .stack {{ display:flex; gap:8px; align-items:center; }}
-    .pill {{ background:rgba(148,163,184,.12); border:1px solid var(--border); padding:6px 8px; border-radius:10px; font-size:12px; }}
-    .copy-btn {{ margin-left:8px; }}
+    .stack {{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }}
+    .pill {{
+      background:#0d0d11; border:1px solid var(--border); padding:10px 12px; border-radius:12px; font-size:13px;
+      box-shadow: inset 0 0 10px rgba(255,0,51,.12);
+    }}
+    .copy-btn {{ margin-left:8px; position:relative; }}
 
     .footer {{ margin-top:18px; color:var(--muted); font-size:12px; text-align:center; }}
     .spacer {{ height:8px; }}
@@ -100,7 +146,54 @@ def _layout(body: str, title: str = "Radisson Spin – Admin", notice: str = "")
     .status-icon {{ font-size:16px; line-height:1; display:inline-block; }}
     .status-issued {{ color:#f59e0b; }}  /* ⏳ */
     .status-used   {{ color:#16a34a; }}  /* ✅ */
+
+    /* Kopyalama tostu */
+    .toast {{
+      position: fixed; right: 16px; bottom: 16px; background: #111015; color:#fff;
+      border:1px solid rgba(255,0,51,.4); padding:10px 12px; border-radius:12px;
+      box-shadow: 0 0 12px rgba(255,0,51,.5), inset 0 0 8px rgba(255,0,51,.2);
+      opacity:0; transform: translateY(8px); animation: toast-in .2s forwards, toast-out .2s 2.2s forwards;
+      z-index: 9999;
+    }}
+    @keyframes toast-in {{ to {{ opacity:1; transform: translateY(0); }} }}
+    @keyframes toast-out {{ to {{ opacity:0; transform: translateY(8px); }} }}
+
+    /* Neon başlık alt-ışıltı */
+    h3::after {{
+      content:""; display:block; height:1px; margin-top:8px;
+      background: linear-gradient(90deg, rgba(255,0,51,.5), rgba(255,0,51,0));
+      box-shadow: 0 0 10px rgba(255,0,51,.6);
+      opacity:.5;
+    }}
   </style>
+  <script>
+    // Kopyalama geri bildirimi daha belirgin (neon toast + butonda durum)
+    function showToast(msg) {{
+      const t = document.createElement('div');
+      t.className = 'toast';
+      t.textContent = msg || 'Kopyalandı';
+      document.body.appendChild(t);
+      setTimeout(() => t.remove(), 2600);
+    }}
+    function copyLastCode() {{
+      const input = document.getElementById('last-code');
+      const btn = document.getElementById('last-code-btn');
+      if (!input) return;
+      const val = input.value || '';
+      navigator.clipboard.writeText(val).then(() => {{
+        const old = btn.textContent;
+        btn.textContent = 'Kopyalandı ✓';
+        btn.disabled = true;
+        btn.style.boxShadow = '0 0 12px rgba(22,163,74,.8), 0 0 24px rgba(22,163,74,.45)';
+        showToast('Kod panoya kopyalandı');
+        setTimeout(() => {{
+          btn.textContent = old;
+          btn.disabled = false;
+          btn.style.boxShadow = '';
+        }}, 1600);
+      }});
+    }}
+  </script>
 </head>
 <body>
   <div class="container">
@@ -145,10 +238,10 @@ def admin_login_form(request: Request):
       <div class="card span-4">
         <h3>Giriş</h3>
         <form method='post' action='/admin/login'>
-          <label>Kullanıcı adı</label>
+          <span class="field-label">Kullanıcı adı</span>
           <input name='username' required>
           <div class="spacer"></div>
-          <label>Şifre</label>
+          <span class="field-label">Şifre</span>
           <input name='password' type='password' required>
           <div class="spacer"></div>
           <button class='btn' type='submit'>Giriş Yap</button>
@@ -201,9 +294,9 @@ def admin_home(
         "<div class='card span-4'>",
         "<h3>Tek Kod Oluştur</h3>",
         "<form method='post' action='/admin/create-code'>",
-        "<label>Kullanıcı adı</label>",
+        "<span class='field-label'>Kullanıcı adı</span>",
         "<input name='username' placeholder='' required>",
-        "<label>Ödül</label>",
+        "<span class='field-label'>Ödül</span>",
         "<select name='prize_id'>",
     ]
     for p in prizes:
@@ -214,14 +307,14 @@ def admin_home(
         "<button class='btn' type='submit'>Oluştur</button>",
         "</form>",
     ]
-    # Son kod kutusu
+    # Son kod kutusu (kopyalama geri bildirimi belirgin)
     if last_code:
         html_form_single += [
             "<div class='spacer'></div>",
             "<h3>Oluşturulan Kod</h3>",
             "<div class='stack'>",
             f"<input id='last-code' class='pill' value='{last_code}' readonly>",
-            "<button class='btn small copy-btn' type='button' onclick=\"navigator.clipboard.writeText(document.getElementById('last-code').value)\">Kopyala</button>",
+            "<button id='last-code-btn' class='btn small copy-btn' type='button' onclick='copyLastCode()'>Kopyala</button>",
             "</div>",
         ]
     html_form_single += ["</div>"]
@@ -277,7 +370,8 @@ async def admin_create_code(
     # Son kodu oturuma yaz ki form yanında gösterelim
     request.session["_last_code"] = code
 
-    flash(request, f"Kod oluşturuldu: {code}", level="success")
+    # İSTEK: "üstteki kod oluşturuldu" bildirimini kaldır -> flash gönderme
+    # flash(request, f"Kod oluşturuldu: {code}", level="success")
     return RedirectResponse(url="/admin", status_code=303)
 
 # ========== Admin Yönetimi ==========
@@ -306,18 +400,18 @@ def list_admins(
       <form method='post' action='/admin/users/create'>
         <div class='row'>
           <div>
-            <label>Kullanıcı adı</label>
+            <span class='field-label'>Kullanıcı adı</span>
             <input name='username' required>
           </div>
           <div>
-            <label>Rol</label>
+            <span class='field-label'>Rol</span>
             <select name='role'>
               <option value='admin'>admin</option>
               <option value='super_admin'>super_admin</option>
             </select>
           </div>
         </div>
-        <label>Şifre</label>
+        <span class='field-label'>Şifre</span>
         <input name='password' type='password' required>
         <div class='spacer'></div>
         <button class='btn' type='submit'>Oluştur</button>
@@ -378,7 +472,7 @@ def prizes_page(
         "<div class='card span-12'>",
         "<h3>Ödül Dilimleri</h3>",
         "<div class='table-wrap'><table>",
-        "<tr><th>Label</th><th>Wheel Index</th><th>Görsel</th><th>İşlem</th></tr>"
+        "<tr><th>Ad</th><th>Sıralama</th><th>Görsel</th><th>İşlem</th></tr>"
     ]
     for p in prizes:
         thumb = f"<img src='{getattr(p, 'image_url', None)}' style='height:24px;border-radius:6px'/>" if getattr(p, "image_url", None) else "-"
@@ -411,27 +505,23 @@ def prizes_page(
         {'<input type="hidden" name="id" value="'+str(eid)+'">' if editing else ''}
         <div class='row'>
           <div>
-            <label>Wheel Index</label>
+            <span class='field-label'>Sıralama</span>
             <input name='wheel_index' type='number' placeholder='0,1,2...' value='{ewi}' required>
           </div>
           <div>
-            <label>Label</label>
-            <input name='label' placeholder='₺250' value='{_escape(elabel)}' required>
+            <span class='field-label'>Ad</span>
+            <input name='label' placeholder='Örn: ₺250' value='{_escape(elabel)}' required>
           </div>
         </div>
-        <label>Görsel URL (opsiyonel)</label>
+        <span class='field-label'>Görsel URL (opsiyonel)</span>
         <input name='image_url' placeholder='https://...' value='{_escape(eurl)}'>
         <div class='spacer'></div>
         <button class='btn' type='submit'>Kaydet</button>
       </form>
-      <div class='spacer'></div>
-      <div class='notice'>
-        <b>Wheel index nedir?</b><br>
-        Çarktaki dilim sırasıdır. <b>0</b> en üst (başlangıç) dilimdir; saat yönünde 1, 2, 3… diye devam eder.
-        Görsel çark ile backend aynı sırayı kullandığında hedef dilim tam isabet eder.
-      </div>
     </div>
     """
+
+    # İSTEK: "Wheel index nedir?" açıklamasını tamamen kaldırdık.
 
     flash_blocks = _render_flash_blocks(request)
     body = f"{flash_blocks}<div class='grid'>{''.join(rows)}{form}</div>"
@@ -451,7 +541,7 @@ async def prizes_upsert(
     image_url = (form.get("image_url") or "").strip() or None
 
     if not label:
-        flash(request, "Label zorunludur.", level="error")
+        flash(request, "Ad zorunludur.", level="error")
         return RedirectResponse(url="/admin/prizes", status_code=303)
 
     if _id:
