@@ -257,3 +257,27 @@ def __debug_try_login(
         "role": str(user.role),
         "hash_prefix": (user.password_hash or "")[:4],
     }
+    # --- DEBUG: Şifre reset (geçici, sonra SİL) ---
+from fastapi import Query
+from app.core.config import settings
+from app.services.auth import hash_password
+
+@router.post("/__debug/set-password", response_model=None)
+def __debug_set_password(
+    u: str = Query(..., alias="u"),
+    p: str = Query(..., alias="p"),
+    token: str = Query(..., alias="t"),
+    db: Annotated[Session, Depends(get_db)] = None,
+):
+    # Basit koruma: SECRET_KEY ile doğrula
+    if token != settings.SECRET_KEY:
+        raise HTTPException(status_code=403, detail="forbidden")
+
+    user = db.query(AdminUser).filter(AdminUser.username == u).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="user_not_found")
+
+    user.password_hash = hash_password(p)  # passlib bcrypt ile hashler
+    db.add(user)
+    db.commit()
+    return {"ok": True}
