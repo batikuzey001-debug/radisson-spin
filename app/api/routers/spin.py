@@ -12,9 +12,30 @@ from app.services.spin import RESERVED, new_token
 
 router = APIRouter()
 
+# -------------------- helpers --------------------
+def _abs_url(request: Request, u: str | None) -> str | None:
+    """
+    imageUrl'ı mutlak hale getirir:
+    - data:, http:, https: -> olduğu gibi
+    - //cdn... -> https: + //
+    - /api/media/... veya /static/... -> base_url + yol
+    - çıplak değer -> https:// + değer
+    """
+    if not u:
+        return None
+    if u.startswith("data:") or u.startswith("http://") or u.startswith("https://"):
+        return u
+    if u.startswith("//"):
+        return "https:" + u
+    if u.startswith("/"):
+        return str(request.base_url).rstrip("/") + u
+    return "https://" + u
+
+
 # ===================== Dinamik Ödül Listesi =====================
 @router.get("/prizes", response_model=List[PrizeOut])
 def list_prizes(
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
 ):
     rows = db.query(Prize).order_by(Prize.wheel_index).all()
@@ -22,8 +43,8 @@ def list_prizes(
         PrizeOut(
             id=p.id,
             label=p.label,
-            wheelIndex=p.wheel_index,
-            imageUrl=getattr(p, "image_url", None),  # kolon varsa döner
+            wheelIndex=p.wheel_index,                # camelCase
+            imageUrl=_abs_url(request, getattr(p, "image_url", None)),  # camelCase + mutlak
         )
         for p in rows
     ]
@@ -52,12 +73,11 @@ def verify_spin(
     token = new_token()
     RESERVED[code] = token
 
-    # prizeImage alanı VerifyOut şemanda tanımlıysa görünür; değilse response_model filtreler.
     return VerifyOut(
         targetIndex=prize.wheel_index,
         prizeLabel=prize.label,
         spinToken=token,
-        prizeImage=getattr(prize, "image_url", None),  # <-- görsel (opsiyonel)
+        prizeImage=getattr(prize, "image_url", None),  # şema izin veriyorsa görünecek
     )
 
 
@@ -85,7 +105,7 @@ def commit_spin(
     db.add(row)
 
     spin = Spin(
-        id=token,  # token zaten uuid4
+        id=token,  # token uuid4
         code=code,
         username=row.username or "",
         prize_id=row.prize_id,
@@ -97,22 +117,3 @@ def commit_spin(
 
     RESERVED.pop(code, None)
     return {"ok": True}
-
-# --- PRIZES: frontende ödülleri ve görsel URL'lerini ver ---
-from fastapi import Depends
-from sqlalchemy.orm import Session
-from app.db.session import get_db
-from app.db.models import Prize
-
-@router.get("/prizes")
-def list_prizes(db: Session = Depends(get_db)):
-    items = db.query(Prize).order_by(Prize.wheel_index).all()
-    return [
-        {
-            "id": p.id,
-            "label": p.label,
-            "wheel_index": p.wheel_index,
-            "image_url": p.image_url,   # <— frontend doğrudan <img src>’e koyacak
-        }
-        for p in items
-    ]
