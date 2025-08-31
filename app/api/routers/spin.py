@@ -97,3 +97,22 @@ def commit_spin(
 
     RESERVED.pop(code, None)
     return {"ok": True}
+
+# --- PRIZES: frontende ödülleri ve görsel URL'lerini ver ---
+from fastapi import Depends
+from sqlalchemy.orm import Session
+from app.db.session import get_db
+from app.db.models import Prize
+
+@router.get("/prizes")
+def list_prizes(db: Session = Depends(get_db)):
+    items = db.query(Prize).order_by(Prize.wheel_index).all()
+    return [
+        {
+            "id": p.id,
+            "label": p.label,
+            "wheel_index": p.wheel_index,
+            "image_url": p.image_url,   # <— frontend doğrudan <img src>’e koyacak
+        }
+        for p in items
+    ]
