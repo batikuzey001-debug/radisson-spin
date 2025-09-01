@@ -37,12 +37,14 @@ def _dt_input(v):
         return ""
     return ""
 
-# (İleride ayrı ayar ekranından yönetilebilir)
+# Kategoriler SABİT (yalnız bu seçenekler)
+# value -> label (TR)
 CATEGORY_OPTIONS = [
-    ("slots", "Slot"),
-    ("poker", "Poker"),
-    ("casino", "Casino"),
-    ("promo", "Promosyon"),
+    ("slots",       "SLOT"),
+    ("live-casino", "CANLI CASİNO"),
+    ("sports",      "SPOR"),
+    ("all",         "HEPSİ"),
+    ("other",       "DİĞER"),
 ]
 
 KIND_MAP: Dict[str, Dict[str, Any]] = {
@@ -53,57 +55,82 @@ KIND_MAP: Dict[str, Dict[str, Any]] = {
 }
 
 # ------------------ Şablon ------------------
-def _layout(title: str, body: str) -> str:
+def _layout(title: str, body: str, menu: str) -> str:
     return f"""<!doctype html><html lang="tr"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{_e(title)}</title>
 <style>
   :root {{
-    --bg:#0a0b0f; --card:#0f1320; --muted:#aeb7d0; --text:#eef2ff;
-    --line:#20283a; --accent:#60a5fa; --accent2:#0ea5e9;
+    --bg:#0a0b0f; --card:#111114; --muted:#b3b3bb; --text:#f5f5f5;
+    --line:#1d1d22; --accent:#ff0033; --accent2:#ff4d6d;
   }}
-  *{{box-sizing:border-box}}
-  body{{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,Segoe UI,Roboto}}
+  *{{box-sizing:border-box}} body{{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,Segoe UI,Roboto}}
   .wrap{{max-width:1100px;margin:24px auto;padding:0 16px}}
-  /* Üst sekme menü (sticky + neon) */
-  .topbar{{position:sticky;top:0;z-index:10;backdrop-filter:blur(6px);
-          background:linear-gradient(180deg,rgba(8,10,16,.85),rgba(8,10,16,.65));
-          border-bottom:1px solid var(--line);margin:-8px -16px 16px;padding:10px 16px}}
-  .tabs{{display:flex;gap:8px;flex-wrap:wrap}}
-  .tab{{appearance:none;border:1px solid var(--line);border-radius:10px;padding:8px 12px;
-        color:var(--muted);text-decoration:none;transition:.18s all ease;position:relative}}
-  .tab:hover{{border-color:rgba(96,165,250,.45);color:#fff;box-shadow:0 0 0 2px rgba(96,165,250,.12), 0 0 16px rgba(14,165,233,.18)}}
-  .tab.active{{color:#fff;border-color:rgba(96,165,250,.55);
-               background:linear-gradient(90deg,rgba(14,165,233,.18),rgba(96,165,250,.10));
-               box-shadow:0 0 18px rgba(14,165,233,.26), inset 0 0 12px rgba(96,165,250,.10)}}
-  .tab.active::after{{content:"";position:absolute;left:10px;right:10px;bottom:-6px;height:3px;
-                      background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:6px;
-                      box-shadow:0 0 18px rgba(96,165,250,.7)}}
-  /* Kart & tablo */
+
+  /* Üst çubuk: tıkla-açılır menü (sabit değil) */
+  .topnav{{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px}}
+  .brand{{display:flex;align-items:center;gap:10px}}
+  .brand .dot{{width:10px;height:10px;border-radius:999px;background:var(--accent);box-shadow:0 0 12px var(--accent)}}
+  .menu-btn{{appearance:none;border:1px solid var(--line);background:#121214;color:var(--text);border-radius:10px;
+            padding:8px 10px;cursor:pointer}}
+  .menu-btn:hover{{border-color:rgba(255,0,51,.4)}}
+  .menu{{display:none;position:absolute;background:#0f0f13;border:1px solid var(--line);border-radius:10px; padding:8px; margin-top:6px}}
+  .menu.open{{display:block}}
+  .menu a{{display:block;color:var(--muted);text-decoration:none;padding:6px 10px;border-radius:8px}}
+  .menu a:hover, .menu a.active{{background:#15151a;color:#fff;border:1px solid rgba(255,0,51,.35)}}
+
   .card{{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:14px 0}}
-  h1{{font-size:18px;margin:6px 0 12px}}
+  h1{{font-size:16px;margin:6px 0 12px}}
   table{{width:100%;border-collapse:collapse}}
   th,td{{border-bottom:1px solid var(--line);padding:8px;text-align:left;white-space:nowrap}}
   th{{font-size:12px;text-transform:uppercase;color:#9aa3b7}}
-  input,select{{width:100%;background:#0b0f1a;color:#fff;border:1px solid #243049;border-radius:10px;padding:8px}}
+
+  input,select{{width:100%;background:#0c0c10;color:#fff;border:1px solid #25252b;border-radius:10px;padding:9px}}
+  input[type="datetime-local"]{{padding:8px}}
+  input:focus,select:focus{{outline:none;border-color:rgba(255,0,51,.45);box-shadow:0 0 0 2px rgba(255,0,51,.20)}}
+
   .row{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}}
+  .row-1{{display:grid;grid-template-columns:1fr;gap:10px}}
+
+  .btn{{display:inline-block;padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:#141418;color:#fff;text-decoration:none}}
+  .btn.primary{{background:linear-gradient(90deg,var(--accent),var(--accent2))}}
+  .btn.small{{padding:6px 10px;font-size:12px}}
+
   .actions form{{display:inline}}
-  .btn{{display:inline-block;padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:#101629;color:#fff;text-decoration:none}}
-  .btn.primary{{background:linear-gradient(90deg,var(--accent2),var(--accent))}}
   .pill{{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}}
-  label.cb{{display:flex;align-items:center;gap:8px;color:#c8d1e3}}
-</style></head>
+  label.cb{{display:flex;align-items:center;gap:8px;color:#d7d7de;font-size:13px}}
+</style>
+<script>
+  function toggleMenu(){{
+    const m = document.getElementById('menu');
+    if(!m) return;
+    m.classList.toggle('open');
+  }}
+  document.addEventListener('click', (e)=>{{
+    const btn = document.getElementById('menu-btn');
+    const m = document.getElementById('menu');
+    if(!m || !btn) return;
+    if(!m.contains(e.target) && !btn.contains(e.target)) m.classList.remove('open');
+  }});
+</script>
+</head>
 <body>
   <div class="wrap">
-    <div class="topbar"><div class="tabs">__TABS__</div></div>
+    <div class="topnav">
+      <div class="brand"><div class="dot"></div><div>İçerik Yönetimi</div></div>
+      <div style="position:relative">
+        <button id="menu-btn" class="menu-btn" type="button" onclick="toggleMenu()">Menü</button>
+        <div id="menu" class="menu">{menu}</div>
+      </div>
+    </div>
     {body}
   </div>
 </body></html>"""
 
-def _tabs(active: str) -> str:
+def _menu(active: str) -> str:
     items = []
     for k, v in KIND_MAP.items():
-        cls = "tab active" if k == active else "tab"
+        cls = "active" if k == active else ""
         items.append(f'<a href="/admin/content/{k}" class="{cls}">{_e(v["label"])}</a>')
     return "".join(items)
 
@@ -116,7 +143,7 @@ def content_list(
     current: Annotated[AdminUser, Depends(require_role(AdminRole.super_admin))],
 ):
     if kind not in KIND_MAP:
-        return HTMLResponse(_layout("İçerik", "<p>Geçersiz tür.</p>").replace("__TABS__", _tabs("tournaments")), status_code=404)
+        return HTMLResponse(_layout("İçerik", "<p>Geçersiz tür.</p>", _menu("tournaments")), status_code=404)
 
     Model: Type = KIND_MAP[kind]["model"]
     rows = db.query(Model).order_by(
@@ -128,6 +155,7 @@ def content_list(
     edit_id = request.query_params.get("edit")
     editing = db.get(Model, int(edit_id)) if edit_id else None
 
+    # Liste
     t = [f'<div class="card"><h1>{_e(KIND_MAP[kind]["label"])}</h1>']
     t.append('<div class="card"><table><tr><th>ID</th><th>Başlık</th><th>Durum</th><th>Öncelik</th><th>Görsel</th><th>İşlem</th></tr>')
     for r in rows:
@@ -138,9 +166,9 @@ def content_list(
             f"<tr><td>{r.id}</td><td>{_e(r.title)}</td><td>{_e(r.status or '-')}</td>"
             f"<td>{r.priority or 0}</td><td>{img}</td>"
             f"<td class='actions'>"
-            f"<a class='btn' href='/admin/content/{kind}?edit={r.id}'>Düzenle</a> "
+            f"<a class='btn small' href='/admin/content/{kind}?edit={r.id}'>Düzenle</a> "
             f"<form method='post' action='/admin/content/{kind}/delete' onsubmit=\"return confirm('Silinsin mi?')\">"
-            f"<input type='hidden' name='id' value='{r.id}'/><button class='btn'>Sil</button></form></td></tr>"
+            f"<input type='hidden' name='id' value='{r.id}'/><button class='btn small'>Sil</button></form></td></tr>"
         )
     t.append("</table></div>")
 
@@ -158,6 +186,7 @@ def content_list(
     t.append(f"<div><div>Görsel URL</div><input name='image_url' value='{val('image_url')}' placeholder='https://... veya /static/...' required></div>")
     t.append(f"<div><div>Başlangıç</div><input type='datetime-local' name='start_at' value='{_dt_input(getattr(editing,'start_at',None))}'></div>")
     t.append(f"<div><div>Bitiş</div><input type='datetime-local' name='end_at' value='{_dt_input(getattr(editing,'end_at',None))}'></div>")
+    # Kategori (sabit seçenekler)
     t.append("<div><div>Kategori</div><select name='category'>")
     current_cat = getattr(editing, "category", "") if editing else ""
     t.append(f"<option value='' {'selected' if not current_cat else ''}>— Seçiniz —</option>")
@@ -165,16 +194,17 @@ def content_list(
         sel = "selected" if str(current_cat) == v else ""
         t.append(f"<option value='{_e(v)}' {sel}>{_e(txt)}</option>")
     t.append("</select></div>")
+    # Öne çıkar
     checked = "checked" if str(getattr(editing, "is_pinned", "")).lower() in ("1","true","on","yes") else ""
     t.append(f"<div><label class='cb'><input type='checkbox' name='is_pinned' {checked}> Öne çıkar</label></div>")
+    # Öncelik
     t.append(f"<div><div>Öncelik</div><input type='number' name='priority' value='{val('priority','0')}' step='1' min='0'></div>")
     t.append("</div>")  # .row
 
     t.append("<div style='height:10px'></div>")
     t.append("<button class='btn primary' type='submit'>Kaydet</button></form></div></div>")
 
-    html_body = "".join(t)
-    html = _layout("İçerik Yönetimi", html_body).replace("__TABS__", _tabs(kind))
+    html = _layout("İçerik Yönetimi", "".join(t), _menu(kind))
     return HTMLResponse(html)
 
 # ------------------ Upsert (ASYNC) ------------------
