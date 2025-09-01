@@ -8,14 +8,19 @@ type UITheme = { label: string; badgeColor: string; ribbonBg: string; ctaBg: str
 type Item = {
   id: number;
   title: string;
+  subtitle?: string | null;          // yeni
+  short_desc?: string | null;        // yeni
   status?: string | null;
   category?: string | null;
   image_url?: string | null;
+  banner_url?: string | null;
+  cta_url?: string | null;           // yeni
   start_at?: string | null;
   end_at?: string | null;
   ui?: UITheme;
-  prize_pool?: number | null;          // <-- ÖDÜL MİKTARI (₺)
+  prize_pool?: number | null;
   participant_count?: number | null;
+  rank_visible?: boolean | null;     // yeni
 };
 
 function Progress({ start, end }: { start?: string | null; end?: string | null }) {
@@ -41,6 +46,8 @@ export default function TournamentCard({ item }: { item: Item }) {
     ctaBg: '#F59E0B',
   };
 
+  const ctaHref = item.cta_url && item.cta_url.trim() ? item.cta_url : '/wheel';
+
   return (
     <article className="relative rounded-2xl border border-[#242633] bg-[#0f1117] overflow-hidden shadow-[0_10px_40px_rgba(0,0,0,.35)]">
       {/* Sol neon çizgi */}
@@ -49,8 +56,8 @@ export default function TournamentCard({ item }: { item: Item }) {
       {/* Üst kapak */}
       <div className="relative h-44 bg-[#151824]">
         {item.image_url && <img src={item.image_url} alt="" className="w-full h-full object-cover" />}
-        {/* Üst-sol: AKTİF/PASİF rozet */}
-        <div className="absolute left-3 top-3">
+        {/* Üst-sol: AKTİF/PASİF rozet + (opsiyonel) Liderlik */}
+        <div className="absolute left-3 top-3 flex items-center gap-2">
           <span
             className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold text-black shadow"
             style={{ background: active ? ui.badgeColor : '#6b7280' }}
@@ -58,6 +65,11 @@ export default function TournamentCard({ item }: { item: Item }) {
             <span className="inline-block w-2 h-2 rounded-full bg-black/40" />
             {active ? 'AKTİF' : 'PASİF'}
           </span>
+          {item.rank_visible ? (
+            <span className="inline-flex items-center rounded-full px-2 py-1 text-[10px] font-semibold text-white/90 border border-white/20 bg-black/30">
+              LİDERLİK AÇIK
+            </span>
+          ) : null}
         </div>
         {/* Üst-sağ: Köşe şerit (kategori) */}
         <div
@@ -70,11 +82,15 @@ export default function TournamentCard({ item }: { item: Item }) {
 
       {/* İçerik */}
       <div className="p-4">
-        <h3 className="text-[15px] font-semibold mb-1">{item.title}</h3>
+        {/* Başlık + Alt başlık */}
+        <h3 className="text-[15px] font-semibold mb-0 line-clamp-2">{item.title}</h3>
+        {item.subtitle ? (
+          <p className="text-xs text-white/60 mt-0.5 line-clamp-2">{item.subtitle}</p>
+        ) : null}
 
-        {/* ÖDÜL HİZASI */}
+        {/* Ödül */}
         {typeof item.prize_pool === 'number' && item.prize_pool >= 0 && (
-          <div className="mt-1">
+          <div className="mt-2">
             <div className="text-[11px] uppercase tracking-wide text-white/50">Ödül Havuzu</div>
             <div className="text-[28px] leading-7 font-extrabold text-[#FBBF24] drop-shadow-[0_0_12px_rgba(251,191,36,.35)]">
               {formatMoneyTRY(item.prize_pool)}
@@ -82,7 +98,7 @@ export default function TournamentCard({ item }: { item: Item }) {
           </div>
         )}
 
-        {/* Katılımcı (varsa) */}
+        {/* Katılımcı (opsiyonel) */}
         {typeof item.participant_count === 'number' && (
           <div className="mt-1 text-white/80 text-sm flex items-center gap-1.5">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.7 0 5-2.3 5-5s-2.3-5-5-5-5 2.3-5 5 2.3 5 5 5zm0 2c-3.3 0-10 1.7-10 5v3h20v-3c0-3.3-6.7-5-10-5z"/></svg>
@@ -90,7 +106,12 @@ export default function TournamentCard({ item }: { item: Item }) {
           </div>
         )}
 
-        {/* Geri sayım */}
+        {/* Kısa açıklama */}
+        {item.short_desc ? (
+          <p className="mt-2 text-[13px] text-white/70 line-clamp-3">{item.short_desc}</p>
+        ) : null}
+
+        {/* Geri sayım + progress */}
         {item.end_at && (
           <div className="mt-2 text-[15px] font-bold text-white/90">
             <Countdown endAt={item.end_at} />
@@ -100,18 +121,19 @@ export default function TournamentCard({ item }: { item: Item }) {
 
         {/* Tarih aralığı */}
         <div className="mt-3 text-xs text-white/70 flex items-center gap-2">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M7 2v2H5a2 2 0 0 0-2 2v2h18V6a2 2 0 0 0-2-2h-2V2h-2v2H9V2H7zm14 8H3v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V10z"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M7 2v2H5a2 2 0 0 0-2 2v2h18V6a2 2 0 0 0 2-2h-2V2h-2v2H9V2H7zm14 8H3v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V10z"/></svg>
           {formatDateRange(item.start_at, item.end_at)}
         </div>
 
         {/* CTA */}
         <div className="mt-4">
-          <button
-            className="w-full rounded-xl py-2.5 font-bold text-black shadow hover:opacity-95 transition"
+          <a
+            href={ctaHref}
+            className="block w-full text-center rounded-xl py-2.5 font-bold text-black shadow hover:opacity-95 transition"
             style={{ background: ui.ctaBg, boxShadow: '0 6px 24px rgba(245, 158, 11, .35)' }}
           >
             KATIL →
-          </button>
+          </a>
         </div>
       </div>
     </article>
