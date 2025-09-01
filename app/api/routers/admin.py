@@ -188,6 +188,8 @@ def _header_html(current: AdminUser | None, active: str = "") -> str:
         return ""
     links = [
         ("Kod Yönetimi", "/admin", active == "codes"),
+        # ▼ YENİ: İçerik linki (yalnız super admin görür)
+        ("İçerik", "/admin/content/tournaments", active == "content" if current.role == AdminRole.super_admin else False),
         ("Ödüller", "/admin/prizes", active == "prizes"),
         ("Adminler", "/admin/users", active == "users" if current.role == AdminRole.super_admin else False),
         ("Çıkış", "/admin/logout", False),
@@ -196,7 +198,8 @@ def _header_html(current: AdminUser | None, active: str = "") -> str:
     role_txt = "Süper" if current.role == AdminRole.super_admin else "Admin"
     items.append(f"<span class='nav-user'>Giriş: <b>{current.username}</b> ({role_txt})</span>")
     for title, href, is_active in links:
-        if title == "Adminler" and current.role != AdminRole.super_admin:
+        # 'İçerik' ve 'Adminler' sadece super admin'e gösterilecek
+        if title in ("İçerik", "Adminler") and current.role != AdminRole.super_admin:
             continue
         cls = "active" if is_active else ""
         items.append(f"<a class='{cls}' href='{href}'>{title}</a>")
@@ -209,7 +212,7 @@ def _normalize_image_url(raw: str | None) -> str | None:
     - '  https://...  ' -> https://...
     - '//cdn...'       -> https://cdn...
     - '/static/...'    -> /static/...
-    - 'cdn.com/a.png'  -> https://cdn.com/a.png  (protokolsüzse https varsay)
+    - 'cdn.com/a.png'  -> https://cdn.com/a.png
     - ''/None          -> None
     """
     if not raw:
@@ -226,7 +229,6 @@ def _normalize_image_url(raw: str | None) -> str | None:
         return "https:" + url
     if url.startswith("/"):
         return url
-    # çıplak domain/yol ise https varsay
     return "https://" + url
 
 # ================= Auth =================
@@ -539,7 +541,6 @@ def prizes_page(
     ewi = (editing.wheel_index if editing else "")
     eurl = _normalize_image_url(editing.image_url) if getattr(editing, "image_url", None) else ""
 
-    # SADECE LİNK – upload yok
     form = f"""
     <div class='card span-12'>
       <h3>{'Ödül Düzenle' if editing else 'Yeni Ödül Ekle'}</h3>
@@ -592,7 +593,7 @@ async def prizes_upsert(
             return RedirectResponse(url="/admin/prizes", status_code=303)
         prize.label = label
         prize.wheel_index = wheel_index
-        prize.image_url = image_url  # boşsa kaldırır, doluysa günceller
+        prize.image_url = image_url
         db.add(prize)
         msg = "Ödül güncellendi."
     else:
