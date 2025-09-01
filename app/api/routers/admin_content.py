@@ -15,7 +15,7 @@ router = APIRouter()
 
 # ------------------ Yardımcılar ------------------
 def _dt_parse(val: str | None):
-    """HTML datetime-local ('YYYY-MM-DDTHH:MM') -> datetime (naive destekler)."""
+    """HTML datetime-local ('YYYY-MM-DDTHH:MM') -> datetime."""
     if not val:
         return None
     try:
@@ -37,7 +37,7 @@ def _dt_input(v):
         return ""
     return ""
 
-# Bu listeyi ayrı bir ayarlar dosyasından da besleyebiliriz.
+# (İleride ayrı ayar ekranından yönetilebilir)
 CATEGORY_OPTIONS = [
     ("slots", "Slot"),
     ("poker", "Poker"),
@@ -52,7 +52,7 @@ KIND_MAP: Dict[str, Dict[str, Any]] = {
     "events":        {"label": "Etkinlikler",        "model": Event},
 }
 
-# ------------------ Basit Şablon ------------------
+# ------------------ Şablon ------------------
 def _layout(title: str, body: str) -> str:
     return f"""<!doctype html><html lang="tr"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -62,13 +62,13 @@ def _layout(title: str, body: str) -> str:
     --bg:#0a0b0f; --card:#0f1320; --muted:#aeb7d0; --text:#eef2ff;
     --line:#20283a; --accent:#60a5fa; --accent2:#0ea5e9;
   }}
-  *{{box-sizing:border-box}} body{{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,Segoe UI,Roboto}}
+  *{{box-sizing:border-box}}
+  body{{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,Segoe UI,Roboto}}
   .wrap{{max-width:1100px;margin:24px auto;padding:0 16px}}
-
-  /* Üst sekme menü (sticky + neon vurgu) */
+  /* Üst sekme menü (sticky + neon) */
   .topbar{{position:sticky;top:0;z-index:10;backdrop-filter:blur(6px);
-          background:linear-gradient(180deg,rgba(8,10,16,.85),rgba(8,10,16,.65)); border-bottom:1px solid var(--line);
-          margin:-8px -16px 16px; padding:10px 16px}}
+          background:linear-gradient(180deg,rgba(8,10,16,.85),rgba(8,10,16,.65));
+          border-bottom:1px solid var(--line);margin:-8px -16px 16px;padding:10px 16px}}
   .tabs{{display:flex;gap:8px;flex-wrap:wrap}}
   .tab{{appearance:none;border:1px solid var(--line);border-radius:10px;padding:8px 12px;
         color:var(--muted);text-decoration:none;transition:.18s all ease;position:relative}}
@@ -79,7 +79,6 @@ def _layout(title: str, body: str) -> str:
   .tab.active::after{{content:"";position:absolute;left:10px;right:10px;bottom:-6px;height:3px;
                       background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:6px;
                       box-shadow:0 0 18px rgba(96,165,250,.7)}}
-
   /* Kart & tablo */
   .card{{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:14px 0}}
   h1{{font-size:18px;margin:6px 0 12px}}
@@ -93,10 +92,6 @@ def _layout(title: str, body: str) -> str:
   .btn.primary{{background:linear-gradient(90deg,var(--accent2),var(--accent))}}
   .pill{{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}}
   label.cb{{display:flex;align-items:center;gap:8px;color:#c8d1e3}}
-
-  /* Başlık bölümü */
-  .page-head{{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 6px}}
-  .page-title{{font-size:18px}}
 </style></head>
 <body>
   <div class="wrap">
@@ -104,6 +99,7 @@ def _layout(title: str, body: str) -> str:
     {body}
   </div>
 </body></html>"""
+
 def _tabs(active: str) -> str:
     items = []
     for k, v in KIND_MAP.items():
@@ -120,7 +116,7 @@ def content_list(
     current: Annotated[AdminUser, Depends(require_role(AdminRole.super_admin))],
 ):
     if kind not in KIND_MAP:
-        return HTMLResponse(_layout("İçerik", "<p>Geçersiz tür.</p>"), status_code=404)
+        return HTMLResponse(_layout("İçerik", "<p>Geçersiz tür.</p>").replace("__TABS__", _tabs("tournaments")), status_code=404)
 
     Model: Type = KIND_MAP[kind]["model"]
     rows = db.query(Model).order_by(
@@ -132,8 +128,7 @@ def content_list(
     edit_id = request.query_params.get("edit")
     editing = db.get(Model, int(edit_id)) if edit_id else None
 
-    # Liste tablo
-    t = [f'<div class="card"><h1>{_e(KIND_MAP[kind]["label"])}</h1>{_tabs(kind)}<div style="height:8px"></div>']
+    t = [f'<div class="card"><h1>{_e(KIND_MAP[kind]["label"])}</h1>']
     t.append('<div class="card"><table><tr><th>ID</th><th>Başlık</th><th>Durum</th><th>Öncelik</th><th>Görsel</th><th>İşlem</th></tr>')
     for r in rows:
         img = "<span class='pill'>-</span>"
@@ -156,37 +151,31 @@ def content_list(
     if editing:
         t.append(f"<input type='hidden' name='id' value='{editing.id}'>")
 
-    # Alanlar
     val = lambda name, default="": _e(getattr(editing, name, "") or default)
 
     t.append('<div class="row">')
-    # Başlık
     t.append(f"<div><div>Başlık</div><input name='title' value='{val('title')}' required></div>")
-    # Görsel URL
     t.append(f"<div><div>Görsel URL</div><input name='image_url' value='{val('image_url')}' placeholder='https://... veya /static/...' required></div>")
-    # Başlangıç
     t.append(f"<div><div>Başlangıç</div><input type='datetime-local' name='start_at' value='{_dt_input(getattr(editing,'start_at',None))}'></div>")
-    # Bitiş
     t.append(f"<div><div>Bitiş</div><input type='datetime-local' name='end_at' value='{_dt_input(getattr(editing,'end_at',None))}'></div>")
-    # Kategori (select)
     t.append("<div><div>Kategori</div><select name='category'>")
     current_cat = getattr(editing, "category", "") if editing else ""
     t.append(f"<option value='' {'selected' if not current_cat else ''}>— Seçiniz —</option>")
     for v, txt in CATEGORY_OPTIONS:
         sel = "selected" if str(current_cat) == v else ""
         t.append(f"<option value='{_e(v)}' {sel}>{_e(txt)}</option>")
-    t.append("</select><div class='hint'>Kategori seçenekleri ayrı alandan yönetilecek.</div></div>")
-    # Öne çıkar (checkbox)
+    t.append("</select></div>")
     checked = "checked" if str(getattr(editing, "is_pinned", "")).lower() in ("1","true","on","yes") else ""
     t.append(f"<div><label class='cb'><input type='checkbox' name='is_pinned' {checked}> Öne çıkar</label></div>")
-    # Öncelik
     t.append(f"<div><div>Öncelik</div><input type='number' name='priority' value='{val('priority','0')}' step='1' min='0'></div>")
     t.append("</div>")  # .row
 
     t.append("<div style='height:10px'></div>")
     t.append("<button class='btn primary' type='submit'>Kaydet</button></form></div></div>")
 
-    return HTMLResponse(_layout("İçerik Yönetimi", "".join(t)))
+    html_body = "".join(t)
+    html = _layout("İçerik Yönetimi", html_body).replace("__TABS__", _tabs(kind))
+    return HTMLResponse(html)
 
 # ------------------ Upsert (ASYNC) ------------------
 @router.post("/admin/content/{kind}/upsert")
@@ -206,7 +195,7 @@ async def content_upsert(
     data = {
         "title":     (form.get("title") or "").strip(),
         "image_url": (form.get("image_url") or "").strip(),
-        "status":    (form.get("status") or "draft").strip() or "draft",  # formda status alanını kaldırdık; default 'draft'
+        "status":    (form.get("status") or "draft").strip() or "draft",
         "start_at":  _dt_parse(form.get("start_at")),
         "end_at":    _dt_parse(form.get("end_at")),
         "category":  (form.get("category") or "").strip() or None,
