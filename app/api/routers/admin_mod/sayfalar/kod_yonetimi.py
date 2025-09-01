@@ -3,11 +3,9 @@
 
 from typing import Annotated
 from html import escape as _e
-
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
-
 from app.db.session import get_db
 from app.db.models import Prize, Code, AdminUser, AdminRole
 from app.services.codes import gen_code
@@ -24,9 +22,9 @@ def _normalize(u: str | None) -> str | None:
     if x.startswith("//"): return "https:" + x
     return x
 
-# Eski adresten gelenleri yeni adrese yönlendir (opsiyonel güvenli)
+# Eski adresten otomatik yönlendirme (isteğe bağlı)
 @router.get("/admin/kod")
-def redirect_old():
+def _redir_old():
     return RedirectResponse(url="/admin/kod-yonetimi", status_code=307)
 
 @router.get("/admin/kod-yonetimi", response_class=HTMLResponse)
@@ -42,16 +40,14 @@ def kod_yonetimi(
         cls = "tab active" if tab == key else "tab"
         t_html.append(f"<a class='{cls}' href='/admin/kod-yonetimi?tab={key}'>{_e(label)}</a>")
     t_html.append("</div>")
-
     body_parts = ["".join(t_html)]
 
-    flash_blocks = _render_flash_blocks(request)
-    if flash_blocks:
-        body_parts.append(flash_blocks)
+    fb = _render_flash_blocks(request)
+    if fb: body_parts.append(fb)
 
     if tab == "kodlar":
         prizes = db.query(Prize).order_by(Prize.wheel_index).all()
-        last = db.query(Code).order_by(Code.created_at.desc()).limit(20).all()
+        last   = db.query(Code).order_by(Code.created_at.desc()).limit(20).all()
 
         form = [
             "<div class='card'><h1>Kod Oluştur</h1>",
@@ -59,32 +55,25 @@ def kod_yonetimi(
             "<div class='grid'>",
             "<div class='span-6'><div>Kullanıcı adı</div><input name='username' required></div>",
             "<div class='span-6'><div>Ödül</div><select name='prize_id'>",
-        ]
-        for p in prizes:
-            form.append(f"<option value='{p.id}'>[{p.wheel_index}] {_e(p.label)}</option>")
-        form += [
+            *[f"<option value='{p.id}'>[{p.wheel_index}] {_e(p.label)}</option>" for p in prizes],
             "</select></div></div>",
             "<div style='height:8px'></div>",
             "<button class='btn primary' type='submit'>Oluştur</button>",
             "</form></div>"
         ]
-
         table = [
             "<div class='card'><h1>Son 20 Kod</h1>",
             "<div class='table-wrap'><table>",
-            "<tr><th>Kod</th><th>Kullanıcı</th><th>Ödül</th><th>Durum</th></tr>"
-        ]
-        for c in last:
-            pr = db.get(Prize, c.prize_id)
-            status = "Kullanıldı" if c.status == "used" else "Verildi"
-            table.append(
+            "<tr><th>Kod</th><th>Kullanıcı</th><th>Ödül</th><th>Durum</th></tr>",
+            *[
                 f"<tr><td><code>{_e(c.code)}</code></td>"
                 f"<td>{_e(c.username or '-')}</td>"
-                f"<td>{_e(pr.label if pr else '-')}</td>"
-                f"<td>{_e(status)}</td></tr>"
-            )
-        table += ["</table></div></div>"]
-
+                f"<td>{_e((db.get(Prize, c.prize_id).label) if db.get(Prize, c.prize_id) else '-')}</td>"
+                f"<td>{'Kullanıldı' if c.status=='used' else 'Verildi'}</td></tr>"
+                for c in last
+            ],
+            "</table></div></div>"
+        ]
         body_parts += form + table
 
     else:
@@ -95,25 +84,24 @@ def kod_yonetimi(
         rows = [
             "<div class='card'><h1>Ödüller</h1>",
             "<div class='table-wrap'><table>",
-            "<tr><th>Ad</th><th>Sıralama</th><th>Görsel</th><th>İşlem</th></tr>"
+            "<tr><th>Ad</th><th>Sıra</th><th>Görsel</th><th>İşlem</th></tr>",
+            *[
+                (
+                  f"<tr><td>{_e(p.label)}</td><td>{p.wheel_index}</td>"
+                  f"<td>{f\"<img src='{_e(_normalize(p.image_url) or '')}' style='height:24px;border-radius:6px' loading='lazy' />\" if p.image_url else '-'}</td>"
+                  f"<td><a class='btn small' href='/admin/kod-yonetimi?tab=oduller&edit={p.id}'>Düzenle</a> "
+                  f"<form method='post' action='/admin/kod-yonetimi/prizes/delete' style='display:inline' onsubmit=\"return confirm('Silinsin mi?')\">"
+                  f"<input type='hidden' name='id' value='{p.id}' /><button class='btn small' type='submit'>Sil</button></form></td></tr>"
+                )
+                for p in prizes
+            ],
+            "</table></div></div>"
         ]
-        for p in prizes:
-            thumb = "-"
-            if getattr(p, "image_url", None):
-                safe = _normalize(p.image_url) or ""
-                thumb = f"<img src='{_e(safe)}' style='height:24px;border-radius:6px' loading='lazy' />"
-            rows.append(
-                f"<tr><td>{_e(p.label)}</td><td>{p.wheel_index}</td><td>{thumb}</td>"
-                f"<td><a class='btn small' href='/admin/kod-yonetimi?tab=oduller&edit={p.id}'>Düzenle</a> "
-                f"<form method='post' action='/admin/kod-yonetimi/prizes/delete' style='display:inline' onsubmit=\"return confirm('Silinsin mi?')\">"
-                f"<input type='hidden' name='id' value='{p.id}' /><button class='btn small' type='submit'>Sil</button></form></td></tr>"
-            )
-        rows += ["</table></div></div>"]
 
-        eid = editing.id if editing else ""
-        elabel = (editing.label if editing else "")
-        ewi = (editing.wheel_index if editing else "")
-        eurl = (editing.image_url if getattr(editing, "image_url", None) else "")
+        eid   = editing.id if editing else ""
+        elabel= (editing.label if editing else "")
+        ewi   = (editing.wheel_index if editing else "")
+        eurl  = (editing.image_url if getattr(editing, "image_url", None) else "")
 
         form = f"""
         <div class='card'>
@@ -137,7 +125,6 @@ def kod_yonetimi(
     html = _layout("Kod Yönetimi", "".join(body_parts), active="kod", is_super=(current.role == AdminRole.super_admin))
     return HTMLResponse(html)
 
-# --------- Kod oluştur (POST) ----------
 @router.post("/admin/kod-yonetimi/create-code", response_model=None)
 async def create_code(
     request: Request,
@@ -153,7 +140,6 @@ async def create_code(
     flash(request, "Kod oluşturuldu.", "success")
     return RedirectResponse(url="/admin/kod-yonetimi?tab=kodlar", status_code=303)
 
-# --------- Ödül upsert/sil (POST) ----------
 @router.post("/admin/kod-yonetimi/prizes/upsert", response_model=None)
 async def prizes_upsert(
     request: Request,
