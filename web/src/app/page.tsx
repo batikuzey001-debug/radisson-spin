@@ -1,4 +1,4 @@
-// web/src/app/page.tsx
+// web/src/app/page.tsx  (önizleme 6 adet için published filtresi)
 import Link from 'next/link'
 
 export const dynamic = 'force-dynamic'
@@ -8,24 +8,25 @@ type Tournament = {
   title: string
   image_url?: string | null
   category?: string | null
-  status?: 'published' | 'draft'
-  start_at?: string | null
-  end_at?: string | null
 }
 
-/* Neden burada?: Sadece bu sayfayı değiştirmek istedin; harici api.ts şartı olmadan çalışır. */
 async function fetchTournaments(limit = 6): Promise<Tournament[]> {
   const BASE = (process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/+$/, '')
   const CONTENT_PREFIX = (process.env.NEXT_PUBLIC_CONTENT_PREFIX || '').replace(/\/+$/, '')
-  const url = `${BASE}${CONTENT_PREFIX}/content/tournaments${limit ? `?limit=${limit}` : ''}`
-  if (!BASE) return [] // env yoksa sessizce boş liste
-  try {
-    const res = await fetch(url, { cache: 'no-store', headers: { 'Content-Type': 'application/json' } })
-    if (!res.ok) return []
-    return (await res.json()) as Tournament[]
-  } catch {
-    return []
+  if (!BASE) return []
+  const urls = [
+    `${BASE}${CONTENT_PREFIX}/content/tournaments?status=published&limit=${limit}`,
+    `${BASE}${CONTENT_PREFIX}/content/tournaments?limit=${limit}`,
+  ]
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, { cache: 'no-store', headers: { 'Content-Type': 'application/json' } })
+      if (!res.ok) continue
+      const data = (await res.json()) as Tournament[]
+      if (Array.isArray(data)) return data
+    } catch { /* geç */ }
   }
+  return []
 }
 
 export default async function HomePage() {
@@ -33,7 +34,7 @@ export default async function HomePage() {
 
   return (
     <>
-      {/* HERO */}
+      {/* HERO aynen */}
       <section className="relative">
         <div className="absolute inset-0 -z-10 bg-[radial-gradient(ellipse_at_top,_rgba(255,0,51,0.25),_transparent_50%)]" />
         <div className="mx-auto max-w-6xl px-4 py-16 md:py-24 text-center">
@@ -54,7 +55,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ÖNİZLEME (API bağlı) */}
+      {/* ÖNİZLEME */}
       <section className="mx-auto max-w-6xl px-4 pb-16">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">Öne Çıkan Turnuvalar</h2>
