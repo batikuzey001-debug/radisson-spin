@@ -1,3 +1,4 @@
+# app/api/routers/admin_mod/sayfalar/kodyonetimi.py
 # SAYFA: Kod Yönetimi (Kodlar + Ödüller tek sayfa / iki sekme)
 # URL: /admin/kod-yonetimi
 
@@ -6,6 +7,7 @@ from html import escape as _e
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
+
 from app.db.session import get_db
 from app.db.models import Prize, Code, AdminUser, AdminRole
 from app.services.codes import gen_code
@@ -14,18 +16,25 @@ from app.api.routers.admin_mod.yerlesim import _layout, _render_flash_blocks, fl
 
 router = APIRouter()
 
+
 def _normalize(u: str | None) -> str | None:
-    if not u: return None
+    if not u:
+        return None
     x = u.strip()
-    if not x: return None
-    if x.startswith(("http://","https://","data:")): return x
-    if x.startswith("//"): return "https:" + x
+    if not x:
+        return None
+    if x.startswith(("http://", "https://", "data:")):
+        return x
+    if x.startswith("//"):
+        return "https:" + x
     return x
+
 
 # Eski adresten otomatik yönlendirme (isteğe bağlı)
 @router.get("/admin/kod")
 def _redir_old():
     return RedirectResponse(url="/admin/kod-yonetimi", status_code=307)
+
 
 @router.get("/admin/kod-yonetimi", response_class=HTMLResponse)
 def kod_yonetimi(
@@ -43,11 +52,14 @@ def kod_yonetimi(
     body_parts = ["".join(t_html)]
 
     fb = _render_flash_blocks(request)
-    if fb: body_parts.append(fb)
+    if fb:
+        body_parts.append(fb)
 
     if tab == "kodlar":
         prizes = db.query(Prize).order_by(Prize.wheel_index).all()
-        last   = db.query(Code).order_by(Code.created_at.desc()).limit(20).all()
+        prize_label_by_id = {p.id: p.label for p in prizes}
+
+        last = db.query(Code).order_by(Code.created_at.desc()).limit(20).all()
 
         form = [
             "<div class='card'><h1>Kod Oluştur</h1>",
@@ -59,27 +71,32 @@ def kod_yonetimi(
             "</select></div></div>",
             "<div style='height:8px'></div>",
             "<button class='btn primary' type='submit'>Oluştur</button>",
-            "</form></div>"
+            "</form></div>",
         ]
         table = [
             "<div class='card'><h1>Son 20 Kod</h1>",
             "<div class='table-wrap'><table>",
             "<tr><th>Kod</th><th>Kullanıcı</th><th>Ödül</th><th>Durum</th></tr>",
             *[
-                f"<tr><td><code>{_e(c.code)}</code></td>"
-                f"<td>{_e(c.username or '-')}</td>"
-                f"<td>{_e((db.get(Prize, c.prize_id).label) if db.get(Prize, c.prize_id) else '-')}</td>"
-                f"<td>{'Kullanıldı' if c.status=='used' else 'Verildi'}</td></tr>"
+                (
+                    f"<tr><td><code>{_e(c.code)}</code></td>"
+                    f"<td>{_e(c.username or '-')}</td>"
+                    f"<td>{_e(prize_label_by_id.get(c.prize_id, '-'))}</td>"
+                    f"<td>{'Kullanıldı' if c.status == 'used' else 'Verildi'}</td></tr>"
+                )
                 for c in last
             ],
-            "</table></div></div>"
+            "</table></div></div>",
         ]
         body_parts += form + table
 
     else:
         prizes = db.query(Prize).order_by(Prize.wheel_index).all()
         edit_id = request.query_params.get("edit")
-        editing = db.get(Prize, int(edit_id)) if edit_id else None
+        try:
+            editing = db.get(Prize, int(edit_id)) if edit_id else None
+        except (TypeError, ValueError):
+            editing = None
 
         rows = [
             "<div class='card'><h1>Ödüller</h1>",
@@ -87,21 +104,25 @@ def kod_yonetimi(
             "<tr><th>Ad</th><th>Sıra</th><th>Görsel</th><th>İşlem</th></tr>",
             *[
                 (
-                  f"<tr><td>{_e(p.label)}</td><td>{p.wheel_index}</td>"
-                  f"<td>{f\"<img src='{_e(_normalize(p.image_url) or '')}' style='height:24px;border-radius:6px' loading='lazy' />\" if p.image_url else '-'}</td>"
-                  f"<td><a class='btn small' href='/admin/kod-yonetimi?tab=oduller&edit={p.id}'>Düzenle</a> "
-                  f"<form method='post' action='/admin/kod-yonetimi/prizes/delete' style='display:inline' onsubmit=\"return confirm('Silinsin mi?')\">"
-                  f"<input type='hidden' name='id' value='{p.id}' /><button class='btn small' type='submit'>Sil</button></form></td></tr>"
+                    f"<tr><td>{_e(p.label)}</td><td>{p.wheel_index}</td>"
+                    # ↓↓↓ DÜZELTİLEN KISIM: kaçış karakterleri sadeleştirildi, backslash hatası çözüldü
+                    f"<td>{(f'<img src=\"{_e(_normalize(p.image_url) or '')}\" "
+                    f"style=\"height:24px;border-radius:6px\" loading=\"lazy\" />') if p.image_url else '-'}</td>"
+                    f"<td><a class='btn small' href='/admin/kod-yonetimi?tab=oduller&edit={p.id}'>Düzenle</a> "
+                    f"<form method='post' action='/admin/kod-yonetimi/prizes/delete' style='display:inline' "
+                    f"onsubmit=\"return confirm('Silinsin mi?')\">"
+                    f"<input type='hidden' name='id' value='{p.id}' />"
+                    f"<button class='btn small' type='submit'>Sil</button></form></td></tr>"
                 )
                 for p in prizes
             ],
-            "</table></div></div>"
+            "</table></div></div>",
         ]
 
-        eid   = editing.id if editing else ""
-        elabel= (editing.label if editing else "")
-        ewi   = (editing.wheel_index if editing else "")
-        eurl  = (editing.image_url if getattr(editing, "image_url", None) else "")
+        eid = editing.id if editing else ""
+        elabel = editing.label if editing else ""
+        ewi = editing.wheel_index if editing else ""
+        eurl = getattr(editing, "image_url", "") or ""
 
         form = f"""
         <div class='card'>
@@ -122,8 +143,10 @@ def kod_yonetimi(
         """
         body_parts += rows + [form]
 
-    html = _layout("Kod Yönetimi", "".join(body_parts), active="kod", is_super=(current.role == AdminRole.super_admin))
+    # _layout parametre sırası: önce body, sonra title (diğer sayfayla aynı)
+    html = _layout("".join(body_parts), title="Kod Yönetimi", active="kod", is_super=(current.role == AdminRole.super_admin))
     return HTMLResponse(html)
+
 
 @router.post("/admin/kod-yonetimi/create-code", response_model=None)
 async def create_code(
@@ -139,6 +162,7 @@ async def create_code(
     db.commit()
     flash(request, "Kod oluşturuldu.", "success")
     return RedirectResponse(url="/admin/kod-yonetimi?tab=kodlar", status_code=303)
+
 
 @router.post("/admin/kod-yonetimi/prizes/upsert", response_model=None)
 async def prizes_upsert(
@@ -174,6 +198,7 @@ async def prizes_upsert(
     db.commit()
     flash(request, msg, "success")
     return RedirectResponse(url="/admin/kod-yonetimi?tab=oduller", status_code=303)
+
 
 @router.post("/admin/kod-yonetimi/prizes/delete", response_model=None)
 async def prizes_delete(
