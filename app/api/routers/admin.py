@@ -135,11 +135,6 @@ def _layout(body: str, title: str = "Radisson Spin – Admin", notice: str = "")
     .copy-btn {{ margin-left:8px; position:relative; }}
 
     .footer {{ margin-top:18px; color:var(--muted); font-size:12px; text-align:center; }}
-    .spacer {{ height:8px; }}
-
-    .status-icon {{ font-size:16px; line-height:1; display:inline-block; }}
-    .status-issued {{ color:#f59e0b; }}
-    .status-used   {{ color:#16a34a; }}
   </style>
   <script>
     function showToast(msg) {{
@@ -158,13 +153,8 @@ def _layout(body: str, title: str = "Radisson Spin – Admin", notice: str = "")
         const old = btn.textContent;
         btn.textContent = 'Kopyalandı ✓';
         btn.disabled = true;
-        btn.style.boxShadow = '0 0 12px rgba(22,163,74,.8), 0 0 24px rgba(22,163,74,.45)';
         showToast('Kod panoya kopyalandı');
-        setTimeout(() => {{
-          btn.textContent = old;
-          btn.disabled = false;
-          btn.style.boxShadow = '';
-        }}, 1600);
+        setTimeout(() => {{ btn.textContent = old; btn.disabled = false; }}, 1600);
       }});
     }}
   </script>
@@ -188,7 +178,6 @@ def _header_html(current: AdminUser | None, active: str = "") -> str:
         return ""
     links = [
         ("Kod Yönetimi", "/admin", active == "codes"),
-        # ▼ YENİ: İçerik linki (yalnız super admin görür)
         ("İçerik", "/admin/content/tournaments", active == "content" if current.role == AdminRole.super_admin else False),
         ("Ödüller", "/admin/prizes", active == "prizes"),
         ("Adminler", "/admin/users", active == "users" if current.role == AdminRole.super_admin else False),
@@ -198,7 +187,6 @@ def _header_html(current: AdminUser | None, active: str = "") -> str:
     role_txt = "Süper" if current.role == AdminRole.super_admin else "Admin"
     items.append(f"<span class='nav-user'>Giriş: <b>{current.username}</b> ({role_txt})</span>")
     for title, href, is_active in links:
-        # 'İçerik' ve 'Adminler' sadece super admin'e gösterilecek
         if title in ("İçerik", "Adminler") and current.role != AdminRole.super_admin:
             continue
         cls = "active" if is_active else ""
@@ -207,14 +195,6 @@ def _header_html(current: AdminUser | None, active: str = "") -> str:
 
 # ============== Helpers: URL normalize ==============
 def _normalize_image_url(raw: str | None) -> str | None:
-    """
-    Herhangi bir görsel linkini (http/https, //scheme-relative, /relative, data:) kabul eder.
-    - '  https://...  ' -> https://...
-    - '//cdn...'       -> https://cdn...
-    - '/static/...'    -> /static/...
-    - 'cdn.com/a.png'  -> https://cdn.com/a.png
-    - ''/None          -> None
-    """
     if not raw:
         return None
     url = raw.strip()
