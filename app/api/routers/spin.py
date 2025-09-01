@@ -1,5 +1,6 @@
+# app/api/routers/spin.py
 from datetime import datetime, timezone
-from typing import Annotated, List
+from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, HTTPException, Depends, Request
 from sqlalchemy.orm import Session
@@ -10,30 +11,26 @@ from app.schemas.spin import VerifyIn, VerifyOut, CommitIn
 from app.schemas.prize import PrizeOut
 from app.services.spin import RESERVED, new_token
 
+# Not: main.py içinde bu router zaten prefix="/api" ile include ediliyor.
 router = APIRouter()
 
 # ===================== HATA KODLARI =====================
 ERRORS = {
-    "E1001": "Geçersiz kod girdiniz.",                   # 400
-    "E1002": "Aynı kod ikinci kez kullanılamaz.",        # 409
-    "E1003": "Bu kodun süresi dolmuş.",                  # 410
-    "E1005": "Geçersiz veya süresi dolmuş doğrulama tokenı.",  # 400
-    "E1006": "Kullanıcı adı ve kodu tekrar kontrol edin.",     # 400 (genel uyarı)
+    "E1001": "Geçersiz kod girdiniz.",
+    "E1002": "Aynı kod ikinci kez kullanılamaz.",
+    "E1003": "Bu kodun süresi dolmuş.",
+    "E1005": "Geçersiz veya süresi dolmuş doğrulama tokenı.",
+    "E1006": "Kullanıcı adı ve kodu tekrar kontrol edin.",
 }
 
 def raise_err(code: str, http_status: int) -> None:
+    # Neden: Tutarlı hata sözlüğü tek noktadan
     msg = ERRORS.get(code, "Beklenmeyen hata.")
     raise HTTPException(status_code=http_status, detail=f"{code}: {msg}")
 
 # -------------------- helpers --------------------
-def _abs_url(request: Request, u: str | None) -> str | None:
-    """
-    imageUrl'ı mutlak hale getirir:
-    - data:, http:, https: -> olduğu gibi
-    - //cdn... -> https: + //
-    - /... -> base_url + yol
-    - çıplak değer -> https:// + değer
-    """
+def _abs_url(request: Request, u: Optional[str]) -> Optional[str]:
+    """imageUrl'ı mutlak hale getirir; front için rahat tüketim."""
     if not u:
         return None
     if u.startswith(("data:", "http://", "https://")):
@@ -44,8 +41,12 @@ def _abs_url(request: Request, u: str | None) -> str | None:
         return str(request.base_url).rstrip("/") + u
     return "https://" + u
 
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
-# ===================== Dinamik Ödül Listesi =====================
+# =========================================================
+# 1) VAR OLAN UÇLAR (DEĞİŞMEDİ)  -> /api/prizes, /api/verify-spin, /api/commit-spin
+# =========================================================
 @router.get("/prizes", response_model=List[PrizeOut])
 def list_prizes(
     request: Request,
@@ -63,7 +64,6 @@ def list_prizes(
     ]
 
 
-# ===================== Verify =====================
 @router.post("/verify-spin", response_model=VerifyOut)
 def verify_spin(
     payload: VerifyIn,
@@ -75,15 +75,14 @@ def verify_spin(
 
     row = db.get(Code, code)
     if not row:
-        raise_err("E1001", 400)  # Geçersiz kod
+        raise_err("E1001", 400)
 
     if row.status == "used":
-        raise_err("E1002", 409)  # Aynı kod ikinci kez kullanılamaz
+        raise_err("E1002", 409)
 
-    if row.expires_at and row.expires_at < datetime.now(timezone.utc):
-        raise_err("E1003", 410)  # Süresi dolmuş
+    if row.expires_at and row.expires_at < _utcnow():
+        raise_err("E1003", 410)
 
-    # Kullanıcı adı uyuşmazlığı -> genel uyarı (hangi alanın yanlış olduğunu açık etmez)
     if row.username and row.username.strip() and row.username != username:
         raise_err("E1006", 400)
 
@@ -99,7 +98,6 @@ def verify_spin(
     )
 
 
-# ===================== Commit =====================
 @router.post("/commit-spin", response_model=None)
 def commit_spin(
     payload: CommitIn,
@@ -111,15 +109,15 @@ def commit_spin(
 
     row = db.get(Code, code)
     if not row:
-        raise_err("E1001", 400)  # Geçersiz kod
+        raise_err("E1001", 400)
 
-    # İdempotent: zaten kullanıldıysa ok döndür.
+    # İdempotent
     if row.status == "used":
         return {"ok": True}
 
     saved = RESERVED.get(code)
     if not saved or saved != token:
-        raise_err("E1005", 400)  # Token problemi
+        raise_err("E1005", 400)
 
     row.status = "used"
     db.add(row)
@@ -137,3 +135,69 @@ def commit_spin(
 
     RESERVED.pop(code, None)
     return {"ok": True}
+
+# =========================================================
+# 2) UYUMLULUK KATMANI (FRONTEND İÇİN YENİ KISA YOLLAR)
+#    Bu sayede /api/spin/prizes ve /api/spin/redeem çalışır.
+#    Mevcut akışı bozmaz; sadece alias sağlar.
+# =========================================================
+
+# GET /api/spin/prizes  -> list_prizes ile aynı veriyi döndürür
+@router.get("/spin/prizes", response_model=List[PrizeOut])
+def list_prizes_alias(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+):
+    return list_prizes(request, db)
+
+# POST /api/spin/redeem  -> verify + commit tek adım (frontend'in basit akışı için)
+class RedeemIn(VerifyIn):
+    pass
+
+@router.post("/spin/redeem")
+def redeem_one_step(
+    payload: RedeemIn,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    Frontend basit kullanım için: code(+username) alır, doğrular ve tek adımda kullanır.
+    Yanıt: {"status": "...", "prize": "<etiket>"}  (UI happy-path ile uyumlu)
+    """
+    # --- verify-like kontroller ---
+    code = payload.code.strip()
+    username = payload.username.strip()
+
+    row = db.get(Code, code)
+    if not row:
+        return {"status": ERRORS["E1001"]}
+
+    if row.status == "used":
+        return {"status": ERRORS["E1002"]}
+
+    if row.expires_at and row.expires_at < _utcnow():
+        return {"status": ERRORS["E1003"]}
+
+    if row.username and row.username.strip() and row.username != username:
+        return {"status": ERRORS["E1006"]}
+
+    prize = db.get(Prize, row.prize_id)
+    prize_label = prize.label if prize else ""
+
+    # --- commit-like kayıt ---
+    if row.status != "used":
+        row.status = "used"
+        db.add(row)
+
+        spin = Spin(
+            id=new_token(),  # tek adım kullanımlarda da benzersiz id
+            code=code,
+            username=row.username or username or "",
+            prize_id=row.prize_id,
+            client_ip=request.headers.get("x-forwarded-for") or request.client.host,
+            user_agent=request.headers.get("user-agent"),
+        )
+        db.add(spin)
+        db.commit()
+
+    return {"status": "Tebrikler!", "prize": prize_label}
