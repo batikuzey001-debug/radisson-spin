@@ -26,7 +26,6 @@ def _abs_url(request: Request, u: Optional[str]) -> Optional[str]:
         return str(request.base_url).rstrip("/") + u
     return "https://" + u
 
-# Kategoriye göre UI teması (rozet/ribbon/CTA renkleri)
 CATEGORY_THEME: Dict[str, Dict[str, str]] = {
     "slots":       {"label": "SLOT",         "badgeColor": "#22c55e", "ribbonBg": "#F59E0B", "ctaBg": "#F59E0B"},
     "live-casino": {"label": "CANLI CASİNO", "badgeColor": "#22c55e", "ribbonBg": "#8B5CF6", "ctaBg": "#8B5CF6"},
@@ -42,16 +41,23 @@ def _serialize_row(request: Request, r) -> dict:
     cat = getattr(r, "category", None)
     return {
         "id": r.id,
+        "slug": getattr(r, "slug", None),
         "title": r.title,
+        "subtitle": getattr(r, "subtitle", None),
+        "short_desc": getattr(r, "short_desc", None),
+        "long_desc": getattr(r, "long_desc", None),  # modal için
         "status": r.status,
         "category": cat,
         "image_url": _abs_url(request, getattr(r, "image_url", None)),
+        "banner_url": _abs_url(request, getattr(r, "banner_url", None)),
+        "cta_url": getattr(r, "cta_url", None),
         "start_at": getattr(r, "start_at", None),
         "end_at": getattr(r, "end_at", None),
-        "ui": _theme(cat),  # <-- Frontend için tema bilgisi
-        # Opsiyonel alanlar (modelde varsa)
+        "ui": _theme(cat),
         "prize_pool": getattr(r, "prize_pool", None),
         "participant_count": getattr(r, "participant_count", None),
+        "rank_visible": getattr(r, "rank_visible", None),
+        "i18n": getattr(r, "i18n", None),
     }
 
 def _list_generic(
@@ -69,7 +75,6 @@ def _list_generic(
             q = q.filter((Model.start_at == None) | (Model.start_at <= now))
         if hasattr(Model, "end_at"):
             q = q.filter((Model.end_at == None) | (Model.end_at >= now))
-    # Sıralama: en güncel üstte
     if hasattr(Model, "start_at"):
         q = q.order_by(getattr(Model, "start_at").desc().nullslast(), Model.id.desc())
     else:
