@@ -1,11 +1,9 @@
 # app/api/routers/content.py
-from typing import Annotated, Literal, Optional, Type
+from typing import Annotated, Literal, Optional, Type, Dict
 from datetime import datetime, timezone
-from html import escape as _e
 
 from fastapi import APIRouter, Depends, Request, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 
 from app.db.session import get_db
 from app.db.models import Tournament, DailyBonus, PromoCode, Event
@@ -28,15 +26,32 @@ def _abs_url(request: Request, u: Optional[str]) -> Optional[str]:
         return str(request.base_url).rstrip("/") + u
     return "https://" + u
 
+# Kategoriye göre UI teması (rozet/ribbon/CTA renkleri)
+CATEGORY_THEME: Dict[str, Dict[str, str]] = {
+    "slots":       {"label": "SLOT",         "badgeColor": "#22c55e", "ribbonBg": "#F59E0B", "ctaBg": "#F59E0B"},
+    "live-casino": {"label": "CANLI CASİNO", "badgeColor": "#22c55e", "ribbonBg": "#8B5CF6", "ctaBg": "#8B5CF6"},
+    "sports":      {"label": "SPOR",         "badgeColor": "#22c55e", "ribbonBg": "#3B82F6", "ctaBg": "#3B82F6"},
+    "all":         {"label": "HEPSİ",        "badgeColor": "#22c55e", "ribbonBg": "#EC4899", "ctaBg": "#EC4899"},
+    "other":       {"label": "DİĞER",        "badgeColor": "#22c55e", "ribbonBg": "#9CA3AF", "ctaBg": "#9CA3AF"},
+}
+def _theme(cat: Optional[str]) -> Dict[str, str]:
+    key = (cat or "other").strip().lower()
+    return CATEGORY_THEME.get(key, CATEGORY_THEME["other"])
+
 def _serialize_row(request: Request, r) -> dict:
+    cat = getattr(r, "category", None)
     return {
         "id": r.id,
         "title": r.title,
         "status": r.status,
-        "category": getattr(r, "category", None),
+        "category": cat,
         "image_url": _abs_url(request, getattr(r, "image_url", None)),
         "start_at": getattr(r, "start_at", None),
         "end_at": getattr(r, "end_at", None),
+        "ui": _theme(cat),  # <-- Frontend için tema bilgisi
+        # Opsiyonel alanlar (modelde varsa)
+        "prize_pool": getattr(r, "prize_pool", None),
+        "participant_count": getattr(r, "participant_count", None),
     }
 
 def _list_generic(
