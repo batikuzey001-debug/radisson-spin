@@ -2,7 +2,7 @@
 from typing import Annotated
 from html import escape as _e
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -13,6 +13,13 @@ from app.services.auth import require_role
 from app.api.routers.admin_mod.yerlesim import _layout, _render_flash_blocks, flash
 
 router = APIRouter()
+
+# ——— Admin veya Süper Admin erişimi (tek dependency) ———
+def admin_or_super(request: Request) -> AdminUser:
+    try:
+        return require_role(AdminRole.admin)(request)          # admin
+    except HTTPException:
+        return require_role(AdminRole.super_admin)(request)    # süper admin
 
 def _normalize(u: str | None) -> str | None:
     if not u: return None
@@ -26,21 +33,18 @@ def _normalize(u: str | None) -> str | None:
 def kod_yonetimi(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
-    current: Annotated[AdminUser, Depends(require_role(AdminRole.admin))],
+    current: Annotated[AdminUser, Depends(admin_or_super)],
     tab: str = "kodlar",
 ):
     # Sekmeler
-    tabs = [
-        ("kodlar", "Kodlar"),
-        ("oduller", "Ödüller"),
-    ]
+    tabs = [("kodlar", "Kodlar"), ("oduller", "Ödüller")]
     t_html = ["<div class='tabs'>"]
     for key, label in tabs:
         cls = "tab active" if tab == key else "tab"
         t_html.append(f"<a class='{cls}' href='/admin/kod?tab={key}'>{_e(label)}</a>")
     t_html.append("</div>")
 
-    body_parts = [ "".join(t_html) ]
+    body_parts = ["".join(t_html)]
 
     flash_blocks = _render_flash_blocks(request)
     if flash_blocks:
@@ -142,7 +146,7 @@ def kod_yonetimi(
 async def create_code(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
-    current: Annotated[AdminUser, Depends(require_role(AdminRole.admin))],
+    current: Annotated[AdminUser, Depends(admin_or_super)],
 ):
     form = await request.form()
     username = (form.get("username") or "").strip() or None
@@ -158,7 +162,7 @@ async def create_code(
 async def prizes_upsert(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
-    current: Annotated[AdminUser, Depends(require_role(AdminRole.admin))],
+    current: Annotated[AdminUser, Depends(admin_or_super)],
 ):
     form = await request.form()
     _id = (form.get("id") or "").strip()
@@ -183,7 +187,7 @@ async def prizes_upsert(
         msg = "Ödül güncellendi."
     else:
         db.add(Prize(label=label, wheel_index=wheel_index, image_url=image_url))
-        msg = "Yeni ödül eklendi."
+        msg = "Yeni Ödül eklendi."
 
     db.commit()
     flash(request, msg, "success")
@@ -193,7 +197,7 @@ async def prizes_upsert(
 async def prizes_delete(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
-    current: Annotated[AdminUser, Depends(require_role(AdminRole.admin))],
+    current: Annotated[AdminUser, Depends(admin_or_super)],
 ):
     form = await request.form()
     pid = int(form.get("id"))
@@ -202,9 +206,8 @@ async def prizes_delete(
         flash(request, "Ödül bulunamadı.", "error")
         return RedirectResponse(url="/admin/kod?tab=oduller", status_code=303)
 
-    deleted_count = db.query(Code).filter(Code.prize_id == pid).delete(synchronize_session=False)
+    db.query(Code).filter(Code.prize_id == pid).delete(synchronize_session=False)
     db.delete(prize)
     db.commit()
-    msg = f"Ödül silindi. Bağlı {deleted_count} kod temizlendi." if deleted_count else "Ödül silindi."
-    flash(request, msg, "success")
+    flash(request, "Ödül silindi.", "success")
     return RedirectResponse(url="/admin/kod?tab=oduller", status_code=303)
