@@ -19,7 +19,9 @@ from app.db.models import Base, Prize, Code
 
 app = FastAPI()
 
+# -----------------------------
 # CORS
+# -----------------------------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ALLOW_ORIGINS,
@@ -27,55 +29,76 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Session
+# -----------------------------
+# Session (admin login için)
+# -----------------------------
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.SECRET_KEY,
     same_site="lax",
-    https_only=False,
+    https_only=False,  # prod'da True önerilir (HTTPS üzerinde)
 )
 
-# Static
+# -----------------------------
+# Static Files: /static -> <kök>/static
+# -----------------------------
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 STATIC_DIR = PROJECT_ROOT / "static"
 (STATIC_DIR / "uploads").mkdir(parents=True, exist_ok=True)
+
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+# -----------------------------
 # Routers
+# -----------------------------
 app.include_router(health_router)
 app.include_router(spin_router, prefix="/api")
 
+# Public content feed
 from app.api.routers.content import router as content_router
 app.include_router(content_router)
 
+# Yeni modüler admin (login, dashboard, kod yönetimi, turnuva/bonus, admin yönetim)
 from app.api.routers.admin_mod import admin_router as admin_mod_router
 app.include_router(admin_mod_router)
 
-# Admin auth redirect
+# -----------------------------
+# Admin auth yönlendirmeleri
+# -----------------------------
 @app.exception_handler(StarletteHTTPException)
 async def _admin_auth_redirect(request: Request, exc: StarletteHTTPException):
+    """Neden: /admin altında yetkisiz HTML isteklerini login'e yönlendirmek."""
     path = request.url.path or ""
     is_html = "text/html" in (request.headers.get("accept") or "")
     is_admin_area = path.startswith("/admin")
     is_login_page = path.startswith("/admin/login")
+
     if exc.status_code in (401, 403) and is_html and is_admin_area and not is_login_page:
         qs = ("?" + request.url.query) if request.url.query else ""
-        next_param = quote(path + qs, safe="/:=&?")
+        next_param = quote(path + qs, safe="/:=&?")  # geri dönüş için orijinal URL'yi taşı
         return RedirectResponse(url=f"/admin/login?next={next_param}", status_code=303)
+
     return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+
 
 @app.get("/admin", response_class=HTMLResponse)
 def admin_root():
+    """Neden: /admin kökünü oturum durumuna göre akıcı akışa almak."""
     return RedirectResponse(url="/admin/panel", status_code=303)
 
-# Startup
+# -----------------------------
+# Startup: tablo oluştur + mini migration + seed
+# -----------------------------
 @app.on_event("startup")
 def on_startup() -> None:
+    # ORM tabloları oluştur
     Base.metadata.create_all(engine)
 
+    # --- Mini migration'lar (idempotent) ---
+    # Postgres'e özel blokları sadece postgres'te çalıştır.
     if engine.dialect.name.lower() in ("postgresql", "postgres"):
         with engine.begin() as conn:
-            # admin_users token rename
+            # 1) admin_users.token_hash -> password_hash (varsa)
             conn.execute(text("""
             DO $$
             BEGIN
@@ -87,29 +110,65 @@ def on_startup() -> None:
                 END IF;
             END $$;
             """))
-            # admin_users.password_hash
+
+            # 2) admin_users.password_hash kolonu yoksa ekle
             conn.execute(text("""
                 ALTER TABLE IF EXISTS admin_users
                 ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)
             """))
-            # prizes.image_url
+
+            # 3) prizes.image_url kolonu yoksa ekle
             conn.execute(text("""
                 ALTER TABLE IF EXISTS prizes
                 ADD COLUMN IF NOT EXISTS image_url VARCHAR(512)
             """))
-            # tournaments.* (idempotent kolon eklemeleri)
-            conn.execute(text("""ALTER TABLE IF EXISTS tournaments ADD COLUMN IF NOT EXISTS prize_pool INTEGER"""))
-            conn.execute(text("""ALTER TABLE IF NOT EXISTS tournaments ADD COLUMN IF NOT EXISTS subtitle VARCHAR(200)"""))
-            conn.execute(text("""ALTER TABLE IF NOT EXISTS tournaments ADD COLUMN IF NOT EXISTS short_desc TEXT"""))
-            conn.execute(text("""ALTER TABLE IF NOT EXISTS tournaments ADD COLUMN IF NOT EXISTS long_desc TEXT"""))
-            conn.execute(text("""ALTER TABLE IF NOT EXISTS tournaments ADD COLUMN IF NOT EXISTS banner_url VARCHAR(512)"""))
-            conn.execute(text("""ALTER TABLE IF NOT EXISTS tournaments ADD COLUMN IF NOT EXISTS participant_count INTEGER"""))
-            conn.execute(text("""ALTER TABLE IF NOT EXISTS tournaments ADD COLUMN IF NOT EXISTS cta_url VARCHAR(512)"""))
-            conn.execute(text("""ALTER TABLE IF NOT EXISTS tournaments ADD COLUMN IF NOT EXISTS rank_visible BOOLEAN"""))
-            conn.execute(text("""ALTER TABLE IF NOT EXISTS tournaments ADD COLUMN IF NOT EXISTS slug VARCHAR(200)"""))
-            conn.execute(text("""CREATE UNIQUE INDEX IF NOT EXISTS ix_tournaments_slug ON tournaments (slug)"""))
-            conn.execute(text("""ALTER TABLE IF NOT EXISTS tournaments ADD COLUMN IF NOT EXISTS i18n JSONB"""))
 
+            # 4) tournaments.* kolonları yoksa ekle (DOĞRU SÖZDİZİMİ)
+            conn.execute(text("""
+                ALTER TABLE IF EXISTS tournaments
+                ADD COLUMN IF NOT EXISTS prize_pool INTEGER
+            """))
+            conn.execute(text("""
+                ALTER TABLE IF EXISTS tournaments
+                ADD COLUMN IF NOT EXISTS subtitle VARCHAR(200)
+            """))
+            conn.execute(text("""
+                ALTER TABLE IF EXISTS tournaments
+                ADD COLUMN IF NOT EXISTS short_desc TEXT
+            """))
+            conn.execute(text("""
+                ALTER TABLE IF EXISTS tournaments
+                ADD COLUMN IF NOT EXISTS long_desc TEXT
+            """))
+            conn.execute(text("""
+                ALTER TABLE IF EXISTS tournaments
+                ADD COLUMN IF NOT EXISTS banner_url VARCHAR(512)
+            """))
+            conn.execute(text("""
+                ALTER TABLE IF EXISTS tournaments
+                ADD COLUMN IF NOT EXISTS participant_count INTEGER
+            """))
+            conn.execute(text("""
+                ALTER TABLE IF EXISTS tournaments
+                ADD COLUMN IF NOT EXISTS cta_url VARCHAR(512)
+            """))
+            conn.execute(text("""
+                ALTER TABLE IF EXISTS tournaments
+                ADD COLUMN IF NOT EXISTS rank_visible BOOLEAN
+            """))
+            conn.execute(text("""
+                ALTER TABLE IF EXISTS tournaments
+                ADD COLUMN IF NOT EXISTS slug VARCHAR(200)
+            """))
+            conn.execute(text("""
+                CREATE UNIQUE INDEX IF NOT EXISTS ix_tournaments_slug ON tournaments (slug)
+            """))
+            conn.execute(text("""
+                ALTER TABLE IF EXISTS tournaments
+                ADD COLUMN IF NOT EXISTS i18n JSONB
+            """))
+
+    # --- Seed verileri (varsa ekleme) ---
     with SessionLocal() as db:
         if db.query(Prize).count() == 0:
             db.add_all([
@@ -130,6 +189,9 @@ def on_startup() -> None:
                 ])
                 db.commit()
 
+# -----------------------------
+# Lokal çalıştırma kolaylığı
+# -----------------------------
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
