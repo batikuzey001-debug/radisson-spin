@@ -9,3 +9,6 @@ admin_router = APIRouter()
 admin_router.include_router(login_router)
 admin_router.include_router(kod_router)
 admin_router.include_router(tb_router)
+
+from .sayfalar.admin_yonetim import router as admin_yonetim_router
+admin_router.include_router(admin_yonetim_router)
