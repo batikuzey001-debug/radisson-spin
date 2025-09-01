@@ -52,7 +52,7 @@ KIND_MAP: Dict[str, Dict[str, Any]] = {
     "events":        {"label": "Etkinlikler",        "model": Event},
 }
 
-# ------- Sayfa (minimal tasarım + mobil açılır menü) -------
+# ------- Sayfa (Neon Kırmızı-Siyah tema + mobil menü + üstte form) -------
 @router.get("/admin/turnuvabonus", response_class=HTMLResponse)
 def page_turnuvabonus(
     request: Request,
@@ -67,7 +67,7 @@ def page_turnuvabonus(
     rows = (
         db.query(Model)
         .order_by(
-            Model.start_at.desc().nullslast(),   # Neden: Sadelik; öncelik/pin olmadan tarihçe
+            Model.start_at.desc().nullslast(),
             Model.id.desc(),
         )
         .all()
@@ -79,29 +79,43 @@ def page_turnuvabonus(
     except Exception:
         editing = None
 
-    # Sekmeler (mobil açılır menü)
+    # Sekmeler (mobil açılır/kapanır)
     tabs = [
         ("tournaments",   "Turnuvalar"),
         ("daily-bonuses", "Güne Özel Bonuslar"),
         ("promo-codes",   "Promosyon Kodları"),
         ("events",        "Etkinlikler"),
     ]
-    tabs_html = ["<div class='menu-wrap'>",
-                 "<button class='menu-toggle' type='button' onclick='tbMenu()'>Menü</button>",
-                 "<div id='tb-menu' class='tabs'>"]
+    tabs_html = [
+        "<div class='menu-wrap'>",
+        "<button class='menu-toggle' type='button' onclick='tbMenu()'>Menü</button>",
+        "<div id='tb-menu' class='tabs'>",
+    ]
     for key, label in tabs:
         cls = "tab active" if tab == key else "tab"
         tabs_html.append(f"<a class='{cls}' href='/admin/turnuvabonus?tab={key}'>{_e(label)}</a>")
     tabs_html.append("</div></div>")
 
-    # Üstte: Yeni / Düzenle formu (minimal)
-    title = "Yeni Kayıt" if not editing else f"Kayıt Düzenle (#{editing.id})"
+    # Üstte: Yeni / Düzenle formu (takvimli datetime-local, minimal)
+    title_text = "Yeni Kayıt"
+    sub_text = f"{_e(KIND_MAP[tab]['label'])}"
+    if editing:
+        title_text = f"Kayıt Düzenle (#{editing.id})"
+        sub_text = f"{_e(KIND_MAP[tab]['label'])} · mevcut kaydı güncelliyorsunuz"
+
     val = (lambda name, default="": _e(getattr(editing, name, "") or default))
     current_cat = getattr(editing, "category", "") if editing else ""
     status_now = getattr(editing, "status", "draft") if editing else "draft"
 
+    cancel_edit_btn = (
+        f"<a class='btn ghost small' href='/admin/turnuvabonus?tab={tab}' title='Düzenlemeyi iptal et'>İptal</a>"
+        if editing else ""
+    )
+
     form = [
-        f"<div class='card form-card'><h1>{_e(title)}</h1>",
+        "<div class='card form-card'>",
+        f"<div class='form-head'><div><h1>{_e(title_text)}</h1><div class='sub'>{sub_text}</div></div>"
+        f"<div class='head-actions'>{cancel_edit_btn}</div></div>",
         f"<form method='post' action='/admin/turnuvabonus/{tab}/upsert' autocomplete='on'>",
         f"{f'<input type=\"hidden\" name=\"id\" value=\"{editing.id}\">' if editing else ''}",
         "<div class='grid'>",
@@ -117,24 +131,29 @@ def page_turnuvabonus(
         form.append(f"<option value='{_e(v)}' {sel}>{_e(txt)}</option>")
     form.append("</select></label>")
 
-    # Basit durum seçimi (draft/published)
+    # Durum seçimi (taslak / yayında)
     form.append("<label class='field'><span>Durum</span><select name='status'>")
     for s in ("draft", "published"):
         sel = "selected" if status_now == s else ""
         form.append(f"<option value='{s}' {sel}>{'Yayında' if s=='published' else 'Taslak'}</option>")
     form.append("</select></label>")
 
-    form.extend([
-        "</div>",  # grid
-        "<div class='form-actions'><button class='btn primary' type='submit'>Kaydet</button></div>",
-        "</form></div>",
-    ])
+    form.extend(
+        [
+            "</div>",  # grid
+            "<div class='form-actions'>"
+            "<button class='btn primary' type='submit'>Kaydet</button>"
+            f"{cancel_edit_btn}"
+            "</div>",
+            "</form></div>",
+        ]
+    )
 
-    # Altta: Liste (minimal)
+    # Altta: Liste + her satırda belirgin DÜZENLE butonu
     t = [f"<div class='card'><h1>{_e(KIND_MAP[tab]['label'])}</h1>"]
     t.append(
         "<div class='table-wrap'><table>"
-        "<tr><th>ID</th><th>Başlık</th><th>Durum</th><th>Başlangıç</th><th>Bitiş</th><th>Görsel</th><th>İşlem</th></tr>"
+        "<tr><th>ID</th><th>Başlık</th><th>Durum</th><th>Başlangıç</th><th>Bitiş</th><th>Görsel</th><th style='width:160px'>İşlem</th></tr>"
     )
     for r in rows:
         img = "<span class='pill'>-</span>"
@@ -150,51 +169,65 @@ def page_turnuvabonus(
             f"<td>{start_txt}</td>"
             f"<td>{end_txt}</td>"
             f"<td class='img'>{img}</td>"
-            f"<td>"
-            f"<a class='btn small' href='/admin/turnuvabonus?tab={tab}&edit={r.id}'>Düzenle</a> "
-            f"<form method='post' action='/admin/turnuvabonus/{tab}/delete' style='display:inline' "
-            f"onsubmit=\"return confirm('Silinsin mi?')\">"
+            f"<td class='actions'>"
+            f"<a class='btn neon small' href='/admin/turnuvabonus?tab={tab}&edit={r.id}' title='Düzenle'>Düzenle</a>"
+            f"<form method='post' action='/admin/turnuvabonus/{tab}/delete' onsubmit=\"return confirm('Silinsin mi?')\">"
             f"<input type='hidden' name='id' value='{r.id}'/>"
-            f"<button class='btn small danger' type='submit'>Sil</button></form>"
+            f"<button class='btn danger small' type='submit' title='Sil'>Sil</button>"
+            f"</form>"
             f"</td>"
             f"</tr>"
         )
     t.append("</table></div></div>")
 
-    # Flash + Sayfa gövdesi
     fb = _render_flash_blocks(request) or ""
     body = "".join(tabs_html) + fb + "".join(form) + "".join(t)
 
-    # Minimal, göz yormayan, mobil uyumlu stiller
+    # Neon kırmızı & siyah tema (göz yormayan ama canlı)
     style = """
     <style>
       :root{
-        --bg:#0b0c10; --card:#111217; --line:#1e212a; --text:#e9edf1; --muted:#a7b0bd;
-        --btn:#1c7ed6; --btnh:#1b6fd6; --danger:#d6336c;
+        --bg:#090a0f;
+        --card:#0f1016;
+        --line:#1b1d26;
+        --text:#f2f3f7;
+        --muted:#a9afbd;
+        --red:#ff0033;          /* neon kırmızı */
+        --red2:#ff4d6d;         /* neon geçiş */
+        --redh:#ff1a4b;         /* hover */
+        --black:#0a0b0f;        /* siyah taban */
       }
       .menu-wrap{display:flex;align-items:center;gap:8px;margin-bottom:10px}
-      .menu-toggle{display:none;padding:8px 10px;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:10px;cursor:pointer}
+      .menu-toggle{display:none;padding:8px 10px;border:1px solid var(--line);background:var(--black);color:var(--text);border-radius:10px;cursor:pointer}
       .tabs{display:flex;flex-wrap:wrap;gap:8px}
-      .tab{padding:8px 10px;border:1px solid var(--line);border-radius:10px;text-decoration:none;color:var(--muted)}
-      .tab.active{color:#fff;border-color:var(--btn)}
+      .tab{padding:8px 10px;border:1px solid var(--line);border-radius:10px;text-decoration:none;color:var(--muted);background:var(--card)}
+      .tab.active{color:#fff;border-color:var(--red); box-shadow:0 0 8px rgba(255,0,51,.35)}
       .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
       h1{font-size:16px;margin:0 0 10px}
+      .sub{font-size:12px;color:var(--muted)}
+      .form-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
       .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
       .field{display:flex;flex-direction:column;gap:6px}
       .field > span{font-size:12px;color:var(--muted)}
-      input,select{width:100%;background:#0c0f14;border:1px solid var(--line);border-radius:10px;color:#fff;padding:10px}
-      input:focus,select:focus{outline:none;border-color:var(--btn)}
+      input,select{width:100%;background:#0b0d13;border:1px solid var(--line);border-radius:10px;color:#fff;padding:10px}
+      input:focus,select:focus{outline:none;border-color:var(--red); box-shadow:0 0 0 2px rgba(255,0,51,.20)}
       .form-card{position:sticky;top:8px;z-index:1}
-      .form-actions{display:flex;justify-content:flex-end;margin-top:6px}
-      .btn{display:inline-block;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:#151824;color:#fff;text-decoration:none}
-      .btn.primary{background:var(--btn)}
-      .btn.primary:hover{background:var(--btnh)}
+      .form-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}
+      .btn{display:inline-block;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:#151824;color:#fff;text-decoration:none;cursor:pointer}
       .btn.small{font-size:12px;padding:6px 8px}
-      .btn.danger{background:#3a0a18;border-color:#551024}
+      .btn.primary{background:linear-gradient(90deg,var(--red),var(--red2));border-color:#2a0e15; box-shadow:0 0 16px rgba(255,0,51,.25)}
+      .btn.primary:hover{filter:brightness(1.05)}
+      .btn.neon{background:#1a0f14;border-color:#38131c; box-shadow:0 0 12px rgba(255,0,51,.3)}
+      .btn.neon:hover{background:var(--redh)}
+      .btn.danger{background:#2a0c14;border-color:#501926}
+      .btn.danger:hover{background:#4a0f20}
+      .btn.ghost{background:transparent;border-color:var(--line);color:var(--muted)}
       .table-wrap{overflow:auto}
       table{width:100%;border-collapse:collapse}
       th,td{border-bottom:1px solid var(--line);padding:8px 6px;text-align:left;font-size:13px}
       td.img img{height:26px;border-radius:6px;display:block}
+      td.actions{display:flex;gap:6px;align-items:center}
+      td.actions form{display:inline}
       .pill{display:inline-block;padding:4px 8px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:12px}
       @media(max-width:900px){
         .grid{grid-template-columns:1fr}
@@ -217,7 +250,7 @@ def page_turnuvabonus(
     html = _layout(style + body, title="Turnuva / Bonus", active="tb", is_super=(current.role == AdminRole.super_admin))
     return HTMLResponse(html)
 
-# ------- Upsert (sade: pin/öncelik kaldırıldı) -------
+# ------- Upsert (pin/öncelik kaldırıldı; sade alanlar) -------
 @router.post("/admin/turnuvabonus/{kind}/upsert")
 async def upsert_item(
     kind: str,
@@ -241,7 +274,6 @@ async def upsert_item(
         "category":  (form.get("category") or "").strip() or None,
     }
 
-    # Neden: UI'dan kaldırdık; modelde varsa mevcut değerleri bozmamak için güncelleme setine eklemiyoruz.
     if id_raw:
         row = db.get(Model, int(id_raw))
         if not row:
