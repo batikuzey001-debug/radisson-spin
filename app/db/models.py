@@ -1,3 +1,4 @@
+# app/db/models.py
 from datetime import datetime
 import enum
 
@@ -77,6 +78,8 @@ class Tournament(Base):
     accent_color = Column(String(16))
     bg_color     = Column(String(16))
     variant      = Column(String(24))
+    # **YENİ**: Ödül havuzu (₺) — büyük değerler için Integer yeterli, istersen Numeric'e çevirebiliriz
+    prize_pool = Column(Integer)  # NULL olabilir; admin formunda boş geçilebilir
     created_at = Column(DateTime(timezone=True), default=_utcnow)
     updated_at = Column(DateTime(timezone=True), default=_utcnow)
 
