@@ -1,9 +1,10 @@
+# app/api/routers/admin_mod/sayfalar/loginpage.py
 # SAYFA: Giriş (Login)
 # URL'ler: GET /admin/login  · POST /admin/login  · GET /admin/logout
 # Bu dosyada login'e dair her şey var: logo, arkaplan, stil, küçük JS, flash.
 
-from html import escape as _e
 from typing import Annotated
+from html import escape as _e
 
 from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -14,7 +15,7 @@ from app.services.auth import login_with_credentials, login_session, logout_sess
 
 router = APIRouter()
 
-# --- Flash (yalın, login'e özel) ---------------------------------
+# --- Flash (login'e özel) ---------------------------------
 def flash(request: Request, message: str, level: str = "info") -> None:
     message = _e(message)
     request.session.setdefault("_flash", [])
@@ -30,10 +31,10 @@ def _render_flash(request: Request) -> str:
     if not msgs:
         return ""
     def cls(x: str) -> str:
-        return {"error":"msg error","success":"msg success","warn":"msg warn"}.get(x, "msg")
+        return {"error": "msg error", "success": "msg success", "warn": "msg warn"}.get(x, "msg")
     return "".join(f"<div class='{cls(m.get('level','info'))}'>{m['message']}</div>" for m in msgs)
 
-# --- Sayfa şablonu (login bağımsız tema) -------------------------
+# --- Sayfa şablonu (login bağımsız tema) ------------------
 LOGO_URL = "https://cdn.prod.website-files.com/68ad80d65417514646edf3a3/68adb798dfed270f5040c714_logowhite.png"
 
 def _page(body: str, title: str = "Yönetim • Giriş") -> str:
@@ -41,8 +42,11 @@ def _page(body: str, title: str = "Yönetim • Giriş") -> str:
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{_e(title)}</title>
 <style>
-  :root{{--bg:#0a0b0f;--bg2:#0f0f14;--card:#111114;--text:#f5f5f5;--muted:#b3b3bb;--accent:#ff0033;--accent2:#ff4d6d;--line:#1d1d22}}
-  *{{box-sizing:border-box}} body{{margin:0;background:linear-gradient(180deg,var(--bg),var(--bg2));color:var(--text);font:14px/1.55 system-ui,Segoe UI,Roboto}}
+  :root {{
+    --bg:#0a0b0f; --bg2:#0f0f14; --card:#111114; --text:#f5f5f5; --muted:#b3b3bb; --accent:#ff0033; --accent2:#ff4d6d; --line:#1d1d22;
+  }}
+  *{{box-sizing:border-box}}
+  body{{margin:0;background:linear-gradient(180deg,var(--bg),var(--bg2));color:var(--text);font:14px/1.55 system-ui,Segoe UI,Roboto}}
   .wrap{{min-height:100dvh;display:grid;place-items:center;padding:16px}}
   .card{{width:min(440px,92vw);background:rgba(17,17,20,.9);border:1px solid var(--line);border-radius:16px;padding:18px 16px;box-shadow:0 10px 40px rgba(0,0,0,.45)}}
   .logo{{display:flex;justify-content:center;margin:6px 0 10px}}
@@ -64,7 +68,8 @@ def _page(body: str, title: str = "Yönetim • Giriş") -> str:
 <script>
   function togglePwd(){{
     const i = document.getElementById('pwd'); const t = document.getElementById('pwdbtn');
-    if(!i||!t) return; const vis = i.type === 'password'; i.type = vis ? 'text' : 'password'; t.textContent = vis ? 'Gizle' : 'Göster';
+    if(!i||!t) return; const vis = i.type === 'password';
+    i.type = vis ? 'text' : 'password'; t.textContent = vis ? 'Gizle' : 'Göster';
   }}
 </script>
 </head><body><div class="wrap">{body}</div></body></html>"""
