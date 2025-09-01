@@ -1,6 +1,6 @@
 # SAYFA: Dashboard (Genel Özet)
 # URL: /admin
-# Not: Kod oluşturma / Ödüller artık /admin/kod altında (iki sekme)
+# Not: Kod oluşturma / Ödüller artık /admin/kod-yonetimi altında (iki sekme)
 
 from typing import Annotated
 from html import escape as _e
@@ -63,8 +63,8 @@ def dashboard(
     <div class='card'>
       <h1>Kısayollar</h1>
       <div class='quick'>
-        <a class='q' href='/admin/kod?tab=kodlar'>Kod Oluştur</a>
-        <a class='q' href='/admin/kod?tab=oduller'>Ödüller</a>
+        <a class='q' href='/admin/kod-yonetimi?tab=kodlar'>Kod Oluştur</a>
+        <a class='q' href='/admin/kod-yonetimi?tab=oduller'>Ödüller</a>
         <a class='q' href='/admin/content/tournaments'>Turnuva / Bonus</a>
         {"<a class='q' href='/admin/users'>Admin Yönetim</a>" if current.role==AdminRole.super_admin else ""}
       </div>
@@ -93,14 +93,21 @@ def dashboard(
 
     # ---- Son kodlar (5 adet) ----
     last = db.query(Code).order_by(Code.created_at.desc()).limit(5).all()
+    # Neden: N+1 sorguyu önlemek için ödül adlarını toplu çek.
+    prize_ids = [c.prize_id for c in last if c.prize_id is not None]
+    prize_map = {}
+    if prize_ids:
+        rows = db.query(Prize.id, Prize.label).filter(Prize.id.in_(prize_ids)).all()
+        prize_map = {pid: label for (pid, label) in rows}
+
     last_html = ["<div class='card'><h1>Son Kodlar</h1><div class='table-wrap'><table>"]
     last_html.append("<tr><th>Kod</th><th>Kullanıcı</th><th>Ödül</th><th>Durum</th></tr>")
     for c in last:
-        pr = db.get(Prize, c.prize_id)
+        pr_label = prize_map.get(c.prize_id, "-")
         last_html.append(
             f"<tr><td><code>{_e(c.code)}</code></td>"
             f"<td>{_e(c.username or '-')}</td>"
-            f"<td>{_e(pr.label if pr else '-')}</td>"
+            f"<td>{_e(pr_label)}</td>"
             f"<td>{'Kullanıldı' if c.status=='used' else 'Verildi'}</td></tr>"
         )
     last_html.append("</table></div></div>")
@@ -123,7 +130,9 @@ def dashboard(
       .quick{{display:flex;gap:8px;flex-wrap:wrap}}
       .q{{display:inline-block;padding:8px 10px;border-radius:10px;border:1px solid #26262c;background:#141418;color:#fff;text-decoration:none}}
       .q:hover{{border-color:rgba(255,0,51,.45)}}
-      @media(max-width:900px){{.stats{{grid-template-columns:repeat(2,1fr)}}}}
+      .grid{{display:grid;grid-template-columns:repeat(12,1fr);gap:10px}}
+      .span-6{{grid-column:span 6}}
+      @media(max-width:900px){{.stats{{grid-template-columns:repeat(2,1fr)}} .span-6{{grid-column:span 12}}}}
     </style>
     {"".join(body)}
     """
