@@ -37,7 +37,7 @@ def _dt_input(v):
     return ""
 
 def _fmt_try(v) -> str:
-    """Neden: Ödül miktarını okunaklı göstermek (TRY)."""
+    # Neden: Ödül miktarını okunaklı göstermek (TRY).
     try:
         if v is None:
             return "-"
@@ -46,6 +46,10 @@ def _fmt_try(v) -> str:
         return f"{s} ₺"
     except Exception:
         return "-"
+
+def _has(Model: Type, name: str) -> bool:
+    # Model'de kolon var mı? (reflection yerine basit hasattr)
+    return hasattr(Model, name)
 
 # SABİT kategoriler
 CATEGORY_OPTIONS = [
@@ -114,14 +118,12 @@ def page_turnuvabonus(
     current_cat = getattr(editing, "category", "") if editing else ""
     status_now = getattr(editing, "status", "draft") if editing else "draft"
 
-    # Turnuva için ödül alanı gösterilsin mi? (kolon varsa)
-    show_prize_field = hasattr(Model, "prize_pool")
-
     cancel_edit_btn = (
         f"<a class='btn ghost small' href='/admin/turnuvabonus?tab={tab}' title='Düzenlemeyi iptal et'>İptal</a>"
         if editing else ""
     )
 
+    # Form: anlaşılır alan başlıkları ile (yalnızca Model'de olan kolonlar gösterilir)
     form = [
         "<div class='card form-card'>",
         f"<div class='form-head'><div><h1>{_e(title_text)}</h1><div class='sub'>{sub_text}</div></div>"
@@ -129,32 +131,69 @@ def page_turnuvabonus(
         f"<form method='post' action='/admin/turnuvabonus/{tab}/upsert' autocomplete='on'>",
         f"{f'<input type=\"hidden\" name=\"id\" value=\"{editing.id}\">' if editing else ''}",
         "<div class='grid'>",
-        f"<label class='field'><span>Başlık</span><input name='title' value='{val('title')}' required></label>",
-        f"<label class='field'><span>Görsel URL</span><input name='image_url' value='{val('image_url')}' placeholder='https://... veya /static/...'></label>",
-        f"<label class='field'><span>Başlangıç</span><input type='datetime-local' name='start_at' value='{_dt_input(getattr(editing,'start_at',None))}'></label>",
-        f"<label class='field'><span>Bitiş</span><input type='datetime-local' name='end_at' value='{_dt_input(getattr(editing,'end_at',None))}'></label>",
-        "<label class='field'><span>Kategori</span><select name='category'>",
-        f"<option value='' {'selected' if not current_cat else ''}>— Seçiniz —</option>",
     ]
+
+    # Temel bilgi
+    form.append(f"<label class='field'><span>Başlık</span><input name='title' value='{val('title')}' required></label>")
+
+    if _has(Model, "subtitle"):
+        form.append(f"<label class='field'><span>Alt Başlık</span><input name='subtitle' value='{val('subtitle')}' placeholder='Kısa vurucu metin'></label>")
+
+    if _has(Model, "slug"):
+        form.append(f"<label class='field'><span>Bağlantı Kısaltması (Slug)</span><input name='slug' value='{val('slug')}' placeholder='ornek-turnuva'></label>")
+
+    # Medya
+    form.append(f"<label class='field'><span>Kapak Görseli URL</span><input name='image_url' value='{val('image_url')}' placeholder='https://... veya /static/...'></label>")
+
+    if _has(Model, "banner_url"):
+        form.append(f"<label class='field'><span>Banner Görseli URL</span><input name='banner_url' value='{val('banner_url')}' placeholder='Sayfa üst görseli (opsiyonel)'></label>")
+
+    # Zaman / Kategori / Durum
+    form.append(f"<label class='field'><span>Başlangıç</span><input type='datetime-local' name='start_at' value='{_dt_input(getattr(editing,'start_at',None))}'></label>")
+    form.append(f"<label class='field'><span>Bitiş</span><input type='datetime-local' name='end_at' value='{_dt_input(getattr(editing,'end_at',None))}'></label>")
+
+    form.append("<label class='field'><span>Kategori</span><select name='category'>")
+    form.append(f"<option value='' {'selected' if not current_cat else ''}>— Seçiniz —</option>")
     for v, txt in CATEGORY_OPTIONS:
         sel = "selected" if str(current_cat) == v else ""
         form.append(f"<option value='{_e(v)}' {sel}>{_e(txt)}</option>")
     form.append("</select></label>")
 
-    # Durum seçimi
     form.append("<label class='field'><span>Durum</span><select name='status'>")
     for s in ("draft", "published"):
         sel = "selected" if status_now == s else ""
         form.append(f"<option value='{s}' {sel}>{'Yayında' if s=='published' else 'Taslak'}</option>")
     form.append("</select></label>")
 
-    # **YENİ**: Turnuva için Ödül Miktarı (TRY)
-    if show_prize_field:
+    # Ödül / Katılım / CTA
+    if _has(Model, "prize_pool"):
         form.append(
             f"<label class='field'><span>Ödül Miktarı (₺)</span>"
             f"<input name='prize_pool' type='number' inputmode='numeric' min='0' step='1' "
             f"value='{_e(str(getattr(editing, 'prize_pool', '') or ''))}' placeholder='35000000'></label>"
         )
+
+    if _has(Model, "participant_count"):
+        form.append(
+            f"<label class='field'><span>Katılımcı Sayısı</span>"
+            f"<input name='participant_count' type='number' inputmode='numeric' min='0' step='1' "
+            f"value='{_e(str(getattr(editing, 'participant_count', '') or ''))}' placeholder='0'></label>"
+        )
+
+    if _has(Model, "cta_url"):
+        form.append(f"<label class='field'><span>Buton Bağlantısı (KATIL)</span><input name='cta_url' value='{val('cta_url')}' placeholder='/wheel veya https://...'></label>")
+
+    # Açıklamalar
+    if _has(Model, "short_desc"):
+        form.append(f"<label class='field'><span>Kısa Açıklama (Kart)</span><textarea name='short_desc' rows='2' placeholder='Kart üzerinde görünecek kısa açıklama...'>{val('short_desc')}</textarea></label>")
+
+    if _has(Model, "long_desc"):
+        form.append(f"<label class='field'><span>Detay Açıklama (Modal)</span><textarea name='long_desc' rows='4' placeholder='Kart tıklanınca açılacak uzun açıklama...'>{val('long_desc')}</textarea></label>")
+
+    # Liderlik görünürlüğü
+    if _has(Model, "rank_visible"):
+        checked = "checked" if bool(getattr(editing, "rank_visible", False)) else ""
+        form.append(f"<label class='field'><span>Liderlik Tablosu</span><label class='cb'><input type='checkbox' name='rank_visible' {checked}> Görünsün</label></label>")
 
     form.extend(
         [
@@ -169,11 +208,12 @@ def page_turnuvabonus(
 
     # Altta: Liste
     t = [f"<div class='card'><h1>{_e(KIND_MAP[tab]['label'])}</h1>"]
-    # Tablonun başlıkları: Turnuva ise Ödül sütununu ekle
     headers = "<tr><th>ID</th><th>Başlık</th><th>Durum</th><th>Başlangıç</th><th>Bitiş</th>"
-    if show_prize_field:
+    if _has(Model, "prize_pool"):
         headers += "<th>Ödül</th>"
-    headers += "<th>Görsel</th><th style='width:160px'>İşlem</th></tr>"
+    if _has(Model, "participant_count"):
+        headers += "<th>Katılımcı</th>"
+    headers += "<th>Görsel</th><th style='width:180px'>İşlem</th></tr>"
     t.append("<div class='table-wrap'><table>" + headers)
 
     for r in rows:
@@ -182,10 +222,9 @@ def page_turnuvabonus(
             img = f"<img src='{_e(r.image_url)}' alt='' loading='lazy' />"
         start_txt = _dt_input(getattr(r, "start_at", None)).replace("T", " ") or "-"
         end_txt = _dt_input(getattr(r, "end_at", None)).replace("T", " ") or "-"
-        # Ödül sütunu (varsa)
-        prize_td = ""
-        if show_prize_field:
-            prize_td = f"<td>{_fmt_try(getattr(r, 'prize_pool', None))}</td>"
+
+        prize_td = f"<td>{_fmt_try(getattr(r, 'prize_pool', None))}</td>" if _has(Model, "prize_pool") else ""
+        part_td = f"<td>{_e(str(getattr(r, 'participant_count', '-') or '-'))}</td>" if _has(Model, "participant_count") else ""
 
         t.append(
             f"<tr>"
@@ -195,6 +234,7 @@ def page_turnuvabonus(
             f"<td>{start_txt}</td>"
             f"<td>{end_txt}</td>"
             f"{prize_td}"
+            f"{part_td}"
             f"<td class='img'>{img}</td>"
             f"<td class='actions'>"
             f"<a class='btn neon small' href='/admin/turnuvabonus?tab={tab}&edit={r.id}' title='Düzenle'>Düzenle</a>"
@@ -225,8 +265,10 @@ def page_turnuvabonus(
       .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
       .field{display:flex;flex-direction:column;gap:6px}
       .field > span{font-size:12px;color:var(--muted)}
-      input,select{width:100%;background:#0b0d13;border:1px solid var(--line);border-radius:10px;color:#fff;padding:10px}
-      input:focus,select:focus{outline:none;border-color:var(--red);box-shadow:0 0 0 2px rgba(255,0,51,.20)}
+      input,select,textarea{width:100%;background:#0b0d13;border:1px solid var(--line);border-radius:10px;color:#fff;padding:10px}
+      textarea{min-height:64px;resize:vertical}
+      input:focus,select:focus,textarea:focus{outline:none;border-color:var(--red);box-shadow:0 0 0 2px rgba(255,0,51,.20)}
+      .cb{display:inline-flex;align-items:center;gap:8px}
       .form-card{position:sticky;top:8px;z-index:1}
       .form-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}
       .btn{display:inline-block;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:#151824;color:#fff;text-decoration:none;cursor:pointer}
@@ -256,7 +298,7 @@ def page_turnuvabonus(
     html = _layout(style + body, title="Turnuva / Bonus", active="tb", is_super=(current.role == AdminRole.super_admin))
     return HTMLResponse(html)
 
-# ------- Upsert (ödül alanı desteği eklendi) -------
+# ------- Upsert (genişletilmiş alan desteği) -------
 @router.post("/admin/turnuvabonus/{kind}/upsert")
 async def upsert_item(
     kind: str,
@@ -271,7 +313,7 @@ async def upsert_item(
     form = await request.form()
     id_raw = (form.get("id") or "").strip()
 
-    data = {
+    data: Dict[str, Any] = {
         "title":     (form.get("title") or "").strip(),
         "image_url": (form.get("image_url") or "").strip() or None,
         "status":    (form.get("status") or "draft").strip() or "draft",
@@ -280,10 +322,27 @@ async def upsert_item(
         "category":  (form.get("category") or "").strip() or None,
     }
 
-    # **YENİ**: Modelde prize_pool kolonu varsa formdan al
-    if hasattr(Model, "prize_pool"):
+    # Opsiyonel alanlar (Model'de varsa set et)
+    if _has(Model, "subtitle"):
+        data["subtitle"] = (form.get("subtitle") or "").strip() or None
+    if _has(Model, "slug"):
+        data["slug"] = (form.get("slug") or "").strip() or None
+    if _has(Model, "banner_url"):
+        data["banner_url"] = (form.get("banner_url") or "").strip() or None
+    if _has(Model, "cta_url"):
+        data["cta_url"] = (form.get("cta_url") or "").strip() or None
+    if _has(Model, "short_desc"):
+        data["short_desc"] = (form.get("short_desc") or "").strip() or None
+    if _has(Model, "long_desc"):
+        data["long_desc"] = (form.get("long_desc") or "").strip() or None
+    if _has(Model, "rank_visible"):
+        data["rank_visible"] = (form.get("rank_visible") or "").lower() in ("1","true","on","yes","checked")
+    if _has(Model, "prize_pool"):
         prize_raw = (form.get("prize_pool") or "").strip()
-        data["prize_pool"] = int(prize_raw) if prize_raw.isdigit() else None  # neden: boş geçilebilir
+        data["prize_pool"] = int(prize_raw) if prize_raw.isdigit() else None
+    if _has(Model, "participant_count"):
+        pc_raw = (form.get("participant_count") or "").strip()
+        data["participant_count"] = int(pc_raw) if pc_raw.isdigit() else None
 
     if id_raw:
         row = db.get(Model, int(id_raw))
