@@ -58,32 +58,58 @@ def _layout(title: str, body: str) -> str:
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{_e(title)}</title>
 <style>
-  body{{margin:0;background:#0a0b0f;color:#eef2ff;font:14px/1.5 system-ui,Segoe UI,Roboto}}
+  :root {{
+    --bg:#0a0b0f; --card:#0f1320; --muted:#aeb7d0; --text:#eef2ff;
+    --line:#20283a; --accent:#60a5fa; --accent2:#0ea5e9;
+  }}
+  *{{box-sizing:border-box}} body{{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,Segoe UI,Roboto}}
   .wrap{{max-width:1100px;margin:24px auto;padding:0 16px}}
-  h1{{font-size:20px;margin:8px 0 16px}}
-  .tabs a{{display:inline-block;margin-right:8px;padding:6px 10px;border:1px solid #2a2f3a;border-radius:8px;color:#aeb7d0;text-decoration:none}}
-  .tabs a.active,.tabs a:hover{{color:#fff;background:#121624}}
-  .card{{background:#0f1320;border:1px solid #20283a;border-radius:12px;padding:14px;margin:14px 0}}
+
+  /* Üst sekme menü (sticky + neon vurgu) */
+  .topbar{{position:sticky;top:0;z-index:10;backdrop-filter:blur(6px);
+          background:linear-gradient(180deg,rgba(8,10,16,.85),rgba(8,10,16,.65)); border-bottom:1px solid var(--line);
+          margin:-8px -16px 16px; padding:10px 16px}}
+  .tabs{{display:flex;gap:8px;flex-wrap:wrap}}
+  .tab{{appearance:none;border:1px solid var(--line);border-radius:10px;padding:8px 12px;
+        color:var(--muted);text-decoration:none;transition:.18s all ease;position:relative}}
+  .tab:hover{{border-color:rgba(96,165,250,.45);color:#fff;box-shadow:0 0 0 2px rgba(96,165,250,.12), 0 0 16px rgba(14,165,233,.18)}}
+  .tab.active{{color:#fff;border-color:rgba(96,165,250,.55);
+               background:linear-gradient(90deg,rgba(14,165,233,.18),rgba(96,165,250,.10));
+               box-shadow:0 0 18px rgba(14,165,233,.26), inset 0 0 12px rgba(96,165,250,.10)}}
+  .tab.active::after{{content:"";position:absolute;left:10px;right:10px;bottom:-6px;height:3px;
+                      background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:6px;
+                      box-shadow:0 0 18px rgba(96,165,250,.7)}}
+
+  /* Kart & tablo */
+  .card{{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:14px 0}}
+  h1{{font-size:18px;margin:6px 0 12px}}
   table{{width:100%;border-collapse:collapse}}
-  th,td{{border-bottom:1px solid #1e2433;padding:8px;text-align:left;white-space:nowrap}}
+  th,td{{border-bottom:1px solid var(--line);padding:8px;text-align:left;white-space:nowrap}}
   th{{font-size:12px;text-transform:uppercase;color:#9aa3b7}}
   input,select{{width:100%;background:#0b0f1a;color:#fff;border:1px solid #243049;border-radius:10px;padding:8px}}
   .row{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}}
-  .row-1{{display:grid;grid-template-columns:1fr;gap:10px}}
   .actions form{{display:inline}}
-  .btn{{display:inline-block;padding:8px 12px;border-radius:10px;border:1px solid #2a2f3a;background:#101629;color:#fff;text-decoration:none}}
-  .btn.primary{{background:linear-gradient(90deg,#0ea5e9,#60a5fa)}}
-  .pill{{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid #2a2f3a;color:#aeb7d0}}
-  .hint{{font-size:12px;color:#9aa3b7;margin-top:4px}}
+  .btn{{display:inline-block;padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:#101629;color:#fff;text-decoration:none}}
+  .btn.primary{{background:linear-gradient(90deg,var(--accent2),var(--accent))}}
+  .pill{{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}}
   label.cb{{display:flex;align-items:center;gap:8px;color:#c8d1e3}}
-</style></head><body><div class="wrap">{body}</div></body></html>"""
 
+  /* Başlık bölümü */
+  .page-head{{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 6px}}
+  .page-title{{font-size:18px}}
+</style></head>
+<body>
+  <div class="wrap">
+    <div class="topbar"><div class="tabs">__TABS__</div></div>
+    {body}
+  </div>
+</body></html>"""
 def _tabs(active: str) -> str:
     items = []
     for k, v in KIND_MAP.items():
-        cls = "active" if k == active else ""
+        cls = "tab active" if k == active else "tab"
         items.append(f'<a href="/admin/content/{k}" class="{cls}">{_e(v["label"])}</a>')
-    return '<div class="tabs">' + "".join(items) + "</div>"
+    return "".join(items)
 
 # ------------------ Liste + Form ------------------
 @router.get("/admin/content/{kind}", response_class=HTMLResponse)
