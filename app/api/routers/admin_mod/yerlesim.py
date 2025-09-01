@@ -27,7 +27,7 @@ def _header_nav(active: str = "", is_super: bool = False) -> str:
     links = [
         ("Dashboard", "/admin", active == "panel"),
         ("Kod Yönetimi", "/admin/kod", active == "kod"),
-        ("Turnuva / Bonus", "/admin/turnuva-bonus", active == "tb"),
+        ("Turnuva / Bonus", "/admin/turnuvabonus", active == "tb"),
         ("Adminler", "/admin/users", active == "users" if is_super else False),
         ("Çıkış", "/admin/logout", False),
     ]
