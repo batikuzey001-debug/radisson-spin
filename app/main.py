@@ -2,10 +2,13 @@
 import os
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse, JSONResponse, HTMLResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from urllib.parse import quote
 from sqlalchemy import text
 
 from app.core.config import settings
@@ -58,6 +61,32 @@ app.include_router(content_router)
 # Yeni modüler admin (login, dashboard, kod yönetimi, turnuva/bonus, admin yönetim)
 from app.api.routers.admin_mod import admin_router as admin_mod_router
 app.include_router(admin_mod_router)
+
+# -----------------------------
+# Admin auth yönlendirmeleri
+# -----------------------------
+@app.exception_handler(StarletteHTTPException)
+async def _admin_auth_redirect(request: Request, exc: StarletteHTTPException):
+    """Neden: /admin altında yetkisiz HTML isteklerini login'e yönlendirmek."""
+    path = request.url.path or ""
+    is_html = "text/html" in (request.headers.get("accept") or "")
+    is_admin_area = path.startswith("/admin")
+    is_login_page = path.startswith("/admin/login")
+
+    if exc.status_code in (401, 403) and is_html and is_admin_area and not is_login_page:
+        qs = ("?" + request.url.query) if request.url.query else ""
+        next_param = quote(path + qs, safe="/:=&?")  # geri dönüş için orijinal URL'yi taşı
+        return RedirectResponse(url=f"/admin/login?next={next_param}", status_code=303)
+
+    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin_root():
+    """Neden: /admin kökünü oturum durumuna göre akıcı akışa almak."""
+    # Girişli değilse: /admin/panel 401/403 üretir ve yukarıdaki handler login'e atar.
+    # Girişliyse: panel açılır.
+    return RedirectResponse(url="/admin/panel", status_code=303)
 
 # -----------------------------
 # Startup: tablo oluştur + mini migration + seed
