@@ -116,3 +116,7 @@ from app.api.routers.content import router as content_router
 app.include_router(content_router)
 from app.api.routers.admin_content import router as admin_content_router
 app.include_router(admin_content_router)
+
+# YENİ MODÜLER ADMIN (eski admin.py ile çakışmaz)
+from app.api.routers.admin_mod import admin_router as admin_mod_router
+app.include_router(admin_mod_router)
