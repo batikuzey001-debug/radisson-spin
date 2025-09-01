@@ -30,6 +30,14 @@ def _normalize(u: str | None) -> str | None:
     return x
 
 
+def _img_cell(url: str | None) -> str:
+    """F-string karmaşasını önlemek ve XSS kaçışını tek yerde yapmak için."""
+    u = _normalize(url or "")
+    if not u:
+        return "-"
+    return f'<img src="{_e(u)}" style="height:24px;border-radius:6px" loading="lazy" />'
+
+
 # Eski adresten otomatik yönlendirme (isteğe bağlı)
 @router.get("/admin/kod")
 def _redir_old():
@@ -104,15 +112,16 @@ def kod_yonetimi(
             "<tr><th>Ad</th><th>Sıra</th><th>Görsel</th><th>İşlem</th></tr>",
             *[
                 (
-                    f"<tr><td>{_e(p.label)}</td><td>{p.wheel_index}</td>"
-                    # ↓↓↓ DÜZELTİLEN KISIM: kaçış karakterleri sadeleştirildi, backslash hatası çözüldü
-                    f"<td>{(f'<img src=\"{_e(_normalize(p.image_url) or '')}\" "
-                    f"style=\"height:24px;border-radius:6px\" loading=\"lazy\" />') if p.image_url else '-'}</td>"
-                    f"<td><a class='btn small' href='/admin/kod-yonetimi?tab=oduller&edit={p.id}'>Düzenle</a> "
+                    f"<tr><td>{_e(p.label)}</td>"
+                    f"<td>{p.wheel_index}</td>"
+                    f"<td>{_img_cell(p.image_url)}</td>"
+                    f"<td>"
+                    f"<a class='btn small' href='/admin/kod-yonetimi?tab=oduller&edit={p.id}'>Düzenle</a> "
                     f"<form method='post' action='/admin/kod-yonetimi/prizes/delete' style='display:inline' "
                     f"onsubmit=\"return confirm('Silinsin mi?')\">"
                     f"<input type='hidden' name='id' value='{p.id}' />"
-                    f"<button class='btn small' type='submit'>Sil</button></form></td></tr>"
+                    f"<button class='btn small' type='submit'>Sil</button></form>"
+                    f"</td></tr>"
                 )
                 for p in prizes
             ],
@@ -128,7 +137,7 @@ def kod_yonetimi(
         <div class='card'>
           <h1>{'Ödül Düzenle' if editing else 'Yeni Ödül'}</h1>
           <form method='post' action='/admin/kod-yonetimi/prizes/upsert'>
-            {'<input type="hidden" name="id" value="'+str(eid)+'">' if editing else ''}
+            {f'<input type="hidden" name="id" value="{eid}">' if editing else ''}
             <div class='grid'>
               <div class='span-6'><div>Sıralama</div><input name='wheel_index' type='number' value='{ewi}' required></div>
               <div class='span-6'><div>Ad</div><input name='label' value='{_e(elabel)}' required></div>
