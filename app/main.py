@@ -10,7 +10,6 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.api.routers.health import router as health_router
 from app.api.routers.spin import router as spin_router
-from app.api.routers.admin import router as admin_router
 from app.db.session import SessionLocal, engine
 from app.db.models import Base, Prize, Code
 
@@ -39,11 +38,9 @@ app.add_middleware(
 # -----------------------------
 # Static Files: /static -> <kök>/static
 # -----------------------------
-# Bu dosya: app/services/main.py
-# Proje kökü = app/ klasörünün bir üstü
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 STATIC_DIR = PROJECT_ROOT / "static"
-(STATIC_DIR / "uploads").mkdir(parents=True, exist_ok=True)  # uploads klasörü de hazır olsun
+(STATIC_DIR / "uploads").mkdir(parents=True, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
@@ -52,7 +49,14 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 # -----------------------------
 app.include_router(health_router)
 app.include_router(spin_router, prefix="/api")
-app.include_router(admin_router)
+
+# Public content feed
+from app.api.routers.content import router as content_router
+app.include_router(content_router)
+
+# Yeni modüler admin (login, dashboard, kod yönetimi, turnuva/bonus, admin yönetim)
+from app.api.routers.admin_mod import admin_router as admin_mod_router
+app.include_router(admin_mod_router)
 
 # -----------------------------
 # Startup: tablo oluştur + mini migration + seed
@@ -91,7 +95,6 @@ def on_startup() -> None:
 
     # --- Seed verileri (varsa ekleme) ---
     with SessionLocal() as db:
-        # Ödüller
         if db.query(Prize).count() == 0:
             db.add_all([
                 Prize(label="₺100",  wheel_index=0),
@@ -101,7 +104,6 @@ def on_startup() -> None:
             ])
             db.commit()
 
-        # Örnek kodlar
         if db.query(Code).count() == 0:
             p1000 = db.query(Prize).filter_by(label="₺1000").first()
             p500  = db.query(Prize).filter_by(label="₺500").first()
@@ -111,12 +113,3 @@ def on_startup() -> None:
                     Code(code="TEST500", username=None,    prize_id=p500.id,  status="issued"),
                 ])
                 db.commit()
-
-from app.api.routers.content import router as content_router
-app.include_router(content_router)
-from app.api.routers.admin_content import router as admin_content_router
-app.include_router(admin_content_router)
-
-# YENİ MODÜLER ADMIN (eski admin.py ile çakışmaz)
-from app.api.routers.admin_mod import admin_router as admin_mod_router
-app.include_router(admin_mod_router)
