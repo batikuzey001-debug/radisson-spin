@@ -111,3 +111,6 @@ def on_startup() -> None:
                     Code(code="TEST500", username=None,    prize_id=p500.id,  status="issued"),
                 ])
                 db.commit()
+
+from app.api.routers.content import router as content_router
+app.include_router(content_router)
