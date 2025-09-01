@@ -1,7 +1,36 @@
 // web/src/app/page.tsx
 import Link from 'next/link'
 
-export default function HomePage() {
+export const dynamic = 'force-dynamic'
+
+type Tournament = {
+  id: number
+  title: string
+  image_url?: string | null
+  category?: string | null
+  status?: 'published' | 'draft'
+  start_at?: string | null
+  end_at?: string | null
+}
+
+/* Neden burada?: Sadece bu sayfayı değiştirmek istedin; harici api.ts şartı olmadan çalışır. */
+async function fetchTournaments(limit = 6): Promise<Tournament[]> {
+  const BASE = (process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/+$/, '')
+  const CONTENT_PREFIX = (process.env.NEXT_PUBLIC_CONTENT_PREFIX || '').replace(/\/+$/, '')
+  const url = `${BASE}${CONTENT_PREFIX}/content/tournaments${limit ? `?limit=${limit}` : ''}`
+  if (!BASE) return [] // env yoksa sessizce boş liste
+  try {
+    const res = await fetch(url, { cache: 'no-store', headers: { 'Content-Type': 'application/json' } })
+    if (!res.ok) return []
+    return (await res.json()) as Tournament[]
+  } catch {
+    return []
+  }
+}
+
+export default async function HomePage() {
+  const preview = await fetchTournaments(6)
+
   return (
     <>
       {/* HERO */}
@@ -25,23 +54,30 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ÖNİZLEME (şimdilik placeholder, sonra API bağlarız) */}
+      {/* ÖNİZLEME (API bağlı) */}
       <section className="mx-auto max-w-6xl px-4 pb-16">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">Öne Çıkan Turnuvalar</h2>
           <Link href="/tournaments" className="text-sm text-white/70 hover:text-neon">Tümünü gör →</Link>
         </div>
-        <ul className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <li key={i} className="rounded-xl border border-[#1b1d26] bg-[#111114]">
-              <div className="h-36 rounded-t-xl bg-[#151824]" />
-              <div className="p-3">
-                <div className="text-sm font-semibold">Turnuva #{i + 1}</div>
-                <div className="text-xs text-white/60">Kategori • Yayında</div>
-              </div>
-            </li>
-          ))}
-        </ul>
+
+        {preview.length === 0 ? (
+          <div className="text-white/60 text-sm">Şu an önizleme bulunamadı.</div>
+        ) : (
+          <ul className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
+            {preview.map((t) => (
+              <li key={t.id} className="rounded-xl border border-[#1b1d26] bg-[#111114]">
+                <div className="h-36 rounded-t-xl bg-[#151824] overflow-hidden">
+                  {t.image_url && <img src={t.image_url} alt="" className="w-full h-full object-cover" />}
+                </div>
+                <div className="p-3">
+                  <div className="text-sm font-semibold">{t.title}</div>
+                  <div className="text-xs text-white/60">{(t.category || 'genel').toUpperCase()}</div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </>
   )
