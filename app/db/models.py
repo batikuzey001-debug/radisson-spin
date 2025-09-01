@@ -55,3 +55,78 @@ class AdminUser(Base):
     password_hash: Mapped[str] = mapped_column(String(255))  # bcrypt hash
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
+
+# --- FEED MODELLERİ (iskelet) ---
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean
+from datetime import datetime, timezone
+
+def _utcnow(): return datetime.now(timezone.utc)
+
+class Tournament(Base):
+    __tablename__ = "tournaments"
+    id         = Column(Integer, primary_key=True)
+    title      = Column(String(200), nullable=False)
+    image_url  = Column(String(512), nullable=False)
+    status     = Column(String(20), default="draft")  # draft|published|archived
+    start_at   = Column(DateTime(timezone=True))
+    end_at     = Column(DateTime(timezone=True))
+    category   = Column(String(50))
+    is_pinned  = Column(Boolean, default=False)
+    priority   = Column(Integer, default=0)
+    # opsiyonel kozmetik override
+    accent_color = Column(String(16))
+    bg_color     = Column(String(16))
+    variant      = Column(String(24))
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow)
+
+class DailyBonus(Base):
+    __tablename__ = "daily_bonuses"
+    id         = Column(Integer, primary_key=True)
+    title      = Column(String(200), nullable=False)
+    image_url  = Column(String(512), nullable=False)
+    status     = Column(String(20), default="draft")
+    start_at   = Column(DateTime(timezone=True))
+    end_at     = Column(DateTime(timezone=True))
+    category   = Column(String(50))
+    is_pinned  = Column(Boolean, default=False)
+    priority   = Column(Integer, default=0)
+    accent_color = Column(String(16))
+    bg_color     = Column(String(16))
+    variant      = Column(String(24))
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow)
+
+class PromoCode(Base):
+    __tablename__ = "promo_codes"
+    id         = Column(Integer, primary_key=True)
+    title      = Column(String(200), nullable=False)
+    image_url  = Column(String(512), nullable=False)
+    status     = Column(String(20), default="draft")
+    start_at   = Column(DateTime(timezone=True))
+    end_at     = Column(DateTime(timezone=True))
+    category   = Column(String(50))
+    is_pinned  = Column(Boolean, default=False)
+    priority   = Column(Integer, default=0)
+    accent_color = Column(String(16))
+    bg_color     = Column(String(16))
+    variant      = Column(String(24))
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow)
+
+class Event(Base):
+    __tablename__ = "events"
+    id         = Column(Integer, primary_key=True)
+    title      = Column(String(200), nullable=False)
+    image_url  = Column(String(512), nullable=False)
+    status     = Column(String(20), default="draft")
+    start_at   = Column(DateTime(timezone=True))
+    end_at     = Column(DateTime(timezone=True))
+    category   = Column(String(50))
+    is_pinned  = Column(Boolean, default=False)
+    priority   = Column(Integer, default=0)
+    accent_color = Column(String(16))
+    bg_color     = Column(String(16))
+    variant      = Column(String(24))
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow)
