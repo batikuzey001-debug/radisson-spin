@@ -36,6 +36,17 @@ def _dt_input(v):
         return ""
     return ""
 
+def _fmt_try(v) -> str:
+    """Neden: Ödül miktarını okunaklı göstermek (TRY)."""
+    try:
+        if v is None:
+            return "-"
+        n = int(v)
+        s = f"{n:,}".replace(",", ".")
+        return f"{s} ₺"
+    except Exception:
+        return "-"
+
 # SABİT kategoriler
 CATEGORY_OPTIONS = [
     ("slots",       "SLOT"),
@@ -52,7 +63,7 @@ KIND_MAP: Dict[str, Dict[str, Any]] = {
     "events":        {"label": "Etkinlikler",        "model": Event},
 }
 
-# ------- Sayfa (Neon Kırmızı-Siyah tema + mobil menü + üstte form) -------
+# ------- Sayfa (Neon tema + mobil menü + üstte form) -------
 @router.get("/admin/turnuvabonus", response_class=HTMLResponse)
 def page_turnuvabonus(
     request: Request,
@@ -67,7 +78,7 @@ def page_turnuvabonus(
     rows = (
         db.query(Model)
         .order_by(
-            Model.start_at.desc().nullslast(),
+            getattr(Model, "start_at").desc().nullslast() if hasattr(Model, "start_at") else Model.id.desc(),
             Model.id.desc(),
         )
         .all()
@@ -96,16 +107,15 @@ def page_turnuvabonus(
         tabs_html.append(f"<a class='{cls}' href='/admin/turnuvabonus?tab={key}'>{_e(label)}</a>")
     tabs_html.append("</div></div>")
 
-    # Üstte: Yeni / Düzenle formu (takvimli datetime-local, minimal)
-    title_text = "Yeni Kayıt"
-    sub_text = f"{_e(KIND_MAP[tab]['label'])}"
-    if editing:
-        title_text = f"Kayıt Düzenle (#{editing.id})"
-        sub_text = f"{_e(KIND_MAP[tab]['label'])} · mevcut kaydı güncelliyorsunuz"
-
+    # Üstte: Yeni / Düzenle formu
+    title_text = "Yeni Kayıt" if not editing else f"Kayıt Düzenle (#{editing.id})"
+    sub_text = _e(KIND_MAP[tab]['label'])
     val = (lambda name, default="": _e(getattr(editing, name, "") or default))
     current_cat = getattr(editing, "category", "") if editing else ""
     status_now = getattr(editing, "status", "draft") if editing else "draft"
+
+    # Turnuva için ödül alanı gösterilsin mi? (kolon varsa)
+    show_prize_field = hasattr(Model, "prize_pool")
 
     cancel_edit_btn = (
         f"<a class='btn ghost small' href='/admin/turnuvabonus?tab={tab}' title='Düzenlemeyi iptal et'>İptal</a>"
@@ -131,12 +141,20 @@ def page_turnuvabonus(
         form.append(f"<option value='{_e(v)}' {sel}>{_e(txt)}</option>")
     form.append("</select></label>")
 
-    # Durum seçimi (taslak / yayında)
+    # Durum seçimi
     form.append("<label class='field'><span>Durum</span><select name='status'>")
     for s in ("draft", "published"):
         sel = "selected" if status_now == s else ""
         form.append(f"<option value='{s}' {sel}>{'Yayında' if s=='published' else 'Taslak'}</option>")
     form.append("</select></label>")
+
+    # **YENİ**: Turnuva için Ödül Miktarı (TRY)
+    if show_prize_field:
+        form.append(
+            f"<label class='field'><span>Ödül Miktarı (₺)</span>"
+            f"<input name='prize_pool' type='number' inputmode='numeric' min='0' step='1' "
+            f"value='{_e(str(getattr(editing, 'prize_pool', '') or ''))}' placeholder='35000000'></label>"
+        )
 
     form.extend(
         [
@@ -149,25 +167,34 @@ def page_turnuvabonus(
         ]
     )
 
-    # Altta: Liste + her satırda belirgin DÜZENLE butonu
+    # Altta: Liste
     t = [f"<div class='card'><h1>{_e(KIND_MAP[tab]['label'])}</h1>"]
-    t.append(
-        "<div class='table-wrap'><table>"
-        "<tr><th>ID</th><th>Başlık</th><th>Durum</th><th>Başlangıç</th><th>Bitiş</th><th>Görsel</th><th style='width:160px'>İşlem</th></tr>"
-    )
+    # Tablonun başlıkları: Turnuva ise Ödül sütununu ekle
+    headers = "<tr><th>ID</th><th>Başlık</th><th>Durum</th><th>Başlangıç</th><th>Bitiş</th>"
+    if show_prize_field:
+        headers += "<th>Ödül</th>"
+    headers += "<th>Görsel</th><th style='width:160px'>İşlem</th></tr>"
+    t.append("<div class='table-wrap'><table>" + headers)
+
     for r in rows:
         img = "<span class='pill'>-</span>"
-        if r.image_url:
+        if getattr(r, "image_url", None):
             img = f"<img src='{_e(r.image_url)}' alt='' loading='lazy' />"
         start_txt = _dt_input(getattr(r, "start_at", None)).replace("T", " ") or "-"
         end_txt = _dt_input(getattr(r, "end_at", None)).replace("T", " ") or "-"
+        # Ödül sütunu (varsa)
+        prize_td = ""
+        if show_prize_field:
+            prize_td = f"<td>{_fmt_try(getattr(r, 'prize_pool', None))}</td>"
+
         t.append(
             f"<tr>"
             f"<td>{r.id}</td>"
             f"<td>{_e(r.title)}</td>"
-            f"<td>{_e(r.status or '-')}</td>"
+            f"<td>{_e(getattr(r,'status','-') or '-')}</td>"
             f"<td>{start_txt}</td>"
             f"<td>{end_txt}</td>"
+            f"{prize_td}"
             f"<td class='img'>{img}</td>"
             f"<td class='actions'>"
             f"<a class='btn neon small' href='/admin/turnuvabonus?tab={tab}&edit={r.id}' title='Düzenle'>Düzenle</a>"
@@ -183,25 +210,14 @@ def page_turnuvabonus(
     fb = _render_flash_blocks(request) or ""
     body = "".join(tabs_html) + fb + "".join(form) + "".join(t)
 
-    # Neon kırmızı & siyah tema (göz yormayan ama canlı)
     style = """
     <style>
-      :root{
-        --bg:#090a0f;
-        --card:#0f1016;
-        --line:#1b1d26;
-        --text:#f2f3f7;
-        --muted:#a9afbd;
-        --red:#ff0033;          /* neon kırmızı */
-        --red2:#ff4d6d;         /* neon geçiş */
-        --redh:#ff1a4b;         /* hover */
-        --black:#0a0b0f;        /* siyah taban */
-      }
+      :root{--bg:#090a0f;--card:#0f1016;--line:#1b1d26;--text:#f2f3f7;--muted:#a9afbd;--red:#ff0033;--red2:#ff4d6d;--redh:#ff1a4b;--black:#0a0b0f;}
       .menu-wrap{display:flex;align-items:center;gap:8px;margin-bottom:10px}
       .menu-toggle{display:none;padding:8px 10px;border:1px solid var(--line);background:var(--black);color:var(--text);border-radius:10px;cursor:pointer}
       .tabs{display:flex;flex-wrap:wrap;gap:8px}
       .tab{padding:8px 10px;border:1px solid var(--line);border-radius:10px;text-decoration:none;color:var(--muted);background:var(--card)}
-      .tab.active{color:#fff;border-color:var(--red); box-shadow:0 0 8px rgba(255,0,51,.35)}
+      .tab.active{color:#fff;border-color:var(--red);box-shadow:0 0 8px rgba(255,0,51,.35)}
       .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
       h1{font-size:16px;margin:0 0 10px}
       .sub{font-size:12px;color:var(--muted)}
@@ -210,47 +226,37 @@ def page_turnuvabonus(
       .field{display:flex;flex-direction:column;gap:6px}
       .field > span{font-size:12px;color:var(--muted)}
       input,select{width:100%;background:#0b0d13;border:1px solid var(--line);border-radius:10px;color:#fff;padding:10px}
-      input:focus,select:focus{outline:none;border-color:var(--red); box-shadow:0 0 0 2px rgba(255,0,51,.20)}
+      input:focus,select:focus{outline:none;border-color:var(--red);box-shadow:0 0 0 2px rgba(255,0,51,.20)}
       .form-card{position:sticky;top:8px;z-index:1}
       .form-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}
       .btn{display:inline-block;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:#151824;color:#fff;text-decoration:none;cursor:pointer}
       .btn.small{font-size:12px;padding:6px 8px}
-      .btn.primary{background:linear-gradient(90deg,var(--red),var(--red2));border-color:#2a0e15; box-shadow:0 0 16px rgba(255,0,51,.25)}
+      .btn.primary{background:linear-gradient(90deg,var(--red),var(--red2));border-color:#2a0e15;box-shadow:0 0 16px rgba(255,0,51,.25)}
       .btn.primary:hover{filter:brightness(1.05)}
-      .btn.neon{background:#1a0f14;border-color:#38131c; box-shadow:0 0 12px rgba(255,0,51,.3)}
+      .btn.neon{background:#1a0f14;border-color:#38131c;box-shadow:0 0 12px rgba(255,0,51,.3)}
       .btn.neon:hover{background:var(--redh)}
       .btn.danger{background:#2a0c14;border-color:#501926}
       .btn.danger:hover{background:#4a0f20}
       .btn.ghost{background:transparent;border-color:var(--line);color:var(--muted)}
       .table-wrap{overflow:auto}
       table{width:100%;border-collapse:collapse}
-      th,td{border-bottom:1px solid var(--line);padding:8px 6px;text-align:left;font-size:13px}
+      th,td{border-bottom:1px solid var(--line);padding:8px 6px;text-align:left;font-size:13px;vertical-align:middle}
       td.img img{height:26px;border-radius:6px;display:block}
       td.actions{display:flex;gap:6px;align-items:center}
       td.actions form{display:inline}
       .pill{display:inline-block;padding:4px 8px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:12px}
-      @media(max-width:900px){
-        .grid{grid-template-columns:1fr}
-      }
-      @media(max-width:700px){
-        .menu-toggle{display:inline-block}
-        .tabs{display:none}
-        .tabs.open{display:flex}
-      }
+      @media(max-width:900px){.grid{grid-template-columns:1fr}}
+      @media(max-width:700px){.menu-toggle{display:inline-block}.tabs{display:none}.tabs.open{display:flex}}
     </style>
     <script>
-      function tbMenu(){
-        var el = document.getElementById('tb-menu');
-        if(!el) return;
-        el.classList.toggle('open');
-      }
+      function tbMenu(){var el=document.getElementById('tb-menu'); if(!el) return; el.classList.toggle('open');}
     </script>
     """
 
     html = _layout(style + body, title="Turnuva / Bonus", active="tb", is_super=(current.role == AdminRole.super_admin))
     return HTMLResponse(html)
 
-# ------- Upsert (pin/öncelik kaldırıldı; sade alanlar) -------
+# ------- Upsert (ödül alanı desteği eklendi) -------
 @router.post("/admin/turnuvabonus/{kind}/upsert")
 async def upsert_item(
     kind: str,
@@ -273,6 +279,11 @@ async def upsert_item(
         "end_at":    _dt_parse(form.get("end_at")),
         "category":  (form.get("category") or "").strip() or None,
     }
+
+    # **YENİ**: Modelde prize_pool kolonu varsa formdan al
+    if hasattr(Model, "prize_pool"):
+        prize_raw = (form.get("prize_pool") or "").strip()
+        data["prize_pool"] = int(prize_raw) if prize_raw.isdigit() else None  # neden: boş geçilebilir
 
     if id_raw:
         row = db.get(Model, int(id_raw))
