@@ -15,14 +15,20 @@ async function fetchAll(): Promise<Tournament[]> {
   const BASE = (process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/+$/, '')
   const CONTENT_PREFIX = (process.env.NEXT_PUBLIC_CONTENT_PREFIX || '').replace(/\/+$/, '')
   if (!BASE) return []
-  const url = `${BASE}${CONTENT_PREFIX}/content/tournaments`
-  try {
-    const res = await fetch(url, { cache: 'no-store', headers: { 'Content-Type': 'application/json' } })
-    if (!res.ok) return []
-    return (await res.json()) as Tournament[]
-  } catch {
-    return []
+  // 1) published + limit dene, 2) fallback filtresiz dene
+  const candidates = [
+    `${BASE}${CONTENT_PREFIX}/content/tournaments?status=published`,
+    `${BASE}${CONTENT_PREFIX}/content/tournaments`,
+  ]
+  for (const url of candidates) {
+    try {
+      const res = await fetch(url, { cache: 'no-store', headers: { 'Content-Type': 'application/json' } })
+      if (!res.ok) continue
+      const data = (await res.json()) as Tournament[]
+      if (Array.isArray(data) && data.length >= 0) return data
+    } catch { /* geç */ }
   }
+  return []
 }
 
 export default async function Tournaments() {
