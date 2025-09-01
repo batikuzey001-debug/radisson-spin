@@ -10,6 +10,7 @@ const BASE = (process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/+$/, '')
 const SPIN = (process.env.NEXT_PUBLIC_SPIN_PREFIX || '/api').replace(/\/+$/, '')
 
 export default function WheelPage() {
+  const [username, setUsername] = useState('')
   const [code, setCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
@@ -17,13 +18,13 @@ export default function WheelPage() {
   const [prizes, setPrizes] = useState<Prize[]>([])
   const [error, setError] = useState<string | null>(null)
 
-  // Ödülleri preload (UI bilgilendirici)
+  // Neden: Ödülleri önceden çekerek kullanıcıya bilgilendirici etiket göstermek.
   useEffect(() => {
     if (!BASE) return
     fetch(`${BASE}${SPIN}/spin/prizes`, { cache: 'no-store' })
       .then(async (r) => (r.ok ? r.json() : Promise.reject(await r.text())))
       .then((data: Prize[]) => setPrizes(data || []))
-      .catch(() => {}) // sessiz geç
+      .catch(() => {})
   }, [])
 
   async function onSubmit(e: React.FormEvent) {
@@ -31,15 +32,21 @@ export default function WheelPage() {
     setMsg(null)
     setPrize(null)
     setError(null)
+
+    const u = username.trim()
     const c = code.trim()
-    if (!c) return
+    if (!u || !c) {
+      setError('Kullanıcı adı ve kod zorunludur.')
+      return
+    }
 
     try {
       setLoading(true)
       const res = await fetch(`${BASE}${SPIN}/spin/redeem`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: c }),
+        // Neden: Backend yalnızca 'code' kullansa da 'username' ekstra alan olarak gönderilebilir; geriye dönük uyumlu.
+        body: JSON.stringify({ code: c, username: u }),
       })
       if (!res.ok) {
         const t = await res.text()
@@ -63,20 +70,29 @@ export default function WheelPage() {
           <span className="text-neon">Çark</span> • Kodu Kullan
         </h1>
         <p className="text-white/70 text-sm mb-4">
-          Kodunu gir, çarkı çevir ve ödülünü hemen öğren.
+          Kullanıcı adını ve kodunu gir, çarkı çevir ve ödülünü hemen öğren.
         </p>
 
-        <form onSubmit={onSubmit} className="flex gap-2">
-          <input
-            className="flex-1 rounded-md border border-white/10 bg-[#0b0d13] px-3 py-2 outline-none focus:border-neon"
-            placeholder="Örn: ABC123"
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            autoComplete="one-time-code"
-          />
+        <form onSubmit={onSubmit} className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <input
+              className="rounded-md border border-white/10 bg-[#0b0d13] px-3 py-2 outline-none focus:border-neon"
+              placeholder="Kullanıcı adı"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              autoComplete="username"
+            />
+            <input
+              className="rounded-md border border-white/10 bg-[#0b0d13] px-3 py-2 outline-none focus:border-neon"
+              placeholder="Kod (örn: ABC123)"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              autoComplete="one-time-code"
+            />
+          </div>
           <button
             type="submit"
-            disabled={loading || !code.trim() || !BASE}
+            disabled={loading || !code.trim() || !username.trim() || !BASE}
             className="px-4 py-2 rounded-md bg-gradient-to-r from-neon to-neon2 text-black font-semibold hover:opacity-90 disabled:opacity-50 transition"
             title={!BASE ? 'API adresi tanımlı değil' : 'Gönder'}
           >
@@ -84,7 +100,6 @@ export default function WheelPage() {
           </button>
         </form>
 
-        {/* Sonuç / Hata */}
         {(msg || prize || error) && (
           <div className="mt-4 space-y-2">
             {msg && <div className="rounded-md border border-white/10 bg-[#151824] px-3 py-2 text-sm">{msg}</div>}
@@ -100,7 +115,7 @@ export default function WheelPage() {
         )}
       </section>
 
-      {/* Ödüller önizleme (opsiyonel bilgi) */}
+      {/* Ödüller önizleme */}
       <section className="mt-8">
         <h2 className="text-lg font-semibold mb-3">Olası Ödüller</h2>
         {prizes.length === 0 ? (
