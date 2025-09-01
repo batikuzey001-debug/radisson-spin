@@ -1,5 +1,5 @@
 # app/api/routers/admin_mod/sayfalar/turnuvabonus.py
-from typing import Annotated, Dict, Any, Type
+from typing import Annotated, Dict, Any, Type, Optional
 from datetime import datetime
 from html import escape as _e
 
@@ -15,18 +15,21 @@ from app.api.routers.admin_mod.yerlesim import _layout, _render_flash_blocks
 router = APIRouter()
 
 # ------- Yardımcılar -------
-def _dt_parse(val: str | None):
-    if not val: return None
+def _dt_parse(val: Optional[str]):
+    if not val:
+        return None
     try:
         return datetime.fromisoformat(val.replace(" ", "T"))
     except Exception:
         return None
 
 def _dt_input(v):
-    if not v: return ""
+    if not v:
+        return ""
     try:
         if isinstance(v, str):
-            v = v.replace(" ", "T"); return v[:16]
+            v = v.replace(" ", "T")
+            return v[:16]
         if isinstance(v, datetime):
             return v.strftime("%Y-%m-%dT%H:%M")
     except Exception:
@@ -49,7 +52,7 @@ KIND_MAP: Dict[str, Dict[str, Any]] = {
     "events":        {"label": "Etkinlikler",        "model": Event},
 }
 
-# ------- Sayfa (sekme) -------
+# ------- Sayfa (minimal tasarım + mobil açılır menü) -------
 @router.get("/admin/turnuvabonus", response_class=HTMLResponse)
 def page_turnuvabonus(
     request: Request,
@@ -61,77 +64,160 @@ def page_turnuvabonus(
         tab = "tournaments"
 
     Model: Type = KIND_MAP[tab]["model"]
-    rows = db.query(Model).order_by(
-        Model.is_pinned.desc(),
-        Model.priority.desc(),
-        Model.start_at.desc().nullslast()
-    ).all()
+    rows = (
+        db.query(Model)
+        .order_by(
+            Model.start_at.desc().nullslast(),   # Neden: Sadelik; öncelik/pin olmadan tarihçe
+            Model.id.desc(),
+        )
+        .all()
+    )
 
     edit_id = request.query_params.get("edit")
-    editing = db.get(Model, int(edit_id)) if edit_id else None
+    try:
+        editing = db.get(Model, int(edit_id)) if edit_id else None
+    except Exception:
+        editing = None
 
-    # Sekmeler
+    # Sekmeler (mobil açılır menü)
     tabs = [
         ("tournaments",   "Turnuvalar"),
         ("daily-bonuses", "Güne Özel Bonuslar"),
         ("promo-codes",   "Promosyon Kodları"),
         ("events",        "Etkinlikler"),
     ]
-    tabs_html = ["<div class='tabs'>"]
+    tabs_html = ["<div class='menu-wrap'>",
+                 "<button class='menu-toggle' type='button' onclick='tbMenu()'>Menü</button>",
+                 "<div id='tb-menu' class='tabs'>"]
     for key, label in tabs:
         cls = "tab active" if tab == key else "tab"
         tabs_html.append(f"<a class='{cls}' href='/admin/turnuvabonus?tab={key}'>{_e(label)}</a>")
-    tabs_html.append("</div>")
+    tabs_html.append("</div></div>")
 
-    # Liste
+    # Üstte: Yeni / Düzenle formu (minimal)
+    title = "Yeni Kayıt" if not editing else f"Kayıt Düzenle (#{editing.id})"
+    val = (lambda name, default="": _e(getattr(editing, name, "") or default))
+    current_cat = getattr(editing, "category", "") if editing else ""
+    status_now = getattr(editing, "status", "draft") if editing else "draft"
+
+    form = [
+        f"<div class='card form-card'><h1>{_e(title)}</h1>",
+        f"<form method='post' action='/admin/turnuvabonus/{tab}/upsert' autocomplete='on'>",
+        f"{f'<input type=\"hidden\" name=\"id\" value=\"{editing.id}\">' if editing else ''}",
+        "<div class='grid'>",
+        f"<label class='field'><span>Başlık</span><input name='title' value='{val('title')}' required></label>",
+        f"<label class='field'><span>Görsel URL</span><input name='image_url' value='{val('image_url')}' placeholder='https://... veya /static/...'></label>",
+        f"<label class='field'><span>Başlangıç</span><input type='datetime-local' name='start_at' value='{_dt_input(getattr(editing,'start_at',None))}'></label>",
+        f"<label class='field'><span>Bitiş</span><input type='datetime-local' name='end_at' value='{_dt_input(getattr(editing,'end_at',None))}'></label>",
+        "<label class='field'><span>Kategori</span><select name='category'>",
+        f"<option value='' {'selected' if not current_cat else ''}>— Seçiniz —</option>",
+    ]
+    for v, txt in CATEGORY_OPTIONS:
+        sel = "selected" if str(current_cat) == v else ""
+        form.append(f"<option value='{_e(v)}' {sel}>{_e(txt)}</option>")
+    form.append("</select></label>")
+
+    # Basit durum seçimi (draft/published)
+    form.append("<label class='field'><span>Durum</span><select name='status'>")
+    for s in ("draft", "published"):
+        sel = "selected" if status_now == s else ""
+        form.append(f"<option value='{s}' {sel}>{'Yayında' if s=='published' else 'Taslak'}</option>")
+    form.append("</select></label>")
+
+    form.extend([
+        "</div>",  # grid
+        "<div class='form-actions'><button class='btn primary' type='submit'>Kaydet</button></div>",
+        "</form></div>",
+    ])
+
+    # Altta: Liste (minimal)
     t = [f"<div class='card'><h1>{_e(KIND_MAP[tab]['label'])}</h1>"]
-    t.append("<div class='table-wrap'><table><tr><th>ID</th><th>Başlık</th><th>Durum</th><th>Öncelik</th><th>Görsel</th><th>İşlem</th></tr>")
+    t.append(
+        "<div class='table-wrap'><table>"
+        "<tr><th>ID</th><th>Başlık</th><th>Durum</th><th>Başlangıç</th><th>Bitiş</th><th>Görsel</th><th>İşlem</th></tr>"
+    )
     for r in rows:
         img = "<span class='pill'>-</span>"
         if r.image_url:
-            img = f"<img src='{_e(r.image_url)}' style='height:26px;border-radius:6px' loading='lazy' />"
+            img = f"<img src='{_e(r.image_url)}' alt='' loading='lazy' />"
+        start_txt = _dt_input(getattr(r, "start_at", None)).replace("T", " ") or "-"
+        end_txt = _dt_input(getattr(r, "end_at", None)).replace("T", " ") or "-"
         t.append(
-            f"<tr><td>{r.id}</td><td>{_e(r.title)}</td><td>{_e(r.status or '-')}</td>"
-            f"<td>{r.priority or 0}</td><td>{img}</td>"
+            f"<tr>"
+            f"<td>{r.id}</td>"
+            f"<td>{_e(r.title)}</td>"
+            f"<td>{_e(r.status or '-')}</td>"
+            f"<td>{start_txt}</td>"
+            f"<td>{end_txt}</td>"
+            f"<td class='img'>{img}</td>"
             f"<td>"
             f"<a class='btn small' href='/admin/turnuvabonus?tab={tab}&edit={r.id}'>Düzenle</a> "
-            f"<form method='post' action='/admin/turnuvabonus/{tab}/delete' style='display:inline' onsubmit=\"return confirm('Silinsin mi?')\">"
-            f"<input type='hidden' name='id' value='{r.id}'/><button class='btn small' type='submit'>Sil</button></form>"
-            f"</td></tr>"
+            f"<form method='post' action='/admin/turnuvabonus/{tab}/delete' style='display:inline' "
+            f"onsubmit=\"return confirm('Silinsin mi?')\">"
+            f"<input type='hidden' name='id' value='{r.id}'/>"
+            f"<button class='btn small danger' type='submit'>Sil</button></form>"
+            f"</td>"
+            f"</tr>"
         )
     t.append("</table></div></div>")
 
-    # Form
-    title = "Yeni Kayıt" if not editing else f"Kayıt Düzenle (#{editing.id})"
-    t.append(f"<div class='card'><h1>{_e(title)}</h1>")
-    t.append(f"<form method='post' action='/admin/turnuvabonus/{tab}/upsert'>")
-    if editing:
-        t.append(f"<input type='hidden' name='id' value='{editing.id}'>")
+    # Flash + Sayfa gövdesi
+    fb = _render_flash_blocks(request) or ""
+    body = "".join(tabs_html) + fb + "".join(form) + "".join(t)
 
-    val = lambda name, default="": _e(getattr(editing, name, "") or default)
-    t.append("<div class='row'>")
-    t.append(f"<div><div>Başlık</div><input name='title' value='{val('title')}' required></div>")
-    t.append(f"<div><div>Görsel URL</div><input name='image_url' value='{val('image_url')}' placeholder='https://... veya /static/...' required></div>")
-    t.append(f"<div><div>Başlangıç</div><input type='datetime-local' name='start_at' value='{_dt_input(getattr(editing,'start_at',None))}'></div>")
-    t.append(f"<div><div>Bitiş</div><input type='datetime-local' name='end_at' value='{_dt_input(getattr(editing,'end_at',None))}'></div>")
-    t.append("<div><div>Kategori</div><select name='category'>")
-    current_cat = getattr(editing, "category", "") if editing else ""
-    t.append(f"<option value='' {'selected' if not current_cat else ''}>— Seçiniz —</option>")
-    for v, txt in CATEGORY_OPTIONS:
-        sel = "selected" if str(current_cat) == v else ""
-        t.append(f"<option value='{_e(v)}' {sel}>{_e(txt)}</option>")
-    t.append("</select></div>")
-    checked = "checked" if str(getattr(editing, "is_pinned", "")).lower() in ("1","true","on","yes") else ""
-    t.append(f"<div><label class='cb'><input type='checkbox' name='is_pinned' {checked}> Öne çıkar</label></div>")
-    t.append(f"<div><div>Öncelik</div><input type='number' name='priority' value='{val('priority','0')}' step='1' min='0'></div>")
-    t.append("</div>")  # row
-    t.append("<div style='height:10px'></div><button class='btn primary' type='submit'>Kaydet</button></form></div>")
+    # Minimal, göz yormayan, mobil uyumlu stiller
+    style = """
+    <style>
+      :root{
+        --bg:#0b0c10; --card:#111217; --line:#1e212a; --text:#e9edf1; --muted:#a7b0bd;
+        --btn:#1c7ed6; --btnh:#1b6fd6; --danger:#d6336c;
+      }
+      .menu-wrap{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+      .menu-toggle{display:none;padding:8px 10px;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:10px;cursor:pointer}
+      .tabs{display:flex;flex-wrap:wrap;gap:8px}
+      .tab{padding:8px 10px;border:1px solid var(--line);border-radius:10px;text-decoration:none;color:var(--muted)}
+      .tab.active{color:#fff;border-color:var(--btn)}
+      .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+      h1{font-size:16px;margin:0 0 10px}
+      .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+      .field{display:flex;flex-direction:column;gap:6px}
+      .field > span{font-size:12px;color:var(--muted)}
+      input,select{width:100%;background:#0c0f14;border:1px solid var(--line);border-radius:10px;color:#fff;padding:10px}
+      input:focus,select:focus{outline:none;border-color:var(--btn)}
+      .form-card{position:sticky;top:8px;z-index:1}
+      .form-actions{display:flex;justify-content:flex-end;margin-top:6px}
+      .btn{display:inline-block;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:#151824;color:#fff;text-decoration:none}
+      .btn.primary{background:var(--btn)}
+      .btn.primary:hover{background:var(--btnh)}
+      .btn.small{font-size:12px;padding:6px 8px}
+      .btn.danger{background:#3a0a18;border-color:#551024}
+      .table-wrap{overflow:auto}
+      table{width:100%;border-collapse:collapse}
+      th,td{border-bottom:1px solid var(--line);padding:8px 6px;text-align:left;font-size:13px}
+      td.img img{height:26px;border-radius:6px;display:block}
+      .pill{display:inline-block;padding:4px 8px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:12px}
+      @media(max-width:900px){
+        .grid{grid-template-columns:1fr}
+      }
+      @media(max-width:700px){
+        .menu-toggle{display:inline-block}
+        .tabs{display:none}
+        .tabs.open{display:flex}
+      }
+    </style>
+    <script>
+      function tbMenu(){
+        var el = document.getElementById('tb-menu');
+        if(!el) return;
+        el.classList.toggle('open');
+      }
+    </script>
+    """
 
-    body = "".join(tabs_html) + "".join(t)
-    html = _layout(body, title="Turnuva / Bonus", active="tb", is_super=(current.role == AdminRole.super_admin))
+    html = _layout(style + body, title="Turnuva / Bonus", active="tb", is_super=(current.role == AdminRole.super_admin))
     return HTMLResponse(html)
 
-# ------- Upsert -------
+# ------- Upsert (sade: pin/öncelik kaldırıldı) -------
 @router.post("/admin/turnuvabonus/{kind}/upsert")
 async def upsert_item(
     kind: str,
@@ -145,17 +231,17 @@ async def upsert_item(
 
     form = await request.form()
     id_raw = (form.get("id") or "").strip()
+
     data = {
         "title":     (form.get("title") or "").strip(),
-        "image_url": (form.get("image_url") or "").strip(),
+        "image_url": (form.get("image_url") or "").strip() or None,
         "status":    (form.get("status") or "draft").strip() or "draft",
         "start_at":  _dt_parse(form.get("start_at")),
         "end_at":    _dt_parse(form.get("end_at")),
         "category":  (form.get("category") or "").strip() or None,
-        "is_pinned": (form.get("is_pinned") or "").lower() in ("1","true","on","yes","checked","on"),
-        "priority":  int((form.get("priority") or "0") or 0),
     }
 
+    # Neden: UI'dan kaldırdık; modelde varsa mevcut değerleri bozmamak için güncelleme setine eklemiyoruz.
     if id_raw:
         row = db.get(Model, int(id_raw))
         if not row:
