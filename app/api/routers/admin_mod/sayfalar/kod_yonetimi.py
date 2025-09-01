@@ -2,7 +2,7 @@
 from typing import Annotated
 from html import escape as _e
 
-from fastapi import APIRouter, Depends, Request, HTTPException
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -13,13 +13,6 @@ from app.services.auth import require_role
 from app.api.routers.admin_mod.yerlesim import _layout, _render_flash_blocks, flash
 
 router = APIRouter()
-
-# ——— Admin veya Süper Admin erişimi (tek dependency) ———
-def admin_or_super(request: Request) -> AdminUser:
-    try:
-        return require_role(AdminRole.admin)(request)          # admin
-    except HTTPException:
-        return require_role(AdminRole.super_admin)(request)    # süper admin
 
 def _normalize(u: str | None) -> str | None:
     if not u: return None
@@ -33,10 +26,9 @@ def _normalize(u: str | None) -> str | None:
 def kod_yonetimi(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
-    current: Annotated[AdminUser, Depends(admin_or_super)],
+    current: Annotated[AdminUser, Depends(require_role(AdminRole.admin))],
     tab: str = "kodlar",
 ):
-    # Sekmeler
     tabs = [("kodlar", "Kodlar"), ("oduller", "Ödüller")]
     t_html = ["<div class='tabs'>"]
     for key, label in tabs:
@@ -51,7 +43,6 @@ def kod_yonetimi(
         body_parts.append(flash_blocks)
 
     if tab == "kodlar":
-        # Kod oluşturma + son 20
         prizes = db.query(Prize).order_by(Prize.wheel_index).all()
         last = db.query(Code).order_by(Code.created_at.desc()).limit(20).all()
 
@@ -90,7 +81,6 @@ def kod_yonetimi(
         body_parts += form + table
 
     else:
-        # Ödüller listesi + form
         prizes = db.query(Prize).order_by(Prize.wheel_index).all()
         edit_id = request.query_params.get("edit")
         editing = db.get(Prize, int(edit_id)) if edit_id else None
@@ -146,7 +136,7 @@ def kod_yonetimi(
 async def create_code(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
-    current: Annotated[AdminUser, Depends(admin_or_super)],
+    current: Annotated[AdminUser, Depends(require_role(AdminRole.admin))],
 ):
     form = await request.form()
     username = (form.get("username") or "").strip() or None
@@ -162,7 +152,7 @@ async def create_code(
 async def prizes_upsert(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
-    current: Annotated[AdminUser, Depends(admin_or_super)],
+    current: Annotated[AdminUser, Depends(require_role(AdminRole.admin))],
 ):
     form = await request.form()
     _id = (form.get("id") or "").strip()
@@ -197,7 +187,7 @@ async def prizes_upsert(
 async def prizes_delete(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
-    current: Annotated[AdminUser, Depends(admin_or_super)],
+    current: Annotated[AdminUser, Depends(require_role(AdminRole.admin))],
 ):
     form = await request.form()
     pid = int(form.get("id"))
