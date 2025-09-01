@@ -1,5 +1,5 @@
 # app/api/routers/admin_content.py
-from typing import Annotated, Optional, Dict, Any, Type
+from typing import Annotated, Dict, Any, Type
 from datetime import datetime
 from html import escape as _e
 
@@ -9,41 +9,50 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.db.models import AdminUser, AdminRole, Tournament, DailyBonus, PromoCode, Event
-from app.services.auth import require_role  # sizde zaten var
+from app.services.auth import require_role
 
 router = APIRouter()
 
-# ---- Yardımcılar -------------------------------------------------
-def _dt(val: str | None):
-    if not val: return None
+# ------------------ Yardımcılar ------------------
+def _dt_parse(val: str | None):
+    """HTML datetime-local ('YYYY-MM-DDTHH:MM') -> datetime (naive destekler)."""
+    if not val:
+        return None
     try:
-        # "2025-09-01T12:00" veya "2025-09-01 12:00" gelir
-        val = val.replace("T", " ")
-        return datetime.fromisoformat(val)
+        return datetime.fromisoformat(val.replace(" ", "T"))
     except Exception:
         return None
 
-KIND_MAP: Dict[str, Dict[str, Any]] = {
-    "tournaments":   {"label": "Turnuvalar",           "model": Tournament},
-    "daily-bonuses": {"label": "Güne Özel Bonuslar",   "model": DailyBonus},
-    "promo-codes":   {"label": "Promosyon Kodları",    "model": PromoCode},
-    "events":        {"label": "Etkinlikler",          "model": Event},
-}
+def _dt_input(v):
+    """datetime -> HTML input formatı 'YYYY-MM-DDTHH:MM'"""
+    if not v:
+        return ""
+    try:
+        if isinstance(v, str):
+            v = v.replace(" ", "T")
+            return v[:16]
+        if isinstance(v, datetime):
+            return v.strftime("%Y-%m-%dT%H:%M")
+    except Exception:
+        return ""
+    return ""
 
-FIELDS = [
-    ("title",        "Başlık",                             "text",     True),
-    ("image_url",    "Görsel URL",                         "text",     True),
-    ("status",       "Durum (draft/published/archived)",   "text",     True),
-    ("start_at",     "Başlangıç (YYYY-MM-DD HH:MM)",       "datetime", False),
-    ("end_at",       "Bitiş (YYYY-MM-DD HH:MM)",           "datetime", False),
-    ("category",     "Kategori",                           "text",     False),
-    ("is_pinned",    "Öne Çıkar (true/false)",             "bool",     False),
-    ("priority",     "Öncelik (int)",                      "number",   False),
-    ("accent_color", "Accent Renk (#hex)",                 "text",     False),
-    ("bg_color",     "Arkaplan Renk (#hex)",               "text",     False),
-    ("variant",      "Varyant (ör. gold/blue)",            "text",     False),
+# Bu listeyi ayrı bir ayarlar dosyasından da besleyebiliriz.
+CATEGORY_OPTIONS = [
+    ("slots", "Slot"),
+    ("poker", "Poker"),
+    ("casino", "Casino"),
+    ("promo", "Promosyon"),
 ]
 
+KIND_MAP: Dict[str, Dict[str, Any]] = {
+    "tournaments":   {"label": "Turnuvalar",         "model": Tournament},
+    "daily-bonuses": {"label": "Güne Özel Bonuslar", "model": DailyBonus},
+    "promo-codes":   {"label": "Promosyon Kodları",  "model": PromoCode},
+    "events":        {"label": "Etkinlikler",        "model": Event},
+}
+
+# ------------------ Basit Şablon ------------------
 def _layout(title: str, body: str) -> str:
     return f"""<!doctype html><html lang="tr"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -60,10 +69,13 @@ def _layout(title: str, body: str) -> str:
   th{{font-size:12px;text-transform:uppercase;color:#9aa3b7}}
   input,select{{width:100%;background:#0b0f1a;color:#fff;border:1px solid #243049;border-radius:10px;padding:8px}}
   .row{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}}
+  .row-1{{display:grid;grid-template-columns:1fr;gap:10px}}
   .actions form{{display:inline}}
   .btn{{display:inline-block;padding:8px 12px;border-radius:10px;border:1px solid #2a2f3a;background:#101629;color:#fff;text-decoration:none}}
   .btn.primary{{background:linear-gradient(90deg,#0ea5e9,#60a5fa)}}
   .pill{{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid #2a2f3a;color:#aeb7d0}}
+  .hint{{font-size:12px;color:#9aa3b7;margin-top:4px}}
+  label.cb{{display:flex;align-items:center;gap:8px;color:#c8d1e3}}
 </style></head><body><div class="wrap">{body}</div></body></html>"""
 
 def _tabs(active: str) -> str:
@@ -73,7 +85,7 @@ def _tabs(active: str) -> str:
         items.append(f'<a href="/admin/content/{k}" class="{cls}">{_e(v["label"])}</a>')
     return '<div class="tabs">' + "".join(items) + "</div>"
 
-# ---- Sayfa: liste + form ----------------------------------------
+# ------------------ Liste + Form ------------------
 @router.get("/admin/content/{kind}", response_class=HTMLResponse)
 def content_list(
     kind: str,
@@ -94,7 +106,8 @@ def content_list(
     edit_id = request.query_params.get("edit")
     editing = db.get(Model, int(edit_id)) if edit_id else None
 
-    t = [f'<div class="card"><h1>{_e(KIND_MAP[kind]["label"])}</h1><div class="tabs">{_tabs(kind)}</div><div style="height:8px"></div>']
+    # Liste tablo
+    t = [f'<div class="card"><h1>{_e(KIND_MAP[kind]["label"])}</h1>{_tabs(kind)}<div style="height:8px"></div>']
     t.append('<div class="card"><table><tr><th>ID</th><th>Başlık</th><th>Durum</th><th>Öncelik</th><th>Görsel</th><th>İşlem</th></tr>')
     for r in rows:
         img = "<span class='pill'>-</span>"
@@ -110,31 +123,46 @@ def content_list(
         )
     t.append("</table></div>")
 
+    # Form
     title = "Yeni Kayıt" if not editing else f"Kayıt Düzenle (#{editing.id})"
     t.append(f'<div class="card"><h1>{_e(title)}</h1>')
     t.append(f"<form method='post' action='/admin/content/{kind}/upsert'>")
     if editing:
         t.append(f"<input type='hidden' name='id' value='{editing.id}'>")
 
-    def val(name, default=""):
-        return _e(getattr(editing, name, "") or default)
+    # Alanlar
+    val = lambda name, default="": _e(getattr(editing, name, "") or default)
 
     t.append('<div class="row">')
-    for name, label, typ, required in FIELDS:
-        ph = "" if typ != "datetime" else "YYYY-MM-DD HH:MM"
-        v = val(name)
-        if typ == "bool":
-            v = "true" if str(getattr(editing, name, "")).lower() in ("1","true","on","yes") else "false"
-        t.append(
-            f"<div><div style='font-size:12px;color:#9aa3b7;margin:4px 0'>{_e(label)}</div>"
-            f"<input name='{name}' value='{v}' placeholder='{ph}'></div>"
-        )
-    t.append("</div><div style='height:10px'></div>")
+    # Başlık
+    t.append(f"<div><div>Başlık</div><input name='title' value='{val('title')}' required></div>")
+    # Görsel URL
+    t.append(f"<div><div>Görsel URL</div><input name='image_url' value='{val('image_url')}' placeholder='https://... veya /static/...' required></div>")
+    # Başlangıç
+    t.append(f"<div><div>Başlangıç</div><input type='datetime-local' name='start_at' value='{_dt_input(getattr(editing,'start_at',None))}'></div>")
+    # Bitiş
+    t.append(f"<div><div>Bitiş</div><input type='datetime-local' name='end_at' value='{_dt_input(getattr(editing,'end_at',None))}'></div>")
+    # Kategori (select)
+    t.append("<div><div>Kategori</div><select name='category'>")
+    current_cat = getattr(editing, "category", "") if editing else ""
+    t.append(f"<option value='' {'selected' if not current_cat else ''}>— Seçiniz —</option>")
+    for v, txt in CATEGORY_OPTIONS:
+        sel = "selected" if str(current_cat) == v else ""
+        t.append(f"<option value='{_e(v)}' {sel}>{_e(txt)}</option>")
+    t.append("</select><div class='hint'>Kategori seçenekleri ayrı alandan yönetilecek.</div></div>")
+    # Öne çıkar (checkbox)
+    checked = "checked" if str(getattr(editing, "is_pinned", "")).lower() in ("1","true","on","yes") else ""
+    t.append(f"<div><label class='cb'><input type='checkbox' name='is_pinned' {checked}> Öne çıkar</label></div>")
+    # Öncelik
+    t.append(f"<div><div>Öncelik</div><input type='number' name='priority' value='{val('priority','0')}' step='1' min='0'></div>")
+    t.append("</div>")  # .row
+
+    t.append("<div style='height:10px'></div>")
     t.append("<button class='btn primary' type='submit'>Kaydet</button></form></div></div>")
 
     return HTMLResponse(_layout("İçerik Yönetimi", "".join(t)))
 
-# ---- Upsert (ASYNC) ------------------------------------------------------
+# ------------------ Upsert (ASYNC) ------------------
 @router.post("/admin/content/{kind}/upsert")
 async def content_upsert(
     kind: str,
@@ -149,21 +177,15 @@ async def content_upsert(
     form = await request.form()
 
     id_raw = (form.get("id") or "").strip()
-    def to_bool(v: str | None) -> bool:
-        return (v or "").lower() in ("1","true","on","yes")
-
     data = {
-        "title":        (form.get("title") or "").strip(),
-        "image_url":    (form.get("image_url") or "").strip(),
-        "status":       (form.get("status") or "draft").strip(),
-        "start_at":     _dt(form.get("start_at")),
-        "end_at":       _dt(form.get("end_at")),
-        "category":     (form.get("category") or "").strip() or None,
-        "is_pinned":    to_bool(form.get("is_pinned")),
-        "priority":     int((form.get("priority") or "0") or 0),
-        "accent_color": (form.get("accent_color") or "").strip() or None,
-        "bg_color":     (form.get("bg_color") or "").strip() or None,
-        "variant":      (form.get("variant") or "").strip() or None,
+        "title":     (form.get("title") or "").strip(),
+        "image_url": (form.get("image_url") or "").strip(),
+        "status":    (form.get("status") or "draft").strip() or "draft",  # formda status alanını kaldırdık; default 'draft'
+        "start_at":  _dt_parse(form.get("start_at")),
+        "end_at":    _dt_parse(form.get("end_at")),
+        "category":  (form.get("category") or "").strip() or None,
+        "is_pinned": (form.get("is_pinned") or "").lower() in ("1","true","on","yes","checked","on"),
+        "priority":  int((form.get("priority") or "0") or 0),
     }
 
     if id_raw:
@@ -179,7 +201,7 @@ async def content_upsert(
     db.commit()
     return RedirectResponse(f"/admin/content/{kind}", status_code=303)
 
-# ---- Delete (ASYNC) ------------------------------------------------------
+# ------------------ Sil (ASYNC) ------------------
 @router.post("/admin/content/{kind}/delete")
 async def content_delete(
     kind: str,
