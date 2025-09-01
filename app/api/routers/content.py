@@ -1,78 +1,101 @@
 # app/api/routers/content.py
+from typing import Annotated, Literal, Optional, Type
 from datetime import datetime, timezone
-from typing import Optional
+from html import escape as _e
+
 from fastapi import APIRouter, Depends, Request, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import func
+
 from app.db.session import get_db
 from app.db.models import Tournament, DailyBonus, PromoCode, Event
-from app.schemas.content import HomeFeed, ImageCard, SummaryOut
 
-router = APIRouter(prefix="/api/content", tags=["content"])
+router = APIRouter(prefix="/content", tags=["content"])
 
-def _now(): 
+StatusFilter = Literal["published", "all"]
+
+def _now() -> datetime:
     return datetime.now(timezone.utc)
 
-def _abs_url(req: Request, u: Optional[str]) -> Optional[str]:
-    if not u: return None
-    if u.startswith(("http://","https://","data:")): return u
-    if u.startswith("//"): return "https:" + u
-    if u.startswith("/"):  return str(req.base_url).rstrip("/") + u
+def _abs_url(request: Request, u: Optional[str]) -> Optional[str]:
+    if not u:
+        return None
+    if u.startswith(("data:", "http://", "https://")):
+        return u
+    if u.startswith("//"):
+        return "https:" + u
+    if u.startswith("/"):
+        return str(request.base_url).rstrip("/") + u
     return "https://" + u
 
-def _active(q, now, model):
-    q = q.filter(model.status == "published")
-    q = q.filter((model.start_at == None) | (model.start_at <= now))
-    q = q.filter((model.end_at == None)   | (model.end_at >= now))
-    return q
+def _serialize_row(request: Request, r) -> dict:
+    return {
+        "id": r.id,
+        "title": r.title,
+        "status": r.status,
+        "category": getattr(r, "category", None),
+        "image_url": _abs_url(request, getattr(r, "image_url", None)),
+        "start_at": getattr(r, "start_at", None),
+        "end_at": getattr(r, "end_at", None),
+    }
 
-@router.get("/home", response_model=HomeFeed)
-def home(
+def _list_generic(
     request: Request,
-    db: Session = Depends(get_db),
-    category: Optional[str] = Query(None),
-    limit: int = Query(9, ge=1, le=50),
+    db: Session,
+    Model: Type,
+    status: StatusFilter,
+    limit: Optional[int],
 ):
-    now = _now()
+    q = db.query(Model)
+    if status == "published":
+        now = _now()
+        q = q.filter(Model.status == "published")
+        if hasattr(Model, "start_at"):
+            q = q.filter((Model.start_at == None) | (Model.start_at <= now))
+        if hasattr(Model, "end_at"):
+            q = q.filter((Model.end_at == None) | (Model.end_at >= now))
+    # Sıralama: en güncel üstte
+    if hasattr(Model, "start_at"):
+        q = q.order_by(getattr(Model, "start_at").desc().nullslast(), Model.id.desc())
+    else:
+        q = q.order_by(Model.id.desc())
+    if limit and limit > 0:
+        q = q.limit(int(limit))
+    rows = q.all()
+    return [_serialize_row(request, r) for r in rows]
 
-    def collect(model):
-        q = _active(db.query(model), now, model)
-        if category: q = q.filter(model.category == category)
-        q = q.order_by(model.is_pinned.desc(), model.priority.desc(), model.start_at.desc().nullslast())\
-             .limit(limit)
-        return [ImageCard(id=r.id, imageUrl=_abs_url(request, r.image_url)) for r in q.all()]
-
-    return HomeFeed(
-        tournaments  = collect(Tournament),
-        dailyBonuses = collect(DailyBonus),
-        promoCodes   = collect(PromoCode),
-        events       = collect(Event),
-        serverTime   = now
-    )
-
-@router.get("/summary", response_model=SummaryOut)
-def summary(
+@router.get("/tournaments")
+def list_tournaments(
     request: Request,
-    db: Session = Depends(get_db),
+    db: Annotated[Session, Depends(get_db)],
+    status: StatusFilter = Query("published"),
+    limit: Optional[int] = Query(None, ge=1, le=100),
 ):
-    now = _now()
+    return _list_generic(request, db, Tournament, status, limit)
 
-    def count(model): return _active(db.query(model), now, model).count()
+@router.get("/daily-bonuses")
+def list_daily_bonuses(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    status: StatusFilter = Query("published"),
+    limit: Optional[int] = Query(None, ge=1, le=100),
+):
+    return _list_generic(request, db, DailyBonus, status, limit)
 
-    def next_end(model):
-        row = _active(db.query(model), now, model)\
-              .filter(model.end_at != None).order_by(model.end_at.asc()).first()
-        if not row: return None
-        return {"type": model.__tablename__, "id": row.id, "endAt": row.end_at}
+@router.get("/promo-codes")
+def list_promo_codes(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    status: StatusFilter = Query("published"),
+    limit: Optional[int] = Query(None, ge=1, le=100),
+):
+    return _list_generic(request, db, PromoCode, status, limit)
 
-    nxt = next_end(Tournament) or next_end(DailyBonus) or next_end(PromoCode) or next_end(Event)
-
-    return SummaryOut(
-        activeCounts = {
-            "tournaments":  count(Tournament),
-            "dailyBonuses": count(DailyBonus),
-            "promoCodes":   count(PromoCode),
-            "events":       count(Event),
-        },
-        nextToEnd = nxt,
-        serverTime = now
-    )
+@router.get("/events")
+def list_events(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    status: StatusFilter = Query("published"),
+    limit: Optional[int] = Query(None, ge=1, le=100),
+):
+    return _list_generic(request, db, Event, status, limit)
