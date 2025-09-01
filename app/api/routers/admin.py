@@ -240,7 +240,7 @@ async def admin_login(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
 ):
-    form = await request.form()  # await sadece async def içinde kullanılabilir
+    form = await request.form()
     username = (form.get("username") or "").strip()
     password = (form.get("password") or "").strip()
     try:
