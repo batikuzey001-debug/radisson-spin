@@ -125,6 +125,12 @@ def on_startup() -> None:
                 ADD COLUMN IF NOT EXISTS image_url VARCHAR(512)
             """))
 
+            # 4) tournaments.prize_pool kolonu yoksa ekle  <-- YENİ
+            conn.execute(text("""
+                ALTER TABLE IF EXISTS tournaments
+                ADD COLUMN IF NOT EXISTS prize_pool INTEGER
+            """))
+
     # --- Seed verileri (varsa ekleme) ---
     with SessionLocal() as db:
         if db.query(Prize).count() == 0:
