@@ -1,4 +1,5 @@
 # app/services/main.py
+import os
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -67,31 +68,33 @@ def on_startup() -> None:
     Base.metadata.create_all(engine)
 
     # --- Mini migration'lar (idempotent) ---
-    with engine.begin() as conn:
-        # 1) admin_users.token_hash -> password_hash (varsa)
-        conn.execute(text("""
-        DO $$
-        BEGIN
-            IF EXISTS (
-                SELECT 1 FROM information_schema.columns
-                WHERE table_name='admin_users' AND column_name='token_hash'
-            ) THEN
-                EXECUTE 'ALTER TABLE admin_users RENAME COLUMN token_hash TO password_hash';
-            END IF;
-        END $$;
-        """))
+    # Postgres'e özel blokları sadece postgres'te çalıştır.
+    if engine.dialect.name.lower() in ("postgresql", "postgres"):
+        with engine.begin() as conn:
+            # 1) admin_users.token_hash -> password_hash (varsa)
+            conn.execute(text("""
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name='admin_users' AND column_name='token_hash'
+                ) THEN
+                    EXECUTE 'ALTER TABLE admin_users RENAME COLUMN token_hash TO password_hash';
+                END IF;
+            END $$;
+            """))
 
-        # 2) admin_users.password_hash kolonu yoksa ekle
-        conn.execute(text("""
-            ALTER TABLE IF EXISTS admin_users
-            ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)
-        """))
+            # 2) admin_users.password_hash kolonu yoksa ekle
+            conn.execute(text("""
+                ALTER TABLE IF EXISTS admin_users
+                ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)
+            """))
 
-        # 3) prizes.image_url kolonu yoksa ekle
-        conn.execute(text("""
-            ALTER TABLE IF EXISTS prizes
-            ADD COLUMN IF NOT EXISTS image_url VARCHAR(512)
-        """))
+            # 3) prizes.image_url kolonu yoksa ekle
+            conn.execute(text("""
+                ALTER TABLE IF EXISTS prizes
+                ADD COLUMN IF NOT EXISTS image_url VARCHAR(512)
+            """))
 
     # --- Seed verileri (varsa ekleme) ---
     with SessionLocal() as db:
@@ -113,3 +116,15 @@ def on_startup() -> None:
                     Code(code="TEST500", username=None,    prize_id=p500.id,  status="issued"),
                 ])
                 db.commit()
+
+# -----------------------------
+# Lokal çalıştırma kolaylığı
+# -----------------------------
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "app.services.main:app",
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", "8000")),
+        reload=True,
+    )
