@@ -24,24 +24,24 @@ def _dt(val: str | None):
         return None
 
 KIND_MAP: Dict[str, Dict[str, Any]] = {
-    "tournaments": {"label": "Turnuvalar", "model": Tournament},
-    "daily-bonuses": {"label": "Güne Özel Bonuslar", "model": DailyBonus},
-    "promo-codes": {"label": "Promosyon Kodları", "model": PromoCode},
-    "events": {"label": "Etkinlikler", "model": Event},
+    "tournaments":   {"label": "Turnuvalar",           "model": Tournament},
+    "daily-bonuses": {"label": "Güne Özel Bonuslar",   "model": DailyBonus},
+    "promo-codes":   {"label": "Promosyon Kodları",    "model": PromoCode},
+    "events":        {"label": "Etkinlikler",          "model": Event},
 }
 
 FIELDS = [
-    ("title", "Başlık", "text", True),
-    ("image_url", "Görsel URL", "text", True),
-    ("status", "Durum (draft/published/archived)", "text", True),
-    ("start_at", "Başlangıç (YYYY-MM-DD HH:MM)", "datetime", False),
-    ("end_at", "Bitiş (YYYY-MM-DD HH:MM)", "datetime", False),
-    ("category", "Kategori", "text", False),
-    ("is_pinned", "Öne Çıkar (true/false)", "bool", False),
-    ("priority", "Öncelik (int)", "number", False),
-    ("accent_color", "Accent Renk (#hex)", "text", False),
-    ("bg_color", "Arkaplan Renk (#hex)", "text", False),
-    ("variant", "Varyant (ör. gold/blue)", "text", False),
+    ("title",        "Başlık",                             "text",     True),
+    ("image_url",    "Görsel URL",                         "text",     True),
+    ("status",       "Durum (draft/published/archived)",   "text",     True),
+    ("start_at",     "Başlangıç (YYYY-MM-DD HH:MM)",       "datetime", False),
+    ("end_at",       "Bitiş (YYYY-MM-DD HH:MM)",           "datetime", False),
+    ("category",     "Kategori",                           "text",     False),
+    ("is_pinned",    "Öne Çıkar (true/false)",             "bool",     False),
+    ("priority",     "Öncelik (int)",                      "number",   False),
+    ("accent_color", "Accent Renk (#hex)",                 "text",     False),
+    ("bg_color",     "Arkaplan Renk (#hex)",               "text",     False),
+    ("variant",      "Varyant (ör. gold/blue)",            "text",     False),
 ]
 
 def _layout(title: str, body: str) -> str:
@@ -85,52 +85,58 @@ def content_list(
         return HTMLResponse(_layout("İçerik", "<p>Geçersiz tür.</p>"), status_code=404)
 
     Model: Type = KIND_MAP[kind]["model"]
-    rows = db.query(Model).order_by(Model.is_pinned.desc(), Model.priority.desc(), Model.start_at.desc().nullslast()).all()
+    rows = db.query(Model).order_by(
+        Model.is_pinned.desc(),
+        Model.priority.desc(),
+        Model.start_at.desc().nullslast()
+    ).all()
+
     edit_id = request.query_params.get("edit")
     editing = db.get(Model, int(edit_id)) if edit_id else None
 
-    # tablo
-    t = ['<div class="card"><h1>'+_e(KIND_MAP[kind]["label"])+'</h1><div class="tabs">'+_tabs(kind)+'</div><div style="height:8px"></div>']
+    t = [f'<div class="card"><h1>{_e(KIND_MAP[kind]["label"])}</h1><div class="tabs">{_tabs(kind)}</div><div style="height:8px"></div>']
     t.append('<div class="card"><table><tr><th>ID</th><th>Başlık</th><th>Durum</th><th>Öncelik</th><th>Görsel</th><th>İşlem</th></tr>')
     for r in rows:
-        img = f"<span class='pill'>-</span>"
+        img = "<span class='pill'>-</span>"
         if r.image_url:
             img = f"<img src='{_e(r.image_url)}' style='height:26px;border-radius:6px' loading='lazy' />"
-        t.append(f"<tr><td>{r.id}</td><td>{_e(r.title)}</td><td>{_e(r.status or '-')}</td>"
-                 f"<td>{r.priority or 0}</td><td>{img}</td>"
-                 f"<td class='actions'>"
-                 f"<a class='btn' href='/admin/content/{kind}?edit={r.id}'>Düzenle</a> "
-                 f"<form method='post' action='/admin/content/{kind}/delete' onsubmit=\"return confirm('Silinsin mi?')\">"
-                 f"<input type='hidden' name='id' value='{r.id}'/><button class='btn'>Sil</button></form></td></tr>")
+        t.append(
+            f"<tr><td>{r.id}</td><td>{_e(r.title)}</td><td>{_e(r.status or '-')}</td>"
+            f"<td>{r.priority or 0}</td><td>{img}</td>"
+            f"<td class='actions'>"
+            f"<a class='btn' href='/admin/content/{kind}?edit={r.id}'>Düzenle</a> "
+            f"<form method='post' action='/admin/content/{kind}/delete' onsubmit=\"return confirm('Silinsin mi?')\">"
+            f"<input type='hidden' name='id' value='{r.id}'/><button class='btn'>Sil</button></form></td></tr>"
+        )
     t.append("</table></div>")
 
-    # form
     title = "Yeni Kayıt" if not editing else f"Kayıt Düzenle (#{editing.id})"
-    t.append('<div class="card"><h1>'+_e(title)+'</h1>')
+    t.append(f'<div class="card"><h1>{_e(title)}</h1>')
     t.append(f"<form method='post' action='/admin/content/{kind}/upsert'>")
     if editing:
         t.append(f"<input type='hidden' name='id' value='{editing.id}'>")
-    # alanlar
+
     def val(name, default=""):
         return _e(getattr(editing, name, "") or default)
 
-    # grid
     t.append('<div class="row">')
     for name, label, typ, required in FIELDS:
         ph = "" if typ != "datetime" else "YYYY-MM-DD HH:MM"
         v = val(name)
         if typ == "bool":
             v = "true" if str(getattr(editing, name, "")).lower() in ("1","true","on","yes") else "false"
-        t.append(f"<div><div style='font-size:12px;color:#9aa3b7;margin:4px 0'>{_e(label)}</div>"
-                 f"<input name='{name}' value='{v}' placeholder='{ph}'></div>")
+        t.append(
+            f"<div><div style='font-size:12px;color:#9aa3b7;margin:4px 0'>{_e(label)}</div>"
+            f"<input name='{name}' value='{v}' placeholder='{ph}'></div>"
+        )
     t.append("</div><div style='height:10px'></div>")
     t.append("<button class='btn primary' type='submit'>Kaydet</button></form></div></div>")
 
     return HTMLResponse(_layout("İçerik Yönetimi", "".join(t)))
 
-# ---- Upsert ------------------------------------------------------
+# ---- Upsert (ASYNC) ------------------------------------------------------
 @router.post("/admin/content/{kind}/upsert")
-def content_upsert(
+async def content_upsert(
     kind: str,
     request: Request,
     db: Annotated[Session, Depends(get_db)],
@@ -140,40 +146,42 @@ def content_upsert(
         return RedirectResponse("/admin/content/tournaments", status_code=303)
     Model: Type = KIND_MAP[kind]["model"]
 
-    form = await request.form() if hasattr(request, "form") else {}
-    # Starlette Request sync kullanımı için:
-    if not form:
-        form = {}
+    form = await request.form()
 
     id_raw = (form.get("id") or "").strip()
+    def to_bool(v: str | None) -> bool:
+        return (v or "").lower() in ("1","true","on","yes")
+
     data = {
-        "title": (form.get("title") or "").strip(),
-        "image_url": (form.get("image_url") or "").strip(),
-        "status": (form.get("status") or "draft").strip(),
-        "start_at": _dt(form.get("start_at")),
-        "end_at": _dt(form.get("end_at")),
-        "category": (form.get("category") or "").strip() or None,
-        "is_pinned": (form.get("is_pinned") or "").lower() in ("1","true","on","yes"),
-        "priority": int((form.get("priority") or "0") or 0),
+        "title":        (form.get("title") or "").strip(),
+        "image_url":    (form.get("image_url") or "").strip(),
+        "status":       (form.get("status") or "draft").strip(),
+        "start_at":     _dt(form.get("start_at")),
+        "end_at":       _dt(form.get("end_at")),
+        "category":     (form.get("category") or "").strip() or None,
+        "is_pinned":    to_bool(form.get("is_pinned")),
+        "priority":     int((form.get("priority") or "0") or 0),
         "accent_color": (form.get("accent_color") or "").strip() or None,
-        "bg_color": (form.get("bg_color") or "").strip() or None,
-        "variant": (form.get("variant") or "").strip() or None,
+        "bg_color":     (form.get("bg_color") or "").strip() or None,
+        "variant":      (form.get("variant") or "").strip() or None,
     }
 
     if id_raw:
         row = db.get(Model, int(id_raw))
         if not row:
             return RedirectResponse(f"/admin/content/{kind}", status_code=303)
-        for k,v in data.items(): setattr(row, k, v)
+        for k, v in data.items():
+            setattr(row, k, v)
         db.add(row)
     else:
         db.add(Model(**data))
+
     db.commit()
     return RedirectResponse(f"/admin/content/{kind}", status_code=303)
 
-# ---- Delete ------------------------------------------------------
+# ---- Delete (ASYNC) ------------------------------------------------------
 @router.post("/admin/content/{kind}/delete")
-def content_delete(
+async def content_delete(
     kind: str,
     request: Request,
     db: Annotated[Session, Depends(get_db)],
@@ -183,11 +191,13 @@ def content_delete(
         return RedirectResponse("/admin/content/tournaments", status_code=303)
     Model: Type = KIND_MAP[kind]["model"]
 
-    form = await request.form() if hasattr(request, "form") else {}
+    form = await request.form()
     id_raw = (form.get("id") or "").strip()
+
     if id_raw:
         row = db.get(Model, int(id_raw))
         if row:
             db.delete(row)
             db.commit()
+
     return RedirectResponse(f"/admin/content/{kind}", status_code=303)
