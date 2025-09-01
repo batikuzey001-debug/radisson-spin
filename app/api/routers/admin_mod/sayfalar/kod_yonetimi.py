@@ -1,4 +1,6 @@
-# app/api/routers/admin_mod/sayfalar/kod_yonetimi.py
+# SAYFA: Kod Yönetimi (Kodlar + Ödüller tek sayfa / iki sekme)
+# URL: /admin/kod-yonetimi
+
 from typing import Annotated
 from html import escape as _e
 
@@ -22,7 +24,12 @@ def _normalize(u: str | None) -> str | None:
     if x.startswith("//"): return "https:" + x
     return x
 
-@router.get("/admin/kod", response_class=HTMLResponse)
+# Eski adresten gelenleri yeni adrese yönlendir (opsiyonel güvenli)
+@router.get("/admin/kod")
+def redirect_old():
+    return RedirectResponse(url="/admin/kod-yonetimi", status_code=307)
+
+@router.get("/admin/kod-yonetimi", response_class=HTMLResponse)
 def kod_yonetimi(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
@@ -33,7 +40,7 @@ def kod_yonetimi(
     t_html = ["<div class='tabs'>"]
     for key, label in tabs:
         cls = "tab active" if tab == key else "tab"
-        t_html.append(f"<a class='{cls}' href='/admin/kod?tab={key}'>{_e(label)}</a>")
+        t_html.append(f"<a class='{cls}' href='/admin/kod-yonetimi?tab={key}'>{_e(label)}</a>")
     t_html.append("</div>")
 
     body_parts = ["".join(t_html)]
@@ -48,7 +55,7 @@ def kod_yonetimi(
 
         form = [
             "<div class='card'><h1>Kod Oluştur</h1>",
-            "<form method='post' action='/admin/kod/create-code'>",
+            "<form method='post' action='/admin/kod-yonetimi/create-code'>",
             "<div class='grid'>",
             "<div class='span-6'><div>Kullanıcı adı</div><input name='username' required></div>",
             "<div class='span-6'><div>Ödül</div><select name='prize_id'>",
@@ -97,8 +104,8 @@ def kod_yonetimi(
                 thumb = f"<img src='{_e(safe)}' style='height:24px;border-radius:6px' loading='lazy' />"
             rows.append(
                 f"<tr><td>{_e(p.label)}</td><td>{p.wheel_index}</td><td>{thumb}</td>"
-                f"<td><a class='btn small' href='/admin/kod?tab=oduller&edit={p.id}'>Düzenle</a> "
-                f"<form method='post' action='/admin/kod/prizes/delete' style='display:inline' onsubmit=\"return confirm('Silinsin mi?')\">"
+                f"<td><a class='btn small' href='/admin/kod-yonetimi?tab=oduller&edit={p.id}'>Düzenle</a> "
+                f"<form method='post' action='/admin/kod-yonetimi/prizes/delete' style='display:inline' onsubmit=\"return confirm('Silinsin mi?')\">"
                 f"<input type='hidden' name='id' value='{p.id}' /><button class='btn small' type='submit'>Sil</button></form></td></tr>"
             )
         rows += ["</table></div></div>"]
@@ -111,7 +118,7 @@ def kod_yonetimi(
         form = f"""
         <div class='card'>
           <h1>{'Ödül Düzenle' if editing else 'Yeni Ödül'}</h1>
-          <form method='post' action='/admin/kod/prizes/upsert'>
+          <form method='post' action='/admin/kod-yonetimi/prizes/upsert'>
             {'<input type="hidden" name="id" value="'+str(eid)+'">' if editing else ''}
             <div class='grid'>
               <div class='span-6'><div>Sıralama</div><input name='wheel_index' type='number' value='{ewi}' required></div>
@@ -125,14 +132,13 @@ def kod_yonetimi(
           </form>
         </div>
         """
-
         body_parts += rows + [form]
 
     html = _layout("Kod Yönetimi", "".join(body_parts), active="kod", is_super=(current.role == AdminRole.super_admin))
     return HTMLResponse(html)
 
 # --------- Kod oluştur (POST) ----------
-@router.post("/admin/kod/create-code", response_model=None)
+@router.post("/admin/kod-yonetimi/create-code", response_model=None)
 async def create_code(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
@@ -145,10 +151,10 @@ async def create_code(
     db.add(Code(code=code, username=username, prize_id=prize_id, status="issued"))
     db.commit()
     flash(request, "Kod oluşturuldu.", "success")
-    return RedirectResponse(url="/admin/kod?tab=kodlar", status_code=303)
+    return RedirectResponse(url="/admin/kod-yonetimi?tab=kodlar", status_code=303)
 
 # --------- Ödül upsert/sil (POST) ----------
-@router.post("/admin/kod/prizes/upsert", response_model=None)
+@router.post("/admin/kod-yonetimi/prizes/upsert", response_model=None)
 async def prizes_upsert(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
@@ -163,13 +169,13 @@ async def prizes_upsert(
 
     if not label:
         flash(request, "Ad zorunludur.", "error")
-        return RedirectResponse(url="/admin/kod?tab=oduller", status_code=303)
+        return RedirectResponse(url="/admin/kod-yonetimi?tab=oduller", status_code=303)
 
     if _id:
         prize = db.get(Prize, int(_id))
         if not prize:
             flash(request, "Ödül bulunamadı.", "error")
-            return RedirectResponse(url="/admin/kod?tab=oduller", status_code=303)
+            return RedirectResponse(url="/admin/kod-yonetimi?tab=oduller", status_code=303)
         prize.label = label
         prize.wheel_index = wheel_index
         prize.image_url = image_url
@@ -181,9 +187,9 @@ async def prizes_upsert(
 
     db.commit()
     flash(request, msg, "success")
-    return RedirectResponse(url="/admin/kod?tab=oduller", status_code=303)
+    return RedirectResponse(url="/admin/kod-yonetimi?tab=oduller", status_code=303)
 
-@router.post("/admin/kod/prizes/delete", response_model=None)
+@router.post("/admin/kod-yonetimi/prizes/delete", response_model=None)
 async def prizes_delete(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
@@ -194,10 +200,10 @@ async def prizes_delete(
     prize = db.get(Prize, pid)
     if not prize:
         flash(request, "Ödül bulunamadı.", "error")
-        return RedirectResponse(url="/admin/kod?tab=oduller", status_code=303)
+        return RedirectResponse(url="/admin/kod-yonetimi?tab=oduller", status_code=303)
 
     db.query(Code).filter(Code.prize_id == pid).delete(synchronize_session=False)
     db.delete(prize)
     db.commit()
     flash(request, "Ödül silindi.", "success")
-    return RedirectResponse(url="/admin/kod?tab=oduller", status_code=303)
+    return RedirectResponse(url="/admin/kod-yonetimi?tab=oduller", status_code=303)
