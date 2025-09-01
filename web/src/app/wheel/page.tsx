@@ -9,6 +9,29 @@ type RedeemResponse = { status: string; prize?: string }
 const BASE = (process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/+$/, '')
 const SPIN = (process.env.NEXT_PUBLIC_SPIN_PREFIX || '/api').replace(/\/+$/, '')
 
+/* Neden: Farklı backend yolları olasılığına karşı birkaç yolu deneyip ilk başarılı sonucu döner. */
+async function fetchPrizesSmart(): Promise<{ data: Prize[]; usedUrl?: string; err?: string }> {
+  if (!BASE) return { data: [], err: 'NEXT_PUBLIC_API_BASE tanımlı değil.' }
+
+  const candidates = [
+    `${BASE}${SPIN}/spin/prizes`, // beklenen (main.py: app.include_router(spin_router, prefix="/api"))
+    `${BASE}${SPIN}/prizes`,
+    `${BASE}/api/spin/prizes`,
+  ]
+
+  for (const url of candidates) {
+    try {
+      const r = await fetch(url, { cache: 'no-store' })
+      if (!r.ok) continue
+      const json = (await r.json()) as Prize[]
+      if (Array.isArray(json)) return { data: json, usedUrl: url }
+    } catch {
+      /* sessiz geç */
+    }
+  }
+  return { data: [], err: 'Prizes endpoint bulunamadı veya CORS engeli.' }
+}
+
 export default function WheelPage() {
   const [username, setUsername] = useState('')
   const [code, setCode] = useState('')
@@ -17,14 +40,24 @@ export default function WheelPage() {
   const [prize, setPrize] = useState<string | null>(null)
   const [prizes, setPrizes] = useState<Prize[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [prizesUrl, setPrizesUrl] = useState<string | undefined>(undefined)
 
-  // Neden: Ödülleri önceden çekerek kullanıcıya bilgilendirici etiket göstermek.
+  // Ödülleri preload (UI bilgilendirici)
   useEffect(() => {
-    if (!BASE) return
-    fetch(`${BASE}${SPIN}/spin/prizes`, { cache: 'no-store' })
-      .then(async (r) => (r.ok ? r.json() : Promise.reject(await r.text())))
-      .then((data: Prize[]) => setPrizes(data || []))
-      .catch(() => {})
+    let mounted = true
+    ;(async () => {
+      const { data, usedUrl, err } = await fetchPrizesSmart()
+      if (!mounted) return
+      if (data.length) {
+        setPrizes(data)
+        setPrizesUrl(usedUrl)
+      } else if (err) {
+        setError((e) => e || err) // mevcut hata yoksa göster
+      }
+    })()
+    return () => {
+      mounted = false
+    }
   }, [])
 
   async function onSubmit(e: React.FormEvent) {
@@ -39,13 +72,17 @@ export default function WheelPage() {
       setError('Kullanıcı adı ve kod zorunludur.')
       return
     }
+    if (!BASE) {
+      setError('API adresi tanımlı değil (NEXT_PUBLIC_API_BASE).')
+      return
+    }
 
     try {
       setLoading(true)
       const res = await fetch(`${BASE}${SPIN}/spin/redeem`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // Neden: Backend yalnızca 'code' kullansa da 'username' ekstra alan olarak gönderilebilir; geriye dönük uyumlu.
+        // Backend yalnızca 'code' kullanıyor olabilir; username gönderimi geriye dönük uyumludur.
         body: JSON.stringify({ code: c, username: u }),
       })
       if (!res.ok) {
@@ -117,9 +154,20 @@ export default function WheelPage() {
 
       {/* Ödüller önizleme */}
       <section className="mt-8">
-        <h2 className="text-lg font-semibold mb-3">Olası Ödüller</h2>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-lg font-semibold">Olası Ödüller</h2>
+          {prizesUrl && (
+            <span className="text-[10px] text-white/40">kaynak: {prizesUrl.replace(BASE, '')}</span>
+          )}
+        </div>
+
         {prizes.length === 0 ? (
-          <div className="text-white/60 text-sm">Ödül listesi şu an görüntülenemiyor.</div>
+          <div className="text-white/60 text-sm">
+            Ödül listesi şu an görüntülenemiyor.
+            <span className="block mt-1 text-white/40">
+              Lütfen backend CORS ayarına web domaininizi ekleyin ve <code>{SPIN}/spin/prizes</code> yolunu doğrulayın.
+            </span>
+          </div>
         ) : (
           <ul className="flex flex-wrap gap-2">
             {prizes.map((p) => (
