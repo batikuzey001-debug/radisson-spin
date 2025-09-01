@@ -16,7 +16,7 @@ class Prize(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     label: Mapped[str] = mapped_column(String(64))
     wheel_index: Mapped[int] = mapped_column(Integer)
-    image_url: Mapped[str | None] = mapped_column(String(512), nullable=True)  # görsel URL (opsiyonel)
+    image_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     codes = relationship("Code", back_populates="prize")
 
 
@@ -57,31 +57,40 @@ class AdminUser(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
 
-# --- FEED MODELLERİ (iskelet) ---
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean
+# --- FEED MODELLERİ (Turnuva + diğerleri) ---
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, JSON
 from datetime import datetime, timezone
 
 def _utcnow(): return datetime.now(timezone.utc)
 
 class Tournament(Base):
     __tablename__ = "tournaments"
-    id         = Column(Integer, primary_key=True)
-    title      = Column(String(200), nullable=False)
-    image_url  = Column(String(512), nullable=False)
-    status     = Column(String(20), default="draft")  # draft|published|archived
-    start_at   = Column(DateTime(timezone=True))
-    end_at     = Column(DateTime(timezone=True))
-    category   = Column(String(50))
-    is_pinned  = Column(Boolean, default=False)
-    priority   = Column(Integer, default=0)
-    # opsiyonel kozmetik override
-    accent_color = Column(String(16))
-    bg_color     = Column(String(16))
-    variant      = Column(String(24))
-    # **YENİ**: Ödül havuzu (₺) — büyük değerler için Integer yeterli, istersen Numeric'e çevirebiliriz
-    prize_pool = Column(Integer)  # NULL olabilir; admin formunda boş geçilebilir
-    created_at = Column(DateTime(timezone=True), default=_utcnow)
-    updated_at = Column(DateTime(timezone=True), default=_utcnow)
+    id            = Column(Integer, primary_key=True)
+    slug          = Column(String(200), unique=True, index=True)  # URL-dostu
+    title         = Column(String(200), nullable=False)
+    subtitle      = Column(String(200))            # kart alt başlığı
+    short_desc    = Column(Text)                   # kart kısa açıklama
+    long_desc     = Column(Text)                   # modal/detay açıklama
+    image_url     = Column(String(512), nullable=False)
+    banner_url    = Column(String(512))            # landing/hero görseli
+    cta_url       = Column(String(512))            # KATIL butonu hedefi
+    status        = Column(String(20), default="draft")  # draft|published|archived
+    start_at      = Column(DateTime(timezone=True))
+    end_at        = Column(DateTime(timezone=True))
+    category      = Column(String(50))
+    is_pinned     = Column(Boolean, default=False)
+    priority      = Column(Integer, default=0)
+    prize_pool    = Column(Integer)                # ₺
+    participant_count = Column(Integer)            # katılımcı
+    rank_visible  = Column(Boolean, default=False) # liderlik açık mı
+    # kozmetik override
+    accent_color  = Column(String(16))
+    bg_color      = Column(String(16))
+    variant       = Column(String(24))
+    # i18n (ileriye dönük)
+    i18n          = Column(JSON)                   # {"tr-TR": {...}, "en-US": {...}}
+    created_at    = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at    = Column(DateTime(timezone=True), default=_utcnow)
 
 class DailyBonus(Base):
     __tablename__ = "daily_bonuses"
