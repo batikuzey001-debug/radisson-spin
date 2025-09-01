@@ -1,10 +1,10 @@
 # app/api/routers/admin_mod/__init__.py
 from fastapi import APIRouter
 
-from .sayfalar.login_sayfasi import router as login_router
+from .sayfalar.loginpage import router as login_router
 from .sayfalar.kod_yonetimi import router as kod_router
 from .sayfalar.turnuvabonus import router as tb_router       # /admin/turnuvabonus
-from .sayfalar.admin_yonetim import router as admin_yn_router
+from .sayfalar.adminyonetim import router as admin_yn_router
 from .sayfalar.panel import router as panel_router
 
 admin_router = APIRouter()
