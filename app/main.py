@@ -1,32 +1,56 @@
-# app/services/main.py
+# app/main.py
 import os
+import json
 from pathlib import Path
+from typing import List, Union
+from urllib.parse import quote
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.sessions import SessionMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse, JSONResponse, HTMLResponse
+from starlette.middleware.sessions import SessionMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from urllib.parse import quote
 from sqlalchemy import text
 
 from app.core.config import settings
 from app.api.routers.health import router as health_router
 from app.api.routers.spin import router as spin_router
+from app.api.routers.content import router as content_router
+from app.api.routers.admin_mod import admin_router as admin_mod_router
+from app.api.routers.livescores import router as livescores_router
 from app.db.session import SessionLocal, engine
 from app.db.models import Base, Prize, Code
+
+
+def _normalize_origins(val: Union[str, List[str]]) -> List[str]:
+    """Railway gibi ortamlarda tek string gelebileceği için CORS originlerini normalize eder."""
+    if isinstance(val, list):
+        return [s.strip() for s in val if s and s.strip()]
+    if not val:
+        return []
+    s = str(val).strip()
+    if s.startswith("["):
+        try:
+            arr = json.loads(s)
+            return [str(x).strip() for x in arr if x and str(x).strip()]
+        except Exception:
+            pass
+    return [p.strip() for p in s.split(",") if p.strip()]
+
 
 app = FastAPI()
 
 # -----------------------------
 # CORS
 # -----------------------------
+origins = _normalize_origins(settings.CORS_ALLOW_ORIGINS)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ALLOW_ORIGINS,
+    allow_origins=origins,
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_credentials=True,  # Neden: cookie/session kullanımı ve bazı preflight senaryoları
 )
 
 # -----------------------------
@@ -42,7 +66,7 @@ app.add_middleware(
 # -----------------------------
 # Static Files: /static -> <kök>/static
 # -----------------------------
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[1]  # .../app -> proje kökü
 STATIC_DIR = PROJECT_ROOT / "static"
 (STATIC_DIR / "uploads").mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -51,26 +75,17 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 # Routers
 # -----------------------------
 app.include_router(health_router)
-app.include_router(spin_router, prefix="/api")
-
-# Public content feed
-from app.api.routers.content import router as content_router
-app.include_router(content_router)
-
-# Yeni modüler admin (login, dashboard, kod yönetimi, turnuva/bonus, admin yönetim)
-from app.api.routers.admin_mod import admin_router as admin_mod_router
-app.include_router(admin_mod_router)
-
-# Sportmonks canlı skor/bülten API’leri
-from app.api.routers.livescores import router as livescores_router
-# ÖNEMLİ: frontend çağrıları ile uyum için /api prefix'i
-app.include_router(livescores_router, prefix="/api")
+app.include_router(spin_router, prefix="/api")        # /api/spin/...
+app.include_router(content_router)                    # /content...
+app.include_router(admin_mod_router)                  # /admin...
+app.include_router(livescores_router, prefix="/api")  # /api/livescores/...
 
 # -----------------------------
 # Admin auth yönlendirmeleri
 # -----------------------------
 @app.exception_handler(StarletteHTTPException)
 async def _admin_auth_redirect(request: Request, exc: StarletteHTTPException):
+    # Neden: HTML isteklerini login'e yönlendirmek, API'yi etkilememek
     path = request.url.path or ""
     is_html = "text/html" in (request.headers.get("accept") or "")
     is_admin_area = path.startswith("/admin")
@@ -82,6 +97,7 @@ async def _admin_auth_redirect(request: Request, exc: StarletteHTTPException):
         return RedirectResponse(url=f"/admin/login?next={next_param}", status_code=303)
 
     return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+
 
 @app.get("/admin", response_class=HTMLResponse)
 def admin_root():
@@ -122,7 +138,7 @@ def on_startup() -> None:
                 ADD COLUMN IF NOT EXISTS image_url VARCHAR(512)
             """))
 
-            # 4) tournaments ilave alanlar (IF EXISTS tablo + IF NOT EXISTS kolon)
+            # 4) tournaments ilave alanlar
             conn.execute(text("ALTER TABLE IF EXISTS tournaments ADD COLUMN IF NOT EXISTS prize_pool INTEGER"))
             conn.execute(text("ALTER TABLE IF EXISTS tournaments ADD COLUMN IF NOT EXISTS subtitle VARCHAR(200)"))
             conn.execute(text("ALTER TABLE IF EXISTS tournaments ADD COLUMN IF NOT EXISTS short_desc TEXT"))
@@ -162,7 +178,7 @@ def on_startup() -> None:
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        "app.services.main:app",
+        "app.main:app",
         host="0.0.0.0",
         port=int(os.getenv("PORT", "8000")),
         reload=True,
