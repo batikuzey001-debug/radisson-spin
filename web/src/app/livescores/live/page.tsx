@@ -52,7 +52,7 @@ export default function LiveScoresLivePage() {
 
   useEffect(() => {
     load()
-    const id = setInterval(load, 10_000) // 10 sn
+    const id = setInterval(load, 10_000)
     return () => clearInterval(id)
   }, [])
 
@@ -68,7 +68,6 @@ export default function LiveScoresLivePage() {
   }, [items])
 
   function handleClick(id: number) {
-    // Mobil/desktop ayrımına girmeden sade yönlendirme:
     router.push(`/livescores/${id}`)
   }
 
@@ -104,7 +103,6 @@ export default function LiveScoresLivePage() {
         {groups.map(([leagueName, list]) => (
           <section key={leagueName} className="rounded-xl border border-white/10 bg-[#0a0f1a]">
             <div className="flex items-center gap-2 px-3 py-2 border-b border-white/10">
-              {/* Lig logosu varsa küçük ikon, yoksa ad */}
               {list[0]?.league?.logo ? (
                 <>
                   <img src={list[0].league.logo!} className="h-4 w-4 object-contain" alt="" />
@@ -126,7 +124,7 @@ export default function LiveScoresLivePage() {
                   score={it.score}
                   time={it.time}
                   odds={{ H: it.odds?.H, D: it.odds?.D, A: it.odds?.A }}
-                  prob={it.prob}
+                  prob={it.prob}             // <-- BURADA ARTIK GEÇERLİ
                   onClick={handleClick}
                 />
               ))}
