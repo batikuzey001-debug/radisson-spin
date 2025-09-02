@@ -4,6 +4,7 @@
 type Team = { name: string; logo?: string | null }
 type League = { name?: string | null; logo?: string | null }
 type Odds  = { H?: number | null; D?: number | null; A?: number | null }
+type Prob  = { H?: number | null; D?: number | null; A?: number | null }
 
 export type LiveRowItemProps = {
   id: number
@@ -13,40 +14,44 @@ export type LiveRowItemProps = {
   score: { home?: number | null; away?: number | null }
   time: number | string
   odds?: Odds
+  /** API'den gelirse öncelikli kullanılır; yoksa odds'tan hesaplanır. */
+  prob?: Prob
   onClick?: (id: number) => void
 }
 
 const fmt = (v?: number | null, d = '—') => (typeof v === 'number' ? v.toFixed(2) : d)
 const pct = (v?: number | null) => (typeof v === 'number' ? `${Math.round(v)}%` : '—')
 
-/** Oranlardan (H/D/A) marjin normalize edilerek ihtimal hesaplanır. */
-function probsFromOdds(odds?: Odds): { H?: number; D?: number; A?: number } {
+function probsFromOdds(odds?: Odds): Prob {
   if (!odds || !odds.H || !odds.D || !odds.A) return {}
   const invH = 1 / odds.H, invD = 1 / odds.D, invA = 1 / odds.A
   const sum  = invH + invD + invA
   if (!sum) return {}
-  return {
-    H: (invH / sum) * 100,
-    D: (invD / sum) * 100,
-    A: (invA / sum) * 100,
-  }
+  return { H: (invH / sum) * 100, D: (invD / sum) * 100, A: (invA / sum) * 100 }
 }
 
 function TeamLogo({ name, src }: { name: string; src?: string | null }) {
   const initials = (name || '').split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase() || '—'
   return src ? (
-    <img src={src} alt="" className="h-5 w-5 rounded-sm object-contain" />
+    <img
+      src={src}
+      alt=""
+      className="h-5 w-5 rounded-sm object-contain"
+      onError={(e)=>{ (e.currentTarget as HTMLImageElement).style.display='none' }}
+    />
   ) : (
-    <div className="h-5 w-5 grid place-items-center rounded-sm bg-white/10 text-[10px] text-white/70">{initials}</div>
+    <div className="h-5 w-5 grid place-items-center rounded-sm bg-white/10 text-[10px] text-white/70">
+      {initials}
+    </div>
   )
 }
 
 export default function LiveRowItem({
-  id, league, home, away, score, time, odds, onClick,
+  id, league, home, away, score, time, odds, prob, onClick,
 }: LiveRowItemProps) {
   const hs = score.home ?? 0
   const as_ = score.away ?? 0
-  const pr = probsFromOdds(odds)
+  const p: Prob = (prob && (prob.H || prob.D || prob.A)) ? prob : probsFromOdds(odds)
 
   return (
     <button
@@ -56,7 +61,11 @@ export default function LiveRowItem({
       <div className="grid grid-cols-[20px_1fr_auto_1fr_auto] items-center gap-2">
         {/* Lig */}
         <div className="flex items-center justify-center">
-          {league.logo ? <img src={league.logo} alt="" className="h-4 w-4 object-contain opacity-90" /> : <span className="text-[10px] text-white/60">•</span>}
+          {league.logo ? (
+            <img src={league.logo} alt="" className="h-4 w-4 object-contain opacity-90" />
+          ) : (
+            <span className="text-[10px] text-white/60">•</span>
+          )}
         </div>
 
         {/* Home */}
@@ -84,11 +93,11 @@ export default function LiveRowItem({
           <TeamLogo name={away.name} src={away.logo} />
         </div>
 
-        {/* Sağ blok: Oranlar ve ihtimaller (alt alta, dar) */}
+        {/* Sağ blok: Oranlar ve İhtimal (alt alta) */}
         <div className="ml-2 text-right">
           <div className="text-[11px] text-white/70 leading-4">
             <div>H/D/A: <span className="text-[#00d4ff] font-semibold">{fmt(odds?.H)}/{fmt(odds?.D)}/{fmt(odds?.A)}</span></div>
-            <div>İhtimal: <span className="text-white font-semibold">{pct(pr.H)} / {pct(pr.D)} / {pct(pr.A)}</span></div>
+            <div>İhtimal: <span className="text-white font-semibold">{pct(p.H)} / {pct(p.D)} / {pct(p.A)}</span></div>
           </div>
         </div>
       </div>
