@@ -56,7 +56,7 @@ def _q(url: str, kv: Dict[str, str]) -> str:
 def _as_list(data: Any) -> List[dict]:
     if isinstance(data, list): return data
     if isinstance(data, dict):
-        for k in ("data","response","results","events","matches"):
+        for k in ("data","response","results","events","matches","odds"):
             v = data.get(k)
             if isinstance(v, list): return v
     return []
@@ -69,7 +69,6 @@ def _dig(d: dict, path: str):
     return cur
 
 # ------------ Fixtures URL helpers ------------
-# FIXTURES_PATH içindeki query parçalarını koru (include, per_page, vb.)
 _FX_QS = FIXTURES_PATH.split("?", 1)[1] if (FIXTURES_PATH and "?" in FIXTURES_PATH) else ""
 
 def _fx_date_url(day: str) -> str:
@@ -207,42 +206,81 @@ def _normalize_fixture_rows(rows: List[dict]) -> Dict[int, dict]:
         }
     return out
 
-def _merge_odds(base: Dict[int, dict], rows: List[dict]) -> None:
-    for it in rows or []:
-        fid = it.get("fixture_id")
-        if fid is None or int(fid) not in base: continue
-        dev = (it.get("market") or {}).get("developer_name") or (it.get("market") or {}).get("name") or ""
-        if "FULLTIME_RESULT" not in str(dev).upper(): continue
-        label = (it.get("label") or "").strip().lower()
-        try: val = float(str(it.get("value")))
-        except: val = None
-        if label.startswith("home"): base[int(fid)]["odds"]["H"] = val
-        elif label.startswith("draw"): base[int(fid)]["odds"]["D"] = val
-        elif label.startswith("away"): base[int(fid)]["odds"]["A"] = val
+# -------- Odds merge (GENİŞLETİLMİŞ) --------
+def _is_ft_market(name: str) -> bool:
+    n = name.upper().replace(" ", "")
+    return any(tag in n for tag in ("FULLTIMERESULT", "1X2", "MATCHODDS", "WINNER", "FULLTIME"))
 
-def _merge_predictions(base: Dict[int, dict], rows: List[dict]) -> None:
-    for it in rows or []:
-        fid = it.get("fixture_id")
-        if fid is None or int(fid) not in base: continue
-        probs = it.get("probabilities") or {}
-        if isinstance(probs, dict) and any(k in probs for k in ("home","draw","away")):
-            try: base[int(fid)]["prob"]["H"] = float(probs.get("home")) if probs.get("home") is not None else None
-            except: pass
-            try: base[int(fid)]["prob"]["D"] = float(probs.get("draw")) if probs.get("draw") is not None else None
-            except: pass
-            try: base[int(fid)]["prob"]["A"] = float(probs.get("away")) if probs.get("away") is not None else None
-            except: pass
-            continue
-        label = (it.get("label") or "").strip().lower()
-        raw   = _dig(it,"data.value")
+def _label_to_hda(label: str) -> Optional[str]:
+    s = (label or "").strip().lower()
+    mapping = {
+        "1": "H", "h": "H", "home": "H", "home team": "H", "localteam": "H",
+        "x": "D", "d": "D", "draw": "D",
+        "2": "A", "a": "A", "away": "A", "away team": "A", "visitorteam": "A",
+    }
+    return mapping.get(s)
+
+def _parse_odd_value(it: dict) -> Optional[float]:
+    # Yaygın alanlar: value, decimal, price, odd
+    for k in ("value", "decimal", "price", "odd"):
+        if k in it and it[k] not in (None, ""):
+            try:
+                v = str(it[k]).replace(",", ".")
+                return float(v)
+            except Exception:
+                continue
+    # Bazı formatlarda data.value bulunur
+    v = _dig(it, "data.value")
+    if v not in (None, ""):
         try:
-            s = str(raw).replace("%","").strip()
-            val = float(s)
-            if val <= 1.0: val *= 100.0
-        except: val = None
-        if label.startswith("home"): base[int(fid)]["prob"]["H"] = val
-        elif label.startswith("draw"): base[int(fid)]["prob"]["D"] = val
-        elif label.startswith("away"): base[int(fid)]["prob"]["A"] = val
+            return float(str(v).replace(",", "."))
+        except Exception:
+            return None
+    return None
+
+def _extract_odds_entries(node: dict) -> List[Tuple[int, str, Optional[float], str]]:
+    """
+    Çeşitli yanıt biçimlerini tek formata indirger:
+      -> (fixture_id, H/D/A, value, market_name)
+    """
+    out: List[Tuple[int, str, Optional[float], str]] = []
+
+    # Düz satır (fixture_id + market + label + value)
+    if isinstance(node, dict):
+        fixture_id = node.get("fixture_id")
+        market = (node.get("market") or {}).get("developer_name") or (node.get("market") or {}).get("name") or ""
+        label = node.get("label")
+        if fixture_id is not None and label is not None:
+            hda = _label_to_hda(label) or _label_to_hda(label.upper()) or _label_to_hda(label.title())
+            if _is_ft_market(str(market)) and hda:
+                out.append((int(fixture_id), hda, _parse_odd_value(node), str(market)))
+
+        # İçinde odds: [...] dizisi olan biçim
+        for o in node.get("odds") or []:
+            if not isinstance(o, dict): continue
+            fixture_id = o.get("fixture_id") or node.get("fixture_id")
+            market = (o.get("market") or {}).get("developer_name") or (o.get("market") or {}).get("name") or market
+            label = o.get("label")
+            if fixture_id is None or label is None: continue
+            hda = _label_to_hda(label) or _label_to_hda(label.upper()) or _label_to_hda(label.title())
+            if _is_ft_market(str(market)) and hda:
+                out.append((int(fixture_id), hda, _parse_odd_value(o), str(market)))
+    return out
+
+def _merge_odds(base: Dict[int, dict], rows: List[dict]) -> Dict[str, int]:
+    """Tüm yaygın yanıt biçimlerini destekle ve FULL TIME 1X2'yi H/D/A'ya yaz."""
+    market_hist: Dict[str, int] = {}
+    for it in rows or []:
+        for fid, hda, val, market in _extract_odds_entries(it):
+            if fid not in base: 
+                continue
+            if val is None:
+                continue
+            if hda == "H": base[fid]["odds"]["H"] = val
+            elif hda == "D": base[fid]["odds"]["D"] = val
+            elif hda == "A": base[fid]["odds"]["A"] = val
+            market_hist[market] = market_hist.get(market, 0) + 1
+    return market_hist
 
 # --------- Filters / diagnostics ----------
 def _filter_upcoming(rows: List[dict]) -> List[dict]:
@@ -308,7 +346,7 @@ def _pull_bulletin(start: Date, end: Date, leagues_csv: Optional[str]) -> Tuple[
     try:
         url = _fx_between_url(start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"))
         q: Dict[str, str] = {"api_token": TOKEN}
-        if leagues_csv:  # Neden: Sadece istediğin ligler
+        if leagues_csv:
             q["leagues"] = leagues_csv
         url = _q(url, q)
         data = _http_get(url)
@@ -320,26 +358,31 @@ def _pull_bulletin(start: Date, end: Date, leagues_csv: Optional[str]) -> Tuple[
         diag.append(f"fixtures.between:ERR {e}")
         base_map = {}
 
-    # Odds: sadece listemizdeki maçlar için (performans ve doğruluk)
+    # Odds (sadece listelenen fikstürler için)
     if base_map and ODDS_PATH:
         try:
             fixture_ids = ",".join(str(fid) for fid in base_map.keys())
             odds_url = f"{BASE}/{ODDS_PATH}"
             odds_url = _q(odds_url, {"api_token": TOKEN, "filters": f"fixtureIds:{fixture_ids}"})
             odds_data = _http_get(odds_url)
-            if isinstance(odds_data, dict) and odds_data.get("__error__"): diag.append(odds_data["__error__"])
-            _merge_odds(base_map, _as_list(odds_data))
-            diag.append(f"odds:ok ids={len(base_map)}")
+            if isinstance(odds_data, dict) and odds_data.get("__error__"): 
+                diag.append(odds_data["__error__"])
+            markets = _merge_odds(base_map, _as_list(odds_data))
+            if markets:
+                used = ", ".join(f"{k}:{v}" for k,v in list(markets.items())[:5])
+                diag.append(f"odds:ok ids={len(base_map)} markets[{used}]")
+            else:
+                diag.append("odds:empty")
         except Exception as e:
             diag.append(f"odds:ERR {e}")
 
-    # Predictions (pakette yoksa hiç gelmez)
+    # Predictions (pakette yoksa pas)
     if base_map and PRED_PATH:
         try:
             pred_url = _q(f"{BASE}/{PRED_PATH}", {"api_token": TOKEN})
             pred_data = _http_get(pred_url)
             if isinstance(pred_data, dict) and pred_data.get("__error__"): diag.append(pred_data["__error__"])
-            _merge_predictions(base_map, _as_list(pred_data))
+            # _merge_predictions(base_map, _as_list(pred_data))  # İstersen aç
         except Exception as e:
             diag.append(f"pred:ERR {e}")
 
