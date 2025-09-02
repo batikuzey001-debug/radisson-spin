@@ -12,9 +12,9 @@ export type LiveScoreCardProps = {
   home: Team;
   away: Team;
   score: Score;
-  time: string;                 // örn: "67'" veya "2nd Half"
-  odds?: Odds;                  // Fulltime Result (1x2)
-  prob?: Prob;                  // FULLTIME_RESULT_PROBABILITY
+  time: string;
+  odds?: Odds;
+  prob?: Prob;
 };
 
 function fmtOdds(v?: number | null) {
@@ -25,44 +25,26 @@ function fmtPct(v?: number | null) {
 }
 
 export default function LiveScoreCard({
-  league,
-  home,
-  away,
-  score,
-  time,
-  odds,
-  prob,
+  league, home, away, score, time, odds, prob,
 }: LiveScoreCardProps) {
   const hScore = score.home ?? 0;
   const aScore = score.away ?? 0;
 
   return (
     <article className="rounded-2xl border border-[#242633] bg-[#0f1117] overflow-hidden shadow-[0_10px_40px_rgba(0,0,0,.35)]">
-      {/* Üst bar: Lig */}
       <header className="flex items-center gap-2 px-4 py-2 border-b border-white/10 bg-[#0a0a0f]">
-        {league.logo ? (
-          <img src={league.logo} alt="" className="h-5 w-5 rounded-sm object-contain" />
-        ) : (
-          <span className="h-5 w-5 rounded-sm bg-white/10 inline-block" />
-        )}
+        {league.logo ? <img src={league.logo} alt="" className="h-5 w-5 rounded-sm object-contain" /> : <span className="h-5 w-5 rounded-sm bg-white/10 inline-block" />}
         <div className="text-sm font-semibold">{league.name || '—'}</div>
         <div className="ml-auto text-xs text-white/60">{time || '—'}</div>
       </header>
 
-      {/* Orta: Takımlar + Skor */}
       <div className="px-4 py-3">
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-          {/* Home */}
           <div className="flex items-center gap-2 min-w-0">
-            {home.logo ? (
-              <img src={home.logo} alt="" className="h-7 w-7 rounded-full object-contain" />
-            ) : (
-              <span className="h-7 w-7 rounded-full bg-white/10 inline-block" />
-            )}
+            {home.logo ? <img src={home.logo} alt="" className="h-7 w-7 rounded-full object-contain" /> : <span className="h-7 w-7 rounded-full bg-white/10 inline-block" />}
             <div className="truncate text-sm font-semibold">{home.name || 'Home'}</div>
           </div>
 
-          {/* Skor */}
           <div className="text-center">
             <div className="text-2xl font-extrabold">
               <span className="text-white">{hScore}</span>
@@ -71,25 +53,13 @@ export default function LiveScoreCard({
             </div>
           </div>
 
-          {/* Away */}
           <div className="flex items-center gap-2 justify-end min-w-0">
             <div className="truncate text-sm font-semibold text-right">{away.name || 'Away'}</div>
-            {away.logo ? (
-              <img src={away.logo} alt="" className="h-7 w-7 rounded-full object-contain" />
-            ) : (
-              <span className="h-7 w-7 rounded-full bg-white/10 inline-block" />
-            )}
+            {away.logo ? <img src={away.logo} alt="" className="h-7 w-7 rounded-full object-contain" /> : <span className="h-7 w-7 rounded-full bg-white/10 inline-block" />}
           </div>
-        </div>
-
-        {/* xG satırı (oranların altında istenmişti; burada da gösterelim) */}
-        <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
-          <div className="text-white/70">xG (Ev): <span className="font-semibold text-white">{home.xg ?? '—'}</span></div>
-          <div className="text-right text-white/70">xG (Dep): <span className="font-semibold text-white">{away.xg ?? '—'}</span></div>
         </div>
       </div>
 
-      {/* Odds (1x2) */}
       <div className="px-4 py-2 border-t border-white/10 bg-[#0b0d13]">
         <div className="flex items-center justify-between text-xs text-white/70">
           <div className="font-semibold text-white">Odds (1X2)</div>
@@ -110,7 +80,11 @@ export default function LiveScoreCard({
           </div>
         </div>
 
-        {/* Probability (H/D/A) */}
+        <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+          <div className="text-white/70">xG (Ev): <span className="font-semibold text-white">{home.xg ?? '—'}</span></div>
+          <div className="text-right text-white/70">xG (Dep): <span className="font-semibold text-white">{away.xg ?? '—'}</span></div>
+        </div>
+
         <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
           <div className="rounded-md border border-white/10 bg-[#10121a] px-2 py-1 text-center">
             <div className="text-[10px] text-white/60">Home %</div>
@@ -126,9 +100,8 @@ export default function LiveScoreCard({
           </div>
         </div>
 
-        {/* Alt neon çizgi */}
         <div className="mt-3 h-[2px] w-full rounded-full bg-gradient-to-r from-[#00d4ff] via-[#ff0080] to-[#00ff88]" />
       </div>
     </article>
-  );
+  )
 }
