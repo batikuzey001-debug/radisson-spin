@@ -1,14 +1,19 @@
 // web/src/components/ui/Card.tsx
 import React from "react";
-export default function Card(props: React.PropsWithChildren<{ className?: string }>) {
+export default function Card({ className, children }: React.PropsWithChildren<{ className?: string }>) {
   return (
-    <div
-      className={`rounded-2xl border border-[#1c3b70]/40 bg-white/5 backdrop-blur-sm shadow-[0_0_0_1px_rgba(0,191,255,0.06)] hover:shadow-[0_0_0_2px_rgba(0,191,255,0.25)] transition-transform duration-200 hover:-translate-y-0.5 ${props.className || ""}`}
-    >
-      {props.children}
-    </div>
+    <div className={`rounded-2xl border border-[#1c3b70]/40 bg-white/5 backdrop-blur-sm ${className || ""}`}>{children}</div>
   );
 }
 export function SectionTitle({ children }: { children: React.ReactNode }) {
   return <h3 className="text-white font-bold text-lg mb-3">{children}</h3>;
+}
+export function Skeleton({ rows = 3 }: { rows?: number }) {
+  return (
+    <div className="animate-pulse space-y-2">
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className="h-4 bg-white/10 rounded" />
+      ))}
+    </div>
+  );
 }
