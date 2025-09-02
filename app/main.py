@@ -70,7 +70,7 @@ app.include_router(livescores_router)
 # -----------------------------
 @app.exception_handler(StarletteHTTPException)
 async def _admin_auth_redirect(request: Request, exc: StarletteHTTPException):
-    # /admin altında yetkisiz HTML isteklerini login’e yönlendir
+    # HTML istekleri login'e yönlendirilir; API'leri etkilememek için yalnızca text/html kabul edenler
     path = request.url.path or ""
     is_html = "text/html" in (request.headers.get("accept") or "")
     is_admin_area = path.startswith("/admin")
@@ -115,7 +115,7 @@ def on_startup() -> None:
                 ALTER TABLE IF EXISTS prizes
                 ADD COLUMN IF NOT EXISTS image_url VARCHAR(512)
             """))
-            -- -- tournaments ilave alanlar (idempotent)
+            # tournaments ilave alanlar (idempotent) — Python tarafında yorum olmalı
             conn.execute(text("ALTER TABLE IF EXISTS tournaments ADD COLUMN IF NOT EXISTS prize_pool INTEGER"))
             conn.execute(text("ALTER TABLE IF EXISTS tournaments ADD COLUMN IF NOT EXISTS subtitle VARCHAR(200)"))
             conn.execute(text("ALTER TABLE IF EXISTS tournaments ADD COLUMN IF NOT EXISTS short_desc TEXT"))
