@@ -63,7 +63,8 @@ app.include_router(admin_mod_router)
 
 # Sportmonks canlı skor/bülten API’leri
 from app.api.routers.livescores import router as livescores_router
-app.include_router(livescores_router)
+# ÖNEMLİ: frontend çağrıları ile uyum için /api prefix'i
+app.include_router(livescores_router, prefix="/api")
 
 # -----------------------------
 # Admin auth yönlendirmeleri
@@ -132,7 +133,6 @@ def on_startup() -> None:
             conn.execute(text("ALTER TABLE IF EXISTS tournaments ADD COLUMN IF NOT EXISTS rank_visible BOOLEAN"))
             conn.execute(text("ALTER TABLE IF EXISTS tournaments ADD COLUMN IF NOT EXISTS slug VARCHAR(200)"))
             conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_tournaments_slug ON tournaments (slug)"))
-            # HATA VEREN SATIRIN DÜZELTİLMİŞ HALİ:
             conn.execute(text("ALTER TABLE IF EXISTS tournaments ADD COLUMN IF NOT EXISTS i18n JSONB"))
 
     # --- Seed verileri ---
