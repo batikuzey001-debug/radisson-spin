@@ -1,18 +1,28 @@
 // web/src/lib/format.ts
-export function formatNumber(n?: number | null) {
-  if (n == null) return '';
-  return new Intl.NumberFormat('tr-TR').format(n);
-}
-export function formatMoneyTRY(n?: number | null) {
-  if (n == null) return '';
-  return `${formatNumber(n)} ₺`;
-}
-export function formatDateRange(start?: string | null, end?: string | null) {
-  const opts: Intl.DateTimeFormatOptions = { day: '2-digit', month: 'short' };
-  const s = start ? new Date(start) : null;
-  const e = end ? new Date(end) : null;
-  if (s && e) return `${s.toLocaleDateString('tr-TR', opts)} – ${e.toLocaleDateString('tr-TR', opts)}`;
-  if (s) return s.toLocaleDateString('tr-TR', opts);
-  if (e) return e.toLocaleDateString('tr-TR', opts);
-  return '';
+export const fmtNum = (n: number) => new Intl.NumberFormat("tr-TR").format(n);
+export const fmtMoney = (n: number) =>
+  new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY", maximumFractionDigits: 0 }).format(n);
+
+export const apiBase =
+  (process.env.NEXT_PUBLIC_API_BASE || "").replace(/\/+$/, "");
+
+// Basit jitter sayacı (UI script simülasyonu)
+export function ticker(initial: number, jitter = 25, interval = 2000) {
+  let val = initial;
+  let t: any;
+  const listeners = new Set<(v: number) => void>();
+  const start = () => {
+    stop();
+    t = setInterval(() => {
+      val = Math.max(0, val + (Math.random() * jitter - jitter / 2));
+      listeners.forEach((fn) => fn(Math.round(val)));
+    }, interval);
+  };
+  const stop = () => t && clearInterval(t);
+  const subscribe = (fn: (v: number) => void) => {
+    listeners.add(fn);
+    fn(Math.round(val));
+    return () => listeners.delete(fn);
+  };
+  return { start, stop, subscribe };
 }
