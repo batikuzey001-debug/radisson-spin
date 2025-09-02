@@ -48,7 +48,6 @@ export default function LiveScoresPage() {
           <section key={leagueName} className="rounded-xl border border-white/10 bg-[#0a0f1a]">
             {/* Lig başlığı */}
             <div className="flex items-center gap-2 px-3 py-2 border-b border-white/10">
-              {/* Lig logosu yoksa isim gözüksün */}
               <span className="text-sm font-semibold text-white/90">{leagueName}</span>
             </div>
 
@@ -64,7 +63,6 @@ export default function LiveScoresPage() {
                   score={it.score}
                   time={it.time}
                   odds={{ H: it.odds?.H, D: it.odds?.D, A: it.odds?.A }}
-                  prob={it.prob}
                   onClick={handleClick}
                 />
               ))}
@@ -73,7 +71,7 @@ export default function LiveScoresPage() {
         ))}
       </div>
 
-      {/* Masaüstü: sağ detay panel (SofaScore tarzı) */}
+      {/* Masaüstü: sağ detay panel */}
       <LiveScoreDetailPanel
         open={Boolean(openId && isDesktop)}
         onClose={() => setOpenId(null)}
