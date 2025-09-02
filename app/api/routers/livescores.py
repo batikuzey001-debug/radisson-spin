@@ -1,40 +1,42 @@
 # app/api/routers/livescores.py
-# Sportmonks canlı veri proxysi (yalnızca gerçek veri: inplay + fixtures fallback + odds + predictions)
+# Sportmonks canlı veri proxysi (YALNIZ GERÇEK VERİ)
 # Uçlar:
-#   GET /livescores/list   -> [{league, home, away, score, time, odds, prob}]
-#   GET /livescores        -> ticker stringleri
-#   GET /livescores/sample -> örnek + teşhis (diag)
+#   GET /livescores/list                 -> [{league, home, away, score, time, odds, prob}]
+#   GET /livescores/bulletin?from&to     -> {range,count,items,diag}
+#   GET /livescores/sample               -> {sample,diag,...}
 #
-# ENV (Railway → API Variables):
+# Gerekli ENV (Railway → API Variables):
 #   SPORTMONKS_TOKEN=...
 #   SPORTMONKS_BASE=https://api.sportmonks.com
 #   SPORTMONKS_TTL=8
-#   SPORTMONKS_LIVE_PATH=/v3/football/livescores/inplay?per_page=50&include=participants;time;scores;periods;league
-#   SPORTMONKS_FIXTURES_PATH=/v3/football/fixtures?per_page=50&include=participants;league
-#   SPORTMONKS_ODDS_PATH=/v3/football/odds/pre-match/fixtures?per_page=50&include=market;bookmaker
-#   SPORTMONKS_PRED_PATH=/v3/football/predictions/fixtures?per_page=50
+#   SPORTMONKS_LIVE_PATH=/v3/football/livescores/inplay?per_page=50&include=participants;time;scores;periods;league.country
+#   SPORTMONKS_FIXTURES_PATH=/v3/football/fixtures?per_page=100&include=participants;league.country;scores;venue
+#   SPORTMONKS_ODDS_PATH=/v3/football/odds/pre-match/fixtures?per_page=50&include=market;bookmaker      (opsiyonel)
+#   SPORTMONKS_PRED_PATH=/v3/football/predictions/fixtures?per_page=50                                 (opsiyonel)
+
 import os, json, time, urllib.parse, urllib.request, urllib.error
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Tuple, Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 router = APIRouter()
 
+# ---- ENV --------------------------------------------------------------------
 TOKEN  = os.getenv("SPORTMONKS_TOKEN", "").strip()
 BASE   = (os.getenv("SPORTMONKS_BASE") or "https://api.sportmonks.com").rstrip("/")
 TTL    = int(os.getenv("SPORTMONKS_TTL", "8"))
 
-LIVE_PATH     = (os.getenv("SPORTMONKS_LIVE_PATH")     or "/v3/football/livescores/inplay?per_page=50&include=participants;time;scores;periods;league").lstrip("/")
-FIXTURES_PATH = (os.getenv("SPORTMONKS_FIXTURES_PATH") or "/v3/football/fixtures?per_page=50&include=participants;league").lstrip("/")
+LIVE_PATH     = (os.getenv("SPORTMONKS_LIVE_PATH")     or "/v3/football/livescores/inplay?per_page=50&include=participants;time;scores;periods;league.country").lstrip("/")
+FIXTURES_PATH = (os.getenv("SPORTMONKS_FIXTURES_PATH") or "/v3/football/fixtures?per_page=100&include=participants;league.country;scores;venue").lstrip("/")
 ODDS_PATH     = (os.getenv("SPORTMONKS_ODDS_PATH")     or "").lstrip("/") or None
 PRED_PATH     = (os.getenv("SPORTMONKS_PRED_PATH")     or "").lstrip("/") or None
 
 UA = {"User-Agent": "Mozilla/5.0"}
 _CACHE: Dict[str, Any] = {"t": 0.0, "norm": [], "sample": [], "diag": []}
 
-# --------------------- HTTP yardımcıları (hata güvenli) ----------------------
+# ---- HTTP yardımcıları (hata güvenli) ---------------------------------------
 def _http_get(url: str) -> Any:
-    """HTTP çağrısı: 4xx/5xx/timeout durumunda exception YOK; {'__error__': ...} döner."""
+    """HTTP: 4xx/5xx/timeout durumunda exception fırlatma; {'__error__': ...} döndür."""
     try:
         req = urllib.request.Request(url, headers=UA)
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -67,7 +69,7 @@ def _dig(d: dict, path: str):
         else: return None
     return cur
 
-# ------------------------- normalizasyon yardımcıları ------------------------
+# ---- Normalizasyon -----------------------------------------------------------
 def _teams_from_participants(rec: dict) -> Tuple[Dict, Dict]:
     home = {"name":"", "logo":None}
     away = {"name":"", "logo":None}
@@ -112,14 +114,24 @@ def _minute_or_status(rec: dict) -> str:
     return f"{minute}'" if minute else str(status or "")
 
 def _league_info(rec: dict) -> Dict:
-    return {"name": _dig(rec,"league.name") or rec.get("league_name") or "", "logo": _dig(rec,"league.image_path")}
+    return {
+        "id":   _dig(rec,"league.id") or rec.get("league_id"),
+        "name": _dig(rec,"league.name") or rec.get("league_name") or "",
+        "logo": _dig(rec,"league.image_path"),
+        "country": {
+            "id": _dig(rec,"league.country.id"),
+            "name": _dig(rec,"league.country.name"),
+            "flag": _dig(rec,"league.country.image_path"),
+        }
+    }
 
-def _ko_hhmm_utc(iso: str) -> str:
+def _ko_utc_and_date(iso: str | None) -> Tuple[Optional[str], Optional[str]]:
+    if not iso: return None, None
     try:
         dt = datetime.fromisoformat(str(iso).replace("Z","+00:00")).astimezone(timezone.utc)
-        return "KO " + dt.strftime("%H:%M")
+        return dt.strftime("%Y-%m-%dT%H:%M:%SZ"), dt.strftime("%Y-%m-%d")
     except Exception:
-        return "KO"
+        return None, None
 
 def _normalize_live_rows(rows: List[dict]) -> Dict[int, dict]:
     out: Dict[int, dict] = {}
@@ -128,8 +140,12 @@ def _normalize_live_rows(rows: List[dict]) -> Dict[int, dict]:
         if fid is None: continue
         home, away = _teams_from_participants(rec)
         hs, as_ = _scores(rec)
+        ko_iso = _dig(rec,"starting_at") or _dig(rec,"starting_at_iso")
+        ko_utc, date_only = _ko_utc_and_date(ko_iso)
         out[int(fid)] = {
             "fixture_id": int(fid),
+            "date": date_only,
+            "kickoff_utc": ko_utc,
             "league": _league_info(rec),
             "home": home,
             "away": away,
@@ -146,14 +162,18 @@ def _normalize_fixture_rows(rows: List[dict]) -> Dict[int, dict]:
         fid = rec.get("id") or rec.get("fixture_id")
         if fid is None: continue
         home, away = _teams_from_participants(rec)
-        ko = _dig(rec,"starting_at") or _dig(rec,"starting_at_iso") or ""
+        hs, as_ = _scores(rec)
+        ko_iso = _dig(rec,"starting_at") or _dig(rec,"starting_at_iso")
+        ko_utc, date_only = _ko_utc_and_date(ko_iso)
         out[int(fid)] = {
             "fixture_id": int(fid),
+            "date": date_only,
+            "kickoff_utc": ko_utc,
             "league": _league_info(rec),
             "home": home,
             "away": away,
-            "score": {"home": None, "away": None},
-            "time": _ko_hhmm_utc(str(ko)),
+            "score": {"home": hs, "away": as_},
+            "time": f"KO {ko_utc[11:16]}" if ko_utc else "KO",
             "odds": {"H": None, "D": None, "A": None, "bookmaker": "RadissonBet"},
             "prob": {"H": None, "D": None, "A": None},
         }
@@ -196,12 +216,12 @@ def _merge_predictions(base: Dict[int, dict], rows: List[dict]) -> None:
         elif label.startswith("draw"): base[int(fid)]["prob"]["D"] = val
         elif label.startswith("away"): base[int(fid)]["prob"]["A"] = val
 
-# ------------------------------ çekiş akışı ----------------------------------
-def _pull_all() -> Tuple[List[dict], List[str]]:
+# ---- Çekiş: list (inplay + today fixtures fallback) -------------------------
+def _pull_list() -> Tuple[List[dict], List[str]]:
     diag: List[str] = []
-
-    # Inplay
     base: Dict[int, dict] = {}
+
+    # inplay
     try:
         live_url = _q(f"{BASE}/{LIVE_PATH}", {"api_token": TOKEN})
         live_data = _http_get(live_url)
@@ -212,8 +232,8 @@ def _pull_all() -> Tuple[List[dict], List[str]]:
     except Exception as e:
         diag.append(f"inplay:ERR {e}")
 
-    # Fallback: bugünün fikstürleri
-    if len(base) == 0:
+    # fallback: bugün
+    if not base:
         try:
             today = datetime.utcnow().strftime("%Y-%m-%d")
             fx_url = _q(f"{BASE}/{FIXTURES_PATH}", {"api_token": TOKEN, "date": today})
@@ -226,43 +246,76 @@ def _pull_all() -> Tuple[List[dict], List[str]]:
         except Exception as e:
             diag.append(f"fixtures:ERR {e}")
 
-    # Odds (opsiyonel)
-    if ODDS_PATH and base:
+    # opsiyonel zenginleştirme
+    if base and ODDS_PATH:
         try:
             odds_url = _q(f"{BASE}/{ODDS_PATH}", {"api_token": TOKEN})
             odds_data = _http_get(odds_url)
             if isinstance(odds_data, dict) and odds_data.get("__error__"): diag.append(odds_data["__error__"])
-            odds_rows = _as_list(odds_data)
-            diag.append(f"odds:{len(odds_rows)}")
-            _merge_odds(base, odds_rows)
+            _merge_odds(base, _as_list(odds_data))
         except Exception as e:
             diag.append(f"odds:ERR {e}")
 
-    # Predictions (opsiyonel)
-    if PRED_PATH and base:
+    if base and PRED_PATH:
         try:
             pred_url = _q(f"{BASE}/{PRED_PATH}", {"api_token": TOKEN})
             pred_data = _http_get(pred_url)
             if isinstance(pred_data, dict) and pred_data.get("__error__"): diag.append(pred_data["__error__"])
-            pred_rows = _as_list(pred_data)
-            diag.append(f"pred:{len(pred_rows)}")
-            _merge_predictions(base, pred_rows)
+            _merge_predictions(base, _as_list(pred_data))
         except Exception as e:
             diag.append(f"pred:ERR {e}")
 
     return list(base.values()), diag
 
-def _ensure():
+# ---- Çekiş: bulletin (date range fixtures) ----------------------------------
+def _pull_bulletin(start: datetime.date, end: datetime.date) -> Tuple[List[dict], List[str]]:
+    diag: List[str] = []
+
+    # fixtures range
+    fx_url = _q(f"{BASE}/{FIXTURES_PATH}", {
+        "api_token": TOKEN,
+        "date_from": start.strftime("%Y-%m-%d"),
+        "date_to":   end.strftime("%Y-%m-%d"),
+    })
+    fx_data = _http_get(fx_url)
+    if isinstance(fx_data, dict) and fx_data.get("__error__"): diag.append(fx_data["__error__"])
+    fx_rows = _as_list(fx_data)
+    diag.append(f"fixtures[{start}..{end}]:{len(fx_rows)}")
+    base_map = _normalize_fixture_rows(fx_rows)
+
+    # enrich (opsiyonel)
+    if base_map and ODDS_PATH:
+        try:
+            odds_url = _q(f"{BASE}/{ODDS_PATH}", {"api_token": TOKEN})
+            odds_data = _http_get(odds_url)
+            if isinstance(odds_data, dict) and odds_data.get("__error__"): diag.append(odds_data["__error__"])
+            _merge_odds(base_map, _as_list(odds_data))
+        except Exception as e:
+            diag.append(f"odds:ERR {e}")
+
+    if base_map and PRED_PATH:
+        try:
+            pred_url = _q(f"{BASE}/{PRED_PATH}", {"api_token": TOKEN})
+            pred_data = _http_get(pred_url)
+            if isinstance(pred_data, dict) and pred_data.get("__error__"): diag.append(pred_data["__error__"])
+            _merge_predictions(base_map, _as_list(pred_data))
+        except Exception as e:
+            diag.append(f"pred:ERR {e}")
+
+    out = sorted(base_map.values(), key=lambda r: (r.get("date") or "", r["fixture_id"]))
+    return out, diag
+
+# ---- Cache / ensure ----------------------------------------------------------
+def _ensure_list_cache():
     if not TOKEN:
         raise HTTPException(status_code=500, detail="SPORTMONKS_TOKEN eksik.")
     now = time.time()
     if now - _CACHE["t"] < TTL and _CACHE["norm"]:
         return
-    norm, diag = _pull_all()
-    # mock YOK; veri yoksa boş liste döner.
+    norm, diag = _pull_list()
     _CACHE.update(t=now, norm=norm, sample=(norm[:1] if norm else []), diag=diag)
 
-# ------------------------------ HTTP uçları ----------------------------------
+# ---- Routes ------------------------------------------------------------------
 def _fmt_ticker(r: dict) -> str:
     h, a = r["home"]["name"], r["away"]["name"]
     hs, as_ = r["score"]["home"], r["score"]["away"]
@@ -271,17 +324,17 @@ def _fmt_ticker(r: dict) -> str:
 
 @router.get("/livescores/list")
 def livescores_list():
-    _ensure()
+    _ensure_list_cache()
     return _CACHE["norm"]
 
 @router.get("/livescores")
 def livescores_ticker():
-    _ensure()
+    _ensure_list_cache()
     return ([_fmt_ticker(x) for x in _CACHE["norm"]] or [])
 
 @router.get("/livescores/sample")
 def livescores_sample():
-    _ensure()
+    _ensure_list_cache()
     return {
         "sample": _CACHE["sample"],
         "diag": _CACHE["diag"],
@@ -289,4 +342,25 @@ def livescores_sample():
         "fixtures": FIXTURES_PATH,
         "odds": ODDS_PATH,
         "pred": PRED_PATH,
+    }
+
+@router.get("/livescores/bulletin")
+def livescores_bulletin(
+    date_from: str = Query(default=None, alias="from"),
+    date_to: str   = Query(default=None, alias="to"),
+):
+    if not TOKEN:
+        raise HTTPException(status_code=500, detail="SPORTMONKS_TOKEN eksik.")
+    try:
+        today = datetime.utcnow().date()
+        start = datetime.strptime(date_from, "%Y-%m-%d").date() if date_from else today
+        end   = datetime.strptime(date_to, "%Y-%m-%d").date()   if date_to   else today
+    except Exception:
+        raise HTTPException(status_code=400, detail="from/to formatı YYYY-MM-DD olmalı.")
+    items, diag = _pull_bulletin(start, end)
+    return {
+        "range": {"from": start.strftime("%Y-%m-%d"), "to": end.strftime("%Y-%m-%d")},
+        "count": len(items),
+        "items": items,
+        "diag": diag,
     }
