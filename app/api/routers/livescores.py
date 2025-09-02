@@ -14,7 +14,7 @@ router = APIRouter()
 
 # ---------------- ENV ----------------
 def _clean_path(p: Optional[str]) -> Optional[str]:
-    # Neden: ENV içine kopyalanan path'lerde \n,\r, boşluk hatası olabiliyor.
+    # ENV içine kopyalanan path'lerde \n,\r, boşluk olabiliyor.
     if not p:
         return None
     s = str(p).replace("\r", "").replace("\n", "").strip()
@@ -221,7 +221,6 @@ def _label_to_hda(label: str) -> Optional[str]:
     return mapping.get(s)
 
 def _parse_odd_value(it: dict) -> Optional[float]:
-    # Yaygın alanlar: value, decimal, price, odd
     for k in ("value", "decimal", "price", "odd"):
         if k in it and it[k] not in (None, ""):
             try:
@@ -229,7 +228,6 @@ def _parse_odd_value(it: dict) -> Optional[float]:
                 return float(v)
             except Exception:
                 continue
-    # Bazı formatlarda data.value bulunur
     v = _dig(it, "data.value")
     if v not in (None, ""):
         try:
@@ -239,13 +237,9 @@ def _parse_odd_value(it: dict) -> Optional[float]:
     return None
 
 def _extract_odds_entries(node: dict) -> List[Tuple[int, str, Optional[float], str]]:
-    """
-    Çeşitli yanıt biçimlerini tek formata indirger:
-      -> (fixture_id, H/D/A, value, market_name)
-    """
+    """Çeşitli yanıt biçimlerini tek formata indirger: -> (fixture_id, H/D/A, value, market_name)"""
     out: List[Tuple[int, str, Optional[float], str]] = []
 
-    # Düz satır (fixture_id + market + label + value)
     if isinstance(node, dict):
         fixture_id = node.get("fixture_id")
         market = (node.get("market") or {}).get("developer_name") or (node.get("market") or {}).get("name") or ""
@@ -255,7 +249,6 @@ def _extract_odds_entries(node: dict) -> List[Tuple[int, str, Optional[float], s
             if _is_ft_market(str(market)) and hda:
                 out.append((int(fixture_id), hda, _parse_odd_value(node), str(market)))
 
-        # İçinde odds: [...] dizisi olan biçim
         for o in node.get("odds") or []:
             if not isinstance(o, dict): continue
             fixture_id = o.get("fixture_id") or node.get("fixture_id")
@@ -268,13 +261,10 @@ def _extract_odds_entries(node: dict) -> List[Tuple[int, str, Optional[float], s
     return out
 
 def _merge_odds(base: Dict[int, dict], rows: List[dict]) -> Dict[str, int]:
-    """Tüm yaygın yanıt biçimlerini destekle ve FULL TIME 1X2'yi H/D/A'ya yaz."""
     market_hist: Dict[str, int] = {}
     for it in rows or []:
         for fid, hda, val, market in _extract_odds_entries(it):
-            if fid not in base: 
-                continue
-            if val is None:
+            if fid not in base or val is None:
                 continue
             if hda == "H": base[fid]["odds"]["H"] = val
             elif hda == "D": base[fid]["odds"]["D"] = val
@@ -358,21 +348,23 @@ def _pull_bulletin(start: Date, end: Date, leagues_csv: Optional[str]) -> Tuple[
         diag.append(f"fixtures.between:ERR {e}")
         base_map = {}
 
-    # Odds (sadece listelenen fikstürler için)
+    # Odds (yalnızca 1X2 / FT Result benzeri pazarlar için filtreyle)
     if base_map and ODDS_PATH:
         try:
             fixture_ids = ",".join(str(fid) for fid in base_map.keys())
             odds_url = f"{BASE}/{ODDS_PATH}"
-            odds_url = _q(odds_url, {"api_token": TOKEN, "filters": f"fixtureIds:{fixture_ids}"})
+            # ÖNEMLİ: markets filtresi ekledik; GOALS_OVER_UNDER gibi pazarları dışarıda bırakır.
+            filters = f"fixtureIds:{fixture_ids};markets:FULLTIME_RESULT,1X2,MATCH_ODDS,WINNER"
+            odds_url = _q(odds_url, {"api_token": TOKEN, "filters": filters})
             odds_data = _http_get(odds_url)
-            if isinstance(odds_data, dict) and odds_data.get("__error__"): 
+            if isinstance(odds_data, dict) and odds_data.get("__error__"):
                 diag.append(odds_data["__error__"])
             markets = _merge_odds(base_map, _as_list(odds_data))
             if markets:
                 used = ", ".join(f"{k}:{v}" for k,v in list(markets.items())[:5])
                 diag.append(f"odds:ok ids={len(base_map)} markets[{used}]")
             else:
-                diag.append("odds:empty")
+                diag.append("odds:empty (no FT 1X2 market)")
         except Exception as e:
             diag.append(f"odds:ERR {e}")
 
@@ -382,7 +374,7 @@ def _pull_bulletin(start: Date, end: Date, leagues_csv: Optional[str]) -> Tuple[
             pred_url = _q(f"{BASE}/{PRED_PATH}", {"api_token": TOKEN})
             pred_data = _http_get(pred_url)
             if isinstance(pred_data, dict) and pred_data.get("__error__"): diag.append(pred_data["__error__"])
-            # _merge_predictions(base_map, _as_list(pred_data))  # İstersen aç
+            # _merge_predictions(base_map, _as_list(pred_data))  # ihtiyaç olursa aç
         except Exception as e:
             diag.append(f"pred:ERR {e}")
 
