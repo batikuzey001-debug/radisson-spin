@@ -1,6 +1,9 @@
 # app/api/routers/livescores.py
-# Sportmonks canlı veri proxysi (fikstür + opsiyonel oranlar)
-# GET /livescores/bulletin?from=YYYY-MM-DD&to=YYYY-MM-DD[&leagues=1,2,3]
+# Tüm kapsamdaki ligler için gelecek fikstürleri (bu yıl) + opsiyonel oranlar
+# Uçlar:
+#   GET /livescores/bulletin?from=YYYY-MM-DD&to=YYYY-MM-DD[&leagues=1,2,...]
+#   GET /livescores/year?year=YYYY[&leagues=...]      -> yıl başlangıcı..yıl sonu
+#   GET /livescores/sample                             -> kısa örnek + diag
 
 import os, json, time, urllib.parse, urllib.request, urllib.error
 from datetime import datetime, timezone, timedelta, date as Date
@@ -12,7 +15,7 @@ router = APIRouter()
 # ---------------- ENV ----------------
 def _clean_path(p: Optional[str]) -> Optional[str]:
     if not p: return None
-    s = str(p).replace("\r", "").replace("\n", "").strip()
+    s = str(p).replace("\r","").replace("\n","").strip()
     return s.lstrip("/") or None
 
 TOKEN  = (os.getenv("SPORTMONKS_TOKEN") or "").strip()
@@ -21,8 +24,7 @@ TTL    = int(os.getenv("SPORTMONKS_TTL", "8"))
 
 LIVE_PATH     = _clean_path(os.getenv("SPORTMONKS_LIVE_PATH")     or "/v3/football/livescores/inplay?per_page=50&include=participants;time;scores;periods;league.country")
 FIXTURES_PATH = _clean_path(os.getenv("SPORTMONKS_FIXTURES_PATH") or "/v3/football/fixtures?per_page=100&include=participants;league.country;scores;venue")
-ODDS_PATH     = _clean_path(os.getenv("SPORTMONKS_ODDS_PATH")     or "")   # örn: /v3/football/odds/pre-match?per_page=50&include=market;bookmaker;fixture
-PRED_PATH     = _clean_path(os.getenv("SPORTMONKS_PRED_PATH")     or "")
+ODDS_PATH     = _clean_path(os.getenv("SPORTMONKS_ODDS_PATH")     or "")   # Örn: /v3/football/odds/pre-match?per_page=50&include=market;bookmaker;fixture
 
 UA = {"User-Agent": "Mozilla/5.0"}
 _CACHE: Dict[str, Any] = {"t": 0.0, "norm": [], "sample": [], "diag": []}
@@ -71,6 +73,20 @@ def _fx_date_url(day: str) -> str:
 def _fx_between_url(start: str, end: str) -> str:
     base = f"{BASE}/v3/football/fixtures/between/{start}/{end}"
     return base + (("?" + _FX_QS) if _FX_QS else "")
+
+# ------------- Pagination -------------
+def _paged_collect(url: str, per_page_hint: int = 100, max_pages: int = 40) -> Tuple[List[dict], int]:
+    """Sayfaları takip ederek tüm veriyi toplar (üst sınır güvenliği)."""
+    items: List[dict] = []
+    pages = 0
+    next_url = _q(url, {"per_page": str(per_page_hint)}) if "per_page=" not in url else url
+    while next_url and pages < max_pages:
+        pages += 1
+        data = _http_get(next_url)
+        items.extend(_as_list(data))
+        # next_page alanını destekle
+        next_url = (data.get("pagination") or {}).get("next_page") if isinstance(data, dict) else None
+    return items, pages
 
 # ------------- Normalization -------------
 def _teams_from_participants(rec: dict) -> Tuple[Dict, Dict]:
@@ -126,9 +142,8 @@ def _minute_from_periods(rec: dict) -> str:
     return f"{mm_i}'{ss_i:02d}\""
 
 def _minute_or_status(rec: dict) -> str:
-    t = _minute_from_periods(rec)
+    t = _minute_from_periods(rec);  ti = rec.get("time") or {}
     if t: return t
-    ti = rec.get("time") or {}
     minute = ti.get("minute") or ti.get("elapsed") or ti.get("minute_extra") or ""
     status = ti.get("status") or rec.get("status") or ""
     return f"{minute}'" if minute else str(status or "")
@@ -153,29 +168,6 @@ def _ko_utc_and_date(iso: str | None) -> Tuple[Optional[str], Optional[str]]:
     except Exception:
         return None, None
 
-def _normalize_live_rows(rows: List[dict]) -> Dict[int, dict]:
-    out: Dict[int, dict] = {}
-    for rec in rows:
-        fid = rec.get("id") or rec.get("fixture_id") or _dig(rec,"fixture_id")
-        if fid is None: continue
-        home, away = _teams_from_participants(rec)
-        hs, as_ = _scores(rec)
-        ko_iso = _dig(rec,"starting_at") or _dig(rec,"starting_at_iso")
-        ko_utc, date_only = _ko_utc_and_date(ko_iso)
-        out[int(fid)] = {
-            "fixture_id": int(fid),
-            "date": date_only,
-            "kickoff_utc": ko_utc,
-            "league": _league_info(rec),
-            "home": home,
-            "away": away,
-            "score": {"home": hs, "away": as_},
-            "time": _minute_or_status(rec),
-            "odds": {"H": None, "D": None, "A": None, "bookmaker": "RadissonBet"},
-            "prob": {"H": None, "D": None, "A": None},
-        }
-    return out
-
 def _normalize_fixture_rows(rows: List[dict]) -> Dict[int, dict]:
     out: Dict[int, dict] = {}
     for rec in rows:
@@ -194,29 +186,26 @@ def _normalize_fixture_rows(rows: List[dict]) -> Dict[int, dict]:
             "away": away,
             "score": {"home": hs, "away": as_},
             "time": f"KO {ko_utc[11:16]}" if ko_utc else "KO",
-            "odds": {"H": None, "D": None, "A": None, "bookmaker": "RadissonBet"},
+            "odds": {"H": None, "D": None, "A": None, "bookmaker": None},
             "prob": {"H": None, "D": None, "A": None},
         }
     return out
 
 # -------- Odds merge (genişletilmiş) --------
-def _is_ft_market_by_text(name: str) -> bool:
+def _is_ft_market_text(name: str) -> bool:
     n = (name or "").upper().replace(" ", "")
     return any(tag in n for tag in ("FULLTIMERESULT","MATCHODDS","MATCHWINNER","1X2","RESULT","FT"))
 
-def _is_ft_market_by_id(mid: Optional[int]) -> bool:
-    # Sportmonks örneklerinde "Match Winner" çoğunlukla market_id=1 (2-way).
-    # 3-way 1X2 farklı id'lerde olabilir; bildiklerimizi ekledik, genişletilebilir.
+def _is_ft_market_id(mid: Optional[int]) -> bool:
+    # Match Winner (2-way) sıklıkla id=1; 3-way 1X2 farklı olabilir (gerekirse genişletilir).
     return mid in {1}
 
 def _label_to_hda(label: str) -> Optional[str]:
     s = (label or "").strip().lower()
-    mapping = {
-        "1":"H","h":"H","home":"H","home team":"H","localteam":"H",
-        "x":"D","d":"D","draw":"D",
-        "2":"A","a":"A","away":"A","away team":"A","visitorteam":"A",
-    }
-    return mapping.get(s)
+    m = {"1":"H","h":"H","home":"H","home team":"H","localteam":"H",
+         "x":"D","d":"D","draw":"D",
+         "2":"A","a":"A","away":"A","away team":"A","visitorteam":"A"}
+    return m.get(s)
 
 def _parse_odd_value(it: dict) -> Optional[float]:
     for k in ("value","decimal","price","odd"):
@@ -229,57 +218,29 @@ def _parse_odd_value(it: dict) -> Optional[float]:
         except: return None
     return None
 
-def _extract_odds_entries(node: dict) -> List[Tuple[int,str,Optional[float],str]]:
-    """Her türlü biçimi tek forma indirger: (fixture_id, H/D/A, value, market_name)."""
-    out: List[Tuple[int,str,Optional[float],str]] = []
-    if not isinstance(node, dict): return out
-
-    fid = node.get("fixture_id")
-    label = node.get("label")
-    market_obj = node.get("market") or {}
-    market_name = market_obj.get("developer_name") or market_obj.get("name") or ""
-    market_desc = node.get("market_description") or ""
-    market_id   = node.get("market_id")
-
-    def is_ft():
-        if _is_ft_market_by_text(market_name): return True
-        if _is_ft_market_by_text(market_desc): return True
-        if _is_ft_market_by_id(int(market_id) if market_id is not None else None): return True
-        return False
-
-    if fid is not None and label is not None and is_ft():
-        hda = _label_to_hda(label) or _label_to_hda(label.upper()) or _label_to_hda(label.title())
-        if hda:
-            out.append((int(fid), hda, _parse_odd_value(node), market_name or market_desc or f"id:{market_id}"))
-
-    # odds: [] içeren varyantlar
-    for o in node.get("odds") or []:
-        if not isinstance(o, dict): continue
-        fid2 = o.get("fixture_id") or fid
-        label2 = o.get("label")
-        mkt2 = (o.get("market") or {}).get("developer_name") or (o.get("market") or {}).get("name") or market_name
-        desc2 = o.get("market_description") or market_desc
-        mid2 = o.get("market_id") or market_id
-        def is_ft2():
-            if _is_ft_market_by_text(mkt2): return True
-            if _is_ft_market_by_text(desc2): return True
-            if _is_ft_market_by_id(int(mid2) if mid2 is not None else None): return True
-            return False
-        if fid2 is not None and label2 is not None and is_ft2():
-            hda2 = _label_to_hda(label2) or _label_to_hda(label2.upper()) or _label_to_hda(label2.title())
-            if hda2:
-                out.append((int(fid2), hda2, _parse_odd_value(o), mkt2 or desc2 or f"id:{mid2}"))
-    return out
-
 def _merge_odds(base: Dict[int,dict], rows: List[dict]) -> Dict[str,int]:
     hist: Dict[str,int] = {}
     for it in rows or []:
-        for fid,hda,val,market in _extract_odds_entries(it):
-            if fid not in base or val is None: continue
-            if hda == "H": base[fid]["odds"]["H"] = val
-            elif hda == "D": base[fid]["odds"]["D"] = val
-            elif hda == "A": base[fid]["odds"]["A"] = val
-            hist[market] = hist.get(market,0)+1
+        if not isinstance(it, dict): continue
+        fid  = it.get("fixture_id")
+        lab  = it.get("label")
+        mobj = it.get("market") or {}
+        mname= mobj.get("developer_name") or mobj.get("name") or ""
+        mdesc= it.get("market_description") or ""
+        mid  = it.get("market_id")
+        is_ft = _is_ft_market_text(mname) or _is_ft_market_text(mdesc) or _is_ft_market_id(int(mid) if mid is not None else None)
+        if fid is None or lab is None or not is_ft: 
+            continue
+        hda = _label_to_hda(lab) or _label_to_hda(lab.upper()) or _label_to_hda(lab.title())
+        if not hda: 
+            continue
+        val = _parse_odd_value(it)
+        if val is None: 
+            continue
+        if hda == "H": base[int(fid)]["odds"]["H"] = val
+        elif hda == "D": base[int(fid)]["odds"]["D"] = val
+        elif hda == "A": base[int(fid)]["odds"]["A"] = val
+        hist[mname or mdesc or f"id:{mid}"] = hist.get(mname or mdesc or f"id:{mid}", 0) + 1
     return hist
 
 # --------- Filters / diagnostics ----------
@@ -296,7 +257,7 @@ def _filter_upcoming(rows: List[dict]) -> List[dict]:
         except: continue
     return out
 
-def _league_distribution(rows: List[dict]) -> Dict[str, int]:
+def _league_distribution(rows: List[dict]) -> Dict[str,int]:
     dist: Dict[str,int] = {}
     for r in rows:
         name = (r.get("league") or {}).get("name") or "?"
@@ -304,69 +265,28 @@ def _league_distribution(rows: List[dict]) -> Dict[str, int]:
     return dict(sorted(dist.items(), key=lambda kv:(-kv[1],kv[0])))
 
 # ------------- Pullers -------------
-def _pull_list() -> Tuple[List[dict], List[str]]:
-    diag: List[str] = []
-    base: Dict[int,dict] = {}
-
-    # inplay
-    try:
-        live_url = _q(f"{BASE}/{LIVE_PATH}", {"api_token": TOKEN})
-        live_data = _http_get(live_url)
-        if isinstance(live_data, dict) and live_data.get("__error__"): diag.append(live_data["__error__"])
-        live_rows = _as_list(live_data)
-        diag.append(f"inplay:{len(live_rows)}")
-        base = _normalize_live_rows(live_rows)
-    except Exception as e:
-        diag.append(f"inplay:ERR {e}")
-
-    # bugün (/date/{day})
-    if not base:
-        try:
-            today = datetime.utcnow().strftime("%Y-%m-%d")
-            fx_url = _q(_fx_date_url(today), {"api_token": TOKEN})
-            fx_data = _http_get(fx_url)
-            if isinstance(fx_data, dict) and fx_data.get("__error__"): diag.append(fx_data["__error__"])
-            fx_rows = _as_list(fx_data)
-            diag.append(f"fixtures.date[{today}]:{len(fx_rows)}")
-            if fx_rows: base = _normalize_fixture_rows(fx_rows)
-        except Exception as e:
-            diag.append(f"fixtures.date:ERR {e}")
-
-    items = _filter_upcoming(list(base.values()))
-    if items:
-        dist = _league_distribution(items)
-        diag.append(f"leagues:{len(dist)} {dist}")
-    return items, diag
-
 def _pull_bulletin(start: Date, end: Date, leagues_csv: Optional[str]) -> Tuple[List[dict], List[str]]:
     diag: List[str] = []
-    try:
-        url = _fx_between_url(start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"))
-        q: Dict[str,str] = {"api_token": TOKEN}
-        if leagues_csv: q["leagues"] = leagues_csv
-        url = _q(url, q)
-        data = _http_get(url)
-        if isinstance(data, dict) and data.get("__error__"): diag.append(data["__error__"])
-        rows = _as_list(data)
-        diag.append(f"fixtures.between[{start}..{end}]:{len(rows)}")
-        base_map = _normalize_fixture_rows(rows)
-    except Exception as e:
-        diag.append(f"fixtures.between:ERR {e}")
-        base_map = {}
+    # fixtures between (tüm sayfaları topla)
+    url = _fx_between_url(start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"))
+    q: Dict[str,str] = {"api_token": TOKEN}
+    if leagues_csv: q["leagues"] = leagues_csv
+    url = _q(url, q)
+    rows, pages = _paged_collect(url, per_page_hint=100, max_pages=60)
+    diag.append(f"fixtures.between[{start}..{end}]:{len(rows)} pages:{pages}")
+    base_map = _normalize_fixture_rows(rows)
 
-    # Odds (filters parametresi YOK — 400 hatası vermesin)
+    # Odds (varsayılan includes: market;bookmaker;fixture ile ayarlanmış olmalı)
     if base_map and ODDS_PATH:
         try:
-            odds_url = f"{BASE}/{ODDS_PATH}"
-            odds_url = _q(odds_url, {"api_token": TOKEN})
-            odds_data = _http_get(odds_url)
-            if isinstance(odds_data, dict) and odds_data.get("__error__"): diag.append(odds_data["__error__"])
-            markets = _merge_odds(base_map, _as_list(odds_data))
+            o_url = _q(f"{BASE}/{ODDS_PATH}", {"api_token": TOKEN})
+            odds_rows, o_pages = _paged_collect(o_url, per_page_hint=50, max_pages=40)
+            markets = _merge_odds(base_map, odds_rows)
             if markets:
                 used = ", ".join(f"{k}:{v}" for k,v in list(markets.items())[:5])
-                diag.append(f"odds:ok markets[{used}]")
+                diag.append(f"odds:ok rows:{len(odds_rows)} pages:{o_pages} markets[{used}]")
             else:
-                diag.append("odds:empty (no FT market)")
+                diag.append(f"odds:empty rows:{len(odds_rows)} pages:{o_pages}")
         except Exception as e:
             diag.append(f"odds:ERR {e}")
 
@@ -377,44 +297,23 @@ def _pull_bulletin(start: Date, end: Date, leagues_csv: Optional[str]) -> Tuple[
         diag.append(f"leagues:{len(dist)} {dist}")
     return items, diag
 
-# ------------- Cache -------------
 def _ensure_list_cache():
     if not TOKEN:
         raise HTTPException(status_code=500, detail="SPORTMONKS_TOKEN eksik.")
     now = time.time()
     if now - _CACHE["t"] < TTL and _CACHE["norm"]:
         return
-    norm, diag = _pull_list()
+    # kısa liste: bugün – ama ihtiyacımız yıl aralığı, o yüzden sadece sample dolduruyoruz
+    today = datetime.utcnow().date()
+    week_end = today + timedelta(days=6)
+    norm, diag = _pull_bulletin(today, week_end, leagues_csv=None)
     _CACHE.update(t=now, norm=norm, sample=(norm[:1] if norm else []), diag=diag)
 
 # ------------- Routes -------------
-def _fmt_ticker(r: dict) -> str:
-    h, a = r["home"]["name"], r["away"]["name"]
-    hs, as_ = r["score"]["home"], r["score"]["away"]
-    sc = f"{hs}-{as_}" if (hs is not None or as_ is not None) else "vs"
-    return f"⚽ {h} {sc} {a} • {r['time']} • {r['league']['name']}"
-
-@router.get("/livescores/list")
-def livescores_list():
-    _ensure_list_cache()
-    return _CACHE["norm"]
-
-@router.get("/livescores")
-def livescores_ticker():
-    _ensure_list_cache()
-    return ([_fmt_ticker(x) for x in _CACHE["norm"]] or [])
-
 @router.get("/livescores/sample")
 def livescores_sample():
     _ensure_list_cache()
-    return {
-        "sample": _CACHE["sample"],
-        "diag": _CACHE["diag"],
-        "live": LIVE_PATH,
-        "fixtures": FIXTURES_PATH,
-        "odds": ODDS_PATH,
-        "pred": PRED_PATH,
-    }
+    return {"sample": _CACHE["sample"], "diag": _CACHE["diag"], "live": LIVE_PATH, "fixtures": FIXTURES_PATH, "odds": ODDS_PATH}
 
 @router.get("/livescores/bulletin")
 def livescores_bulletin(
@@ -427,13 +326,20 @@ def livescores_bulletin(
     try:
         today = datetime.utcnow().date()
         start = datetime.strptime(date_from, "%Y-%m-%d").date() if date_from else today
-        end   = datetime.strptime(date_to, "%Y-%m-%d").date()   if date_to   else (today + timedelta(days=6))
+        end   = datetime.strptime(date_to, "%Y-%m-%d").date()   if date_to   else Date(today.year, 12, 31)
     except Exception:
         raise HTTPException(status_code=400, detail="from/to formatı YYYY-MM-DD olmalı.")
     items, diag = _pull_bulletin(start, end, leagues_csv=(leagues or None))
-    return {
-        "range": {"from": start.strftime("%Y-%m-%d"), "to": end.strftime("%Y-%m-%d")},
-        "count": len(items),
-        "items": items,
-        "diag": diag,
-    }
+    return {"range": {"from": start.strftime("%Y-%m-%d"), "to": end.strftime("%Y-%m-%d")}, "count": len(items), "items": items, "diag": diag}
+
+@router.get("/livescores/year")
+def livescores_year(
+    year: int = Query(..., ge=2000, le=2100),
+    leagues: Optional[str] = Query(default=None),
+):
+    if not TOKEN:
+        raise HTTPException(status_code=500, detail="SPORTMONKS_TOKEN eksik.")
+    start = Date(year, 1, 1)
+    end   = Date(year, 12, 31)
+    items, diag = _pull_bulletin(start, end, leagues_csv=(leagues or None))
+    return {"range": {"from": start.strftime("%Y-%m-%d"), "to": end.strftime("%Y-%m-%d")}, "count": len(items), "items": items, "diag": diag}
