@@ -200,3 +200,7 @@ if __name__ == "__main__":
         port=int(os.getenv("PORT", "8000")),
         reload=True,
     )
+
+# app/services/main.py  (Routers bölümüne ekle)
+from app.api.routers.livescores import router as livescores_router
+app.include_router(livescores_router)
