@@ -1,6 +1,5 @@
 # app/services/main.py
 import os
-import json
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -21,31 +20,13 @@ from app.db.models import Base, Prize, Code
 app = FastAPI()
 
 # -----------------------------
-# CORS (env dayanıklı parse + güvenli varsayılan)
+# CORS
 # -----------------------------
-origins = settings.CORS_ALLOW_ORIGINS
-# Neden: Railway env bazen string olarak gelir; JSON/CSV destekle
-if isinstance(origins, str):
-    parsed = None
-    try:
-        parsed = json.loads(origins)  # ["https://a","https://b"]
-    except Exception:
-        pass
-    if isinstance(parsed, list):
-        origins = parsed
-    else:
-        origins = [s.strip() for s in origins.split(",") if s.strip()]
-
-# Hiç değer yoksa yalnızca frontend dev/test için '*' aç
-if not origins:
-    origins = ["*"]  # dikkat: prod'da özel domain girilmeli
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=settings.CORS_ALLOW_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
-    allow_credentials=False,  # ihtiyaç olursa True yap (cookie/Authorization için)
 )
 
 # -----------------------------
@@ -76,7 +57,7 @@ app.include_router(spin_router, prefix="/api")
 from app.api.routers.content import router as content_router
 app.include_router(content_router)
 
-# Yeni modüler admin (login, dashboard, kod/ödül, turnuva/bonus, admin yönetim)
+# Yeni modüler admin (login, dashboard, kod yönetimi, turnuva/bonus, admin yönetim)
 from app.api.routers.admin_mod import admin_router as admin_mod_router
 app.include_router(admin_mod_router)
 
@@ -85,18 +66,10 @@ from app.api.routers.livescores import router as livescores_router
 app.include_router(livescores_router)
 
 # -----------------------------
-# Debug: kayıtlı rotaları göster (geçici)
-# -----------------------------
-@app.get("/__routes")
-def __routes():
-    return {"routes": [getattr(r, "path", getattr(r, "path_format", "")) for r in app.routes]}
-
-# -----------------------------
 # Admin auth yönlendirmeleri
 # -----------------------------
 @app.exception_handler(StarletteHTTPException)
 async def _admin_auth_redirect(request: Request, exc: StarletteHTTPException):
-    # HTML istekleri login'e yönlendir; API isteklerini etkileme
     path = request.url.path or ""
     is_html = "text/html" in (request.headers.get("accept") or "")
     is_admin_area = path.startswith("/admin")
@@ -120,8 +93,10 @@ def admin_root():
 def on_startup() -> None:
     Base.metadata.create_all(engine)
 
+    # --- Mini migration'lar (idempotent) ---
     if engine.dialect.name.lower() in ("postgresql", "postgres"):
         with engine.begin() as conn:
+            # 1) admin_users.token_hash -> password_hash (varsa)
             conn.execute(text("""
             DO $$
             BEGIN
@@ -133,15 +108,20 @@ def on_startup() -> None:
                 END IF;
             END $$;
             """))
+
+            # 2) admin_users.password_hash kolonu yoksa ekle
             conn.execute(text("""
                 ALTER TABLE IF EXISTS admin_users
                 ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)
             """))
+
+            # 3) prizes.image_url kolonu yoksa ekle
             conn.execute(text("""
                 ALTER TABLE IF EXISTS prizes
                 ADD COLUMN IF NOT EXISTS image_url VARCHAR(512)
             """))
-            # tournaments ilave alanlar (idempotent)
+
+            # 4) tournaments ilave alanlar (IF EXISTS tablo + IF NOT EXISTS kolon)
             conn.execute(text("ALTER TABLE IF EXISTS tournaments ADD COLUMN IF NOT EXISTS prize_pool INTEGER"))
             conn.execute(text("ALTER TABLE IF EXISTS tournaments ADD COLUMN IF NOT EXISTS subtitle VARCHAR(200)"))
             conn.execute(text("ALTER TABLE IF EXISTS tournaments ADD COLUMN IF NOT EXISTS short_desc TEXT"))
@@ -152,8 +132,10 @@ def on_startup() -> None:
             conn.execute(text("ALTER TABLE IF EXISTS tournaments ADD COLUMN IF NOT EXISTS rank_visible BOOLEAN"))
             conn.execute(text("ALTER TABLE IF EXISTS tournaments ADD COLUMN IF NOT EXISTS slug VARCHAR(200)"))
             conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_tournaments_slug ON tournaments (slug)"))
-            conn.execute(text("ALTER TABLE IF NOT EXISTS tournaments ADD COLUMN IF NOT EXISTS i18n JSONB"))
+            # HATA VEREN SATIRIN DÜZELTİLMİŞ HALİ:
+            conn.execute(text("ALTER TABLE IF EXISTS tournaments ADD COLUMN IF NOT EXISTS i18n JSONB"))
 
+    # --- Seed verileri ---
     with SessionLocal() as db:
         if db.query(Prize).count() == 0:
             db.add_all([
