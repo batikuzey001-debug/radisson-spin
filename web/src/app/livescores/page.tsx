@@ -1,62 +1,65 @@
 // web/src/app/livescores/page.tsx
-import LiveScoreCard from '@/components/LiveScoreCard'
+'use client'
 
-export const dynamic = 'force-dynamic'
+import { useEffect, useMemo, useState } from 'react'
+import LiveScoreCardCompact from '@/components/LiveScoreCardCompact'
+import LiveScoreDetailPanel from '@/components/LiveScoreDetailPanel'
+import { getDemoItems, findDemoItem, DemoItem } from '@/lib/demoLive'
+import { useRouter } from 'next/navigation'
 
-type League = { name: string; logo?: string | null }
-type Team = { name: string; logo?: string | null; xg?: number | null }
-type Score = { home?: number | null; away?: number | null }
-type Odds  = { H?: number | null; D?: number | null; A?: number | null; bookmaker?: string | null }
-type Prob  = { H?: number | null; D?: number | null; A?: number | null }
+export default function LiveScoresPage() {
+  const router = useRouter()
+  const items = useMemo(() => getDemoItems(), [])
+  const [openId, setOpenId] = useState<number | null>(null)
+  const [isDesktop, setIsDesktop] = useState(false)
 
-type LiveItem = {
-  league: League
-  home: Team
-  away: Team
-  score: Score
-  time: string
-  odds?: Odds
-  prob?: Prob
-}
+  // breakpoint: lg and up -> sağ panel; altı -> sayfaya git
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)')
+    const h = () => setIsDesktop(mq.matches)
+    h()
+    mq.addEventListener('change', h)
+    return () => mq.removeEventListener('change', h)
+  }, [])
 
-async function fetchLiveList(): Promise<LiveItem[]> {
-  const BASE = (process.env.NEXT_PUBLIC_API_BASE || '').replace(/\/+$/, '')
-  if (!BASE) return []
-  try {
-    const r = await fetch(`${BASE}/livescores/list`, { cache: 'no-store', headers: { 'Content-Type': 'application/json' } })
-    if (!r.ok) return []
-    const data = (await r.json()) as LiveItem[]
-    return Array.isArray(data) ? data : []
-  } catch {
-    return []
+  function handleClick(id: number) {
+    if (isDesktop) {
+      setOpenId(id) // sağ panel
+    } else {
+      router.push(`/livescores/${id}`) // mobil: detay sayfası
+    }
   }
-}
 
-export default async function LiveScoresPage() {
-  const items = await fetchLiveList()
+  const selected: DemoItem | undefined = openId ? findDemoItem(openId) : undefined
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-10">
-      <h1 className="text-2xl font-bold mb-4">CANLI SKOR</h1>
+    <main className="mx-auto max-w-6xl px-4 py-8">
+      <h1 className="text-xl font-bold mb-3">Canlı Maçlar</h1>
 
-      {items.length === 0 ? (
-        <div className="text-white/70">Şu anda listelenecek canlı maç bulunamadı.</div>
-      ) : (
-        <div className="grid gap-5 grid-cols-1 lg:grid-cols-3">
-          {items.map((it, idx) => (
-            <LiveScoreCard
-              key={idx}
-              league={it.league}
-              home={it.home}
-              away={it.away}
-              score={it.score}
-              time={it.time}
-              odds={it.odds}
-              prob={it.prob}
-            />
-          ))}
-        </div>
-      )}
+      {/* Grid: mobil 1 / web 3 sütun */}
+      <div className="grid gap-3 grid-cols-1 lg:grid-cols-3">
+        {items.map((it) => (
+          <LiveScoreCardCompact
+            key={it.id}
+            id={it.id}
+            league={it.league}
+            home={it.home}
+            away={it.away}
+            score={it.score}
+            time={it.time}
+            odds={it.odds}
+            prob={it.prob}
+            onClick={handleClick}
+          />
+        ))}
+      </div>
+
+      {/* Desktop sağ panel */}
+      <LiveScoreDetailPanel
+        open={Boolean(openId && isDesktop)}
+        onClose={() => setOpenId(null)}
+        item={selected}
+      />
     </main>
   )
 }
