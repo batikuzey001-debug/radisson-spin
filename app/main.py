@@ -62,6 +62,9 @@ app.include_router(content_router)
 from app.api.routers.admin_mod import admin_router as admin_mod_router
 app.include_router(admin_mod_router)
 
+from app.api.routers.livescores import router as livescores_router
+app.include_router(livescores_router)
+
 # -----------------------------
 # Admin auth yönlendirmeleri
 # -----------------------------
