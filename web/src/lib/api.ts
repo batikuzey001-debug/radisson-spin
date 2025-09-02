@@ -1,34 +1,43 @@
 // web/src/lib/api.ts
-const BASE = process.env.NEXT_PUBLIC_API_BASE!.replace(/\/+$/,'');
-const CONTENT = (process.env.NEXT_PUBLIC_CONTENT_PREFIX || '').replace(/\/+$/,'');
-const SPIN = (process.env.NEXT_PUBLIC_SPIN_PREFIX || '').replace(/\/+$/,'');
+// Tek yerden veri akışı (şimdilik sahte). Gerçek backend endpointlerini buraya yazacağız.
+export type ScoreRow = { home: string; away: string; score: string };
+export type Tournament = { id: string; title: string; prize: number; players: number };
 
-async function j<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    ...init,
-    headers: { 'Content-Type': 'application/json', ...(init?.headers||{}) },
-    cache: 'no-store',
-    next: { revalidate: 0 },
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json() as Promise<T>;
+export async function fetchLivePlayers(): Promise<number> {
+  // TODO: backend'den: GET /metrics/live-players
+  return 2847;
 }
 
-export type Tournament = {
-  id: number; title: string;
-  image_url?: string|null; category?: string|null;
-  status: 'published'|'draft'; start_at?: string|null; end_at?: string|null;
-};
+export async function fetchDailyWinnings(): Promise<number> {
+  // TODO: backend'den: GET /metrics/daily-winnings
+  return 15000;
+}
 
-export const api = {
-  tournaments: (limit?: number) =>
-    j<Tournament[]>(`${CONTENT}/content/tournaments${limit ? `?limit=${limit}` : ''}`),
+export async function fetchPromoCodes(): Promise<string[]> {
+  // TODO: backend'den: GET /promos/today
+  return ["BUGÜN50", "FLASH25", "PREMIER75"];
+}
 
-  prizes: () =>
-    j<{ id:number; label:string }[]>(`${SPIN}/spin/prizes`),
+export async function fetchUpcomingEvents(): Promise<{ title: string; when: string }[]> {
+  // TODO: backend'den: GET /events/upcoming?limit=1
+  return [{ title: "Premier League Night", when: "Yarın 21:00" }];
+}
 
-  redeem: (code: string) =>
-    j<{ status:string; prize?:string }>(`${SPIN}/spin/redeem`, {
-      method: 'POST', body: JSON.stringify({ code })
-    }),
-};
+export async function fetchLiveScores(): Promise<ScoreRow[]> {
+  // TODO: backend'den: GET /api/livescores/list (özet)
+  return [
+    { home: "Arsenal", away: "Chelsea", score: "2 - 1" },
+    { home: "Man City", away: "Spurs", score: "1 - 0" },
+    { home: "Liverpool", away: "Newcastle", score: "3 - 2" },
+  ];
+}
+
+export async function fetchActiveTournaments(): Promise<Tournament[]> {
+  // TODO: backend'den: GET /api/tournaments/active?limit=4
+  return [
+    { id: "t1", title: "Hafta Sonu Sprint", prize: 75000, players: 842 },
+    { id: "t2", title: "Mega Kombine", prize: 120000, players: 1234 },
+    { id: "t3", title: "Kasım Maratonu", prize: 300000, players: 2012 },
+    { id: "t4", title: "Premier Stars", prize: 180000, players: 956 },
+  ];
+}
