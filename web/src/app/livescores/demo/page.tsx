@@ -5,11 +5,11 @@ export const dynamic = 'force-dynamic'
 
 export default function LiveScoreDemoPage() {
   const item = {
-    league: { logo: 'https://cdn.sportmonks.com/images/soccer/leagues/8/8.png' }, // SADECE LOGO
+    league: { logo: 'https://cdn.sportmonks.com/images/soccer/leagues/8/8.png' },
     home:   { name: 'Manchester United', logo: 'https://cdn.sportmonks.com/images/soccer/teams/14/14.png', xg: 1.85 },
     away:   { name: 'Chelsea',            logo: 'https://cdn.sportmonks.com/images/soccer/teams/18/18.png', xg: 1.10 },
     score:  { home: 2, away: 1 },
-    time:   67, // dinamik artar (dakika)
+    time:   67,
     odds:   { H: 1.70, D: 3.40, A: 4.50, bookmaker: 'bet365' },
     prob:   { H: 59, D: 25, A: 16 },
   }
@@ -28,4 +28,6 @@ export default function LiveScoreDemoPage() {
           prob={item.prob}
         />
       </div>
-   
+    </main>
+  )
+}
