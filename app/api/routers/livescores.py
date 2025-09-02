@@ -1,21 +1,21 @@
 # app/api/routers/livescores.py
-# Sportmonks canlı veri proxysi (YALNIZ GERÇEK VERİ)
+# Sportmonks canlı veri proxysi (GERÇEK VERİ)
 # Uçlar:
 #   GET /livescores/list                 -> [{league, home, away, score, time, odds, prob}]
 #   GET /livescores/bulletin?from&to     -> {range,count,items,diag}
 #   GET /livescores/sample               -> {sample,diag,...}
 #
-# Gerekli ENV (Railway → API Variables):
+# ENV:
 #   SPORTMONKS_TOKEN=...
 #   SPORTMONKS_BASE=https://api.sportmonks.com
 #   SPORTMONKS_TTL=8
 #   SPORTMONKS_LIVE_PATH=/v3/football/livescores/inplay?per_page=50&include=participants;time;scores;periods;league.country
 #   SPORTMONKS_FIXTURES_PATH=/v3/football/fixtures?per_page=100&include=participants;league.country;scores;venue
-#   SPORTMONKS_ODDS_PATH=/v3/football/odds/pre-match/fixtures?per_page=50&include=market;bookmaker      (opsiyonel)
-#   SPORTMONKS_PRED_PATH=/v3/football/predictions/fixtures?per_page=50                                 (opsiyonel)
+#   SPORTMONKS_ODDS_PATH=/v3/football/odds/pre-match?per_page=50&include=market;bookmaker            (opsiyonel)
+#   SPORTMONKS_PRED_PATH=/v3/football/predictions/probabilities?per_page=50&include=fixture;type     (opsiyonel)
 
 import os, json, time, urllib.parse, urllib.request, urllib.error
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta, date as Date
 from typing import Any, Dict, List, Tuple, Optional
 from fastapi import APIRouter, HTTPException, Query
 
@@ -34,12 +34,11 @@ PRED_PATH     = (os.getenv("SPORTMONKS_PRED_PATH")     or "").lstrip("/") or Non
 UA = {"User-Agent": "Mozilla/5.0"}
 _CACHE: Dict[str, Any] = {"t": 0.0, "norm": [], "sample": [], "diag": []}
 
-# ---- HTTP yardımcıları (hata güvenli) ---------------------------------------
+# ---- HTTP yardımcıları -------------------------------------------------------
 def _http_get(url: str) -> Any:
-    """Hata durumunda exception fırlatmak yerine {'__error__': ...} döndür."""
     try:
         req = urllib.request.Request(url, headers=UA)
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=12) as resp:
             raw = resp.read()
     except urllib.error.HTTPError as e:
         return {"__error__": f"HTTP {e.code} {e.reason} -> {url}"}
@@ -69,6 +68,18 @@ def _dig(d: dict, path: str):
         else: return None
     return cur
 
+# ---- Path yardımcıları -------------------------------------------------------
+# Neden: /fixtures için query parçalarını (include, per_page vb.) korumak
+_FX_QS = FIXTURES_PATH.split("?", 1)[1] if "?" in FIXTURES_PATH else ""
+
+def _fx_date_url(day: str) -> str:
+    base = f"{BASE}/v3/football/fixtures/date/{day}"
+    return base + (("?" + _FX_QS) if _FX_QS else "")
+
+def _fx_between_url(start: str, end: str) -> str:
+    base = f"{BASE}/v3/football/fixtures/between/{start}/{end}"
+    return base + (("?" + _FX_QS) if _FX_QS else "")
+
 # ---- Normalizasyon -----------------------------------------------------------
 def _teams_from_participants(rec: dict) -> Tuple[Dict, Dict]:
     home = {"name":"", "logo":None}
@@ -82,47 +93,38 @@ def _teams_from_participants(rec: dict) -> Tuple[Dict, Dict]:
     return home, away
 
 def _scores(rec: dict) -> Tuple[Optional[int], Optional[int]]:
-    """Neden: Sportmonks 'scores' bazen dict, bazen list döndürüyor; ikisini de destekle."""
+    # Neden: 'scores' bazen dict, bazen list.
     s = rec.get("scores")
     hs = as_ = None
-
     if isinstance(s, dict):
         hs = s.get("home_score") or s.get("localteam_score")
         as_ = s.get("away_score") or s.get("visitorteam_score")
     elif isinstance(s, list):
         src = None
-        # FT/current öncelikli; yoksa ilk öğe
         for it in s:
             if not isinstance(it, dict): continue
             label = (it.get("description") or it.get("type") or "").lower()
             if label in ("ft","fulltime","full time","current","live"):
                 src = it; break
-        if src is None and s:
-            src = s[0] if isinstance(s[0], dict) else None
+        if src is None and s and isinstance(s[0], dict):
+            src = s[0]
         if isinstance(src, dict):
             hs = src.get("home_score") or src.get("localteam_score")
             as_ = src.get("away_score") or src.get("visitorteam_score")
-
-    try:
-        hs_i = int(hs) if hs not in (None, "") else None
-    except Exception:
-        hs_i = None
-    try:
-        as_i = int(as_) if as_ not in (None, "") else None
-    except Exception:
-        as_i = None
+    try: hs_i = int(hs) if hs not in (None,"") else None
+    except: hs_i = None
+    try: as_i = int(as_) if as_ not in (None,"") else None
+    except: as_i = None
     return hs_i, as_i
 
 def _minute_from_periods(rec: dict) -> str:
-    """Neden: periods bazen list, bazen dict olabilir."""
     pr = rec.get("periods") or []
     last = None
     if isinstance(pr, list) and pr:
         last = pr[-1] if isinstance(pr[-1], dict) else None
     elif isinstance(pr, dict):
         last = pr
-    if not isinstance(last, dict):
-        return ""
+    if not isinstance(last, dict): return ""
     mm = last.get("minutes"); ss = last.get("seconds")
     try: mm_i = int(mm) if mm is not None else None
     except: mm_i = None
@@ -243,7 +245,26 @@ def _merge_predictions(base: Dict[int, dict], rows: List[dict]) -> None:
         elif label.startswith("draw"): base[int(fid)]["prob"]["D"] = val
         elif label.startswith("away"): base[int(fid)]["prob"]["A"] = val
 
-# ---- Çekiş: list (inplay + today fixtures fallback) -------------------------
+# ---- Filtre: geçmiş maçları at ------------------------------------------------
+def _filter_upcoming(rows: List[dict]) -> List[dict]:
+    now = datetime.utcnow().replace(tzinfo=timezone.utc)
+    out = []
+    for r in rows:
+        iso = r.get("kickoff_utc")
+        try:
+            if iso:
+                dt = datetime.fromisoformat(iso.replace("Z","+00:00"))
+                if dt.tzinfo is None: dt = dt.replace(tzinfo=timezone.utc)
+                if dt >= now:
+                    out.append(r)
+            else:
+                # kickoff bilinmiyorsa elemeyi yumuşak yapabiliriz; ama güvenli tarafta atalım
+                continue
+        except Exception:
+            continue
+    return out
+
+# ---- Çekiş: list (inplay + bugün /date/{today}) ------------------------------
 def _pull_list() -> Tuple[List[dict], List[str]]:
     diag: List[str] = []
     base: Dict[int, dict] = {}
@@ -259,56 +280,40 @@ def _pull_list() -> Tuple[List[dict], List[str]]:
     except Exception as e:
         diag.append(f"inplay:ERR {e}")
 
-    # fallback: bugün
+    # fallback: bugün (resmî /date/{day})
     if not base:
         try:
             today = datetime.utcnow().strftime("%Y-%m-%d")
-            fx_url = _q(f"{BASE}/{FIXTURES_PATH}", {"api_token": TOKEN, "date": today})
+            fx_url = _fx_date_url(today)
+            fx_url = _q(fx_url, {"api_token": TOKEN})
             fx_data = _http_get(fx_url)
             if isinstance(fx_data, dict) and fx_data.get("__error__"): diag.append(fx_data["__error__"])
             fx_rows = _as_list(fx_data)
-            diag.append(f"fixtures[{today}]:{len(fx_rows)}")
+            diag.append(f"fixtures.date[{today}]:{len(fx_rows)}")
             if fx_rows:
                 base = _normalize_fixture_rows(fx_rows)
         except Exception as e:
-            diag.append(f"fixtures:ERR {e}")
+            diag.append(f"fixtures.date:ERR {e}")
 
-    # opsiyonel zenginleştirme
-    if base and ODDS_PATH:
-        try:
-            odds_url = _q(f"{BASE}/{ODDS_PATH}", {"api_token": TOKEN})
-            odds_data = _http_get(odds_url)
-            if isinstance(odds_data, dict) and odds_data.get("__error__"): diag.append(odds_data["__error__"])
-            _merge_odds(base, _as_list(odds_data))
-        except Exception as e:
-            diag.append(f"odds:ERR {e}")
+    items = list(base.values())
+    items = _filter_upcoming(items)
+    return items, diag
 
-    if base and PRED_PATH:
-        try:
-            pred_url = _q(f"{BASE}/{PRED_PATH}", {"api_token": TOKEN})
-            pred_data = _http_get(pred_url)
-            if isinstance(pred_data, dict) and pred_data.get("__error__"): diag.append(pred_data["__error__"])
-            _merge_predictions(base, _as_list(pred_data))
-        except Exception as e:
-            diag.append(f"pred:ERR {e}")
-
-    return list(base.values()), diag
-
-# ---- Çekiş: bulletin (date range fixtures) ----------------------------------
-def _pull_bulletin(start: datetime.date, end: datetime.date) -> Tuple[List[dict], List[str]]:
+# ---- Çekiş: bulletin (date range → /between/{from}/{to}) ---------------------
+def _pull_bulletin(start: Date, end: Date) -> Tuple[List[dict], List[str]]:
     diag: List[str] = []
 
-    # fixtures range
-    fx_url = _q(f"{BASE}/{FIXTURES_PATH}", {
-        "api_token": TOKEN,
-        "date_from": start.strftime("%Y-%m-%d"),
-        "date_to":   end.strftime("%Y-%m-%d"),
-    })
-    fx_data = _http_get(fx_url)
-    if isinstance(fx_data, dict) and fx_data.get("__error__"): diag.append(fx_data["__error__"])
-    fx_rows = _as_list(fx_data)
-    diag.append(f"fixtures[{start}..{end}]:{len(fx_rows)}")
-    base_map = _normalize_fixture_rows(fx_rows)
+    try:
+        url = _fx_between_url(start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"))
+        url = _q(url, {"api_token": TOKEN})
+        data = _http_get(url)
+        if isinstance(data, dict) and data.get("__error__"): diag.append(data["__error__"])
+        rows = _as_list(data)
+        diag.append(f"fixtures.between[{start}..{end}]:{len(rows)}")
+        base_map = _normalize_fixture_rows(rows)
+    except Exception as e:
+        diag.append(f"fixtures.between:ERR {e}")
+        base_map = {}
 
     # enrich (opsiyonel)
     if base_map and ODDS_PATH:
@@ -326,12 +331,12 @@ def _pull_bulletin(start: datetime.date, end: datetime.date) -> Tuple[List[dict]
             pred_data = _http_get(pred_url)
             if isinstance(pred_data, dict) and pred_data.get("__error__"): diag.append(pred_data["__error__"])
             _merge_predictions(base_map, _as_list(pred_data))
-
         except Exception as e:
             diag.append(f"pred:ERR {e}")
 
-    out = sorted(base_map.values(), key=lambda r: (r.get("date") or "", r["fixture_id"]))
-    return out, diag
+    items = sorted(base_map.values(), key=lambda r: (r.get("date") or "", r["fixture_id"]))
+    items = _filter_upcoming(items)
+    return items, diag
 
 # ---- Cache / ensure ----------------------------------------------------------
 def _ensure_list_cache():
@@ -382,7 +387,7 @@ def livescores_bulletin(
     try:
         today = datetime.utcnow().date()
         start = datetime.strptime(date_from, "%Y-%m-%d").date() if date_from else today
-        end   = datetime.strptime(date_to, "%Y-%m-%d").date()   if date_to   else today
+        end   = datetime.strptime(date_to, "%Y-%m-%d").date()   if date_to   else (today + timedelta(days=6))
     except Exception:
         raise HTTPException(status_code=400, detail="from/to formatı YYYY-MM-DD olmalı.")
     items, diag = _pull_bulletin(start, end)
