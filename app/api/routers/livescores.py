@@ -15,7 +15,7 @@
 #   SPORTMONKS_PRED_PATH=/v3/football/predictions/fixtures?per_page=50                                 (opsiyonel)
 
 import os, json, time, urllib.parse, urllib.request, urllib.error
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple, Optional
 from fastapi import APIRouter, HTTPException, Query
 
@@ -36,7 +36,7 @@ _CACHE: Dict[str, Any] = {"t": 0.0, "norm": [], "sample": [], "diag": []}
 
 # ---- HTTP yardımcıları (hata güvenli) ---------------------------------------
 def _http_get(url: str) -> Any:
-    """HTTP: 4xx/5xx/timeout durumunda exception fırlatma; {'__error__': ...} döndür."""
+    """Hata durumunda exception fırlatmak yerine {'__error__': ...} döndür."""
     try:
         req = urllib.request.Request(url, headers=UA)
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -82,20 +82,47 @@ def _teams_from_participants(rec: dict) -> Tuple[Dict, Dict]:
     return home, away
 
 def _scores(rec: dict) -> Tuple[Optional[int], Optional[int]]:
-    s = rec.get("scores") or {}
-    hs = s.get("home_score");  as_ = s.get("away_score")
-    if hs is None: hs = s.get("localteam_score")
-    if as_ is None: as_ = s.get("visitorteam_score")
-    try:  hs_i = int(hs) if hs not in (None,"") else None
-    except: hs_i = None
-    try:  as_i = int(as_) if as_ not in (None,"") else None
-    except: as_i = None
+    """Neden: Sportmonks 'scores' bazen dict, bazen list döndürüyor; ikisini de destekle."""
+    s = rec.get("scores")
+    hs = as_ = None
+
+    if isinstance(s, dict):
+        hs = s.get("home_score") or s.get("localteam_score")
+        as_ = s.get("away_score") or s.get("visitorteam_score")
+    elif isinstance(s, list):
+        src = None
+        # FT/current öncelikli; yoksa ilk öğe
+        for it in s:
+            if not isinstance(it, dict): continue
+            label = (it.get("description") or it.get("type") or "").lower()
+            if label in ("ft","fulltime","full time","current","live"):
+                src = it; break
+        if src is None and s:
+            src = s[0] if isinstance(s[0], dict) else None
+        if isinstance(src, dict):
+            hs = src.get("home_score") or src.get("localteam_score")
+            as_ = src.get("away_score") or src.get("visitorteam_score")
+
+    try:
+        hs_i = int(hs) if hs not in (None, "") else None
+    except Exception:
+        hs_i = None
+    try:
+        as_i = int(as_) if as_ not in (None, "") else None
+    except Exception:
+        as_i = None
     return hs_i, as_i
 
 def _minute_from_periods(rec: dict) -> str:
+    """Neden: periods bazen list, bazen dict olabilir."""
     pr = rec.get("periods") or []
-    if not pr: return ""
-    last = pr[-1]
+    last = None
+    if isinstance(pr, list) and pr:
+        last = pr[-1] if isinstance(pr[-1], dict) else None
+    elif isinstance(pr, dict):
+        last = pr
+    if not isinstance(last, dict):
+        return ""
     mm = last.get("minutes"); ss = last.get("seconds")
     try: mm_i = int(mm) if mm is not None else None
     except: mm_i = None
@@ -299,6 +326,7 @@ def _pull_bulletin(start: datetime.date, end: datetime.date) -> Tuple[List[dict]
             pred_data = _http_get(pred_url)
             if isinstance(pred_data, dict) and pred_data.get("__error__"): diag.append(pred_data["__error__"])
             _merge_predictions(base_map, _as_list(pred_data))
+
         except Exception as e:
             diag.append(f"pred:ERR {e}")
 
