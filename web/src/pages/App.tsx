@@ -3,6 +3,7 @@ import { Routes, Route, Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import axios from "axios";
 import Home from "./Home";
+import AnaSayfaDemo from "./AnaSayfaDemo";
 
 const API = import.meta.env.VITE_API_BASE_URL;
 
@@ -27,11 +28,13 @@ export default function App() {
       </p>
       <nav style={{ display: "flex", gap: 12, marginTop: 12 }}>
         <Link to="/">Home</Link>
+        <Link to="/demo">Ana Sayfa Demo</Link>
         <Link to="/spin">Spin (gelecek)</Link>
       </nav>
       <div style={{ marginTop: 20 }}>
         <Routes>
           <Route path="/" element={<Home />} />
+          <Route path="/demo" element={<AnaSayfaDemo />} />
           <Route path="/spin" element={<div>Spin sayfası (yakında)</div>} />
         </Routes>
       </div>
