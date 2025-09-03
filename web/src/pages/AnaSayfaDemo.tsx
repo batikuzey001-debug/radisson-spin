@@ -3,13 +3,12 @@ import { useEffect, useMemo, useState } from "react";
 
 /**
  * HEADER DEMO (TV tarzı — logo + LIVE + sayı)
- * İstekler:
- * - LIVE yazısı kırmızı, logonun SAĞINDA
- * - PLAYERS kaldırıldı
- * - Sayı fontu LIVE’a benzer (Bebas Neue, kalın/dar)
- * - Digit-roll animasyonu
- * - Altında kırmızı neon şerit ve bu şerit akıyor (kayma animasyonu)
- * - Sağda: Hızlı Bonus (bildirim) + Radissonbet Giriş (klik efekti)
+ * Güncelleme:
+ * - Font: Orbitron (dijital görünüm) — LIVE ve sayılar aynı font
+ * - Boyutlar küçültüldü, daha dengeli
+ * - LIVE kırmızı, PLAYERS kaldırıldı
+ * - Alt kırmızı neon şerit akarak kayıyor
+ * - Sağ: Hızlı Bonus (bildirim) + Radissonbet Giriş (klik efekti)
  */
 
 const LOGO =
@@ -33,7 +32,7 @@ function Header() {
   useEffect(() => {
     const t = setInterval(() => {
       setOnline((n) => {
-        const delta = (4 + Math.floor(Math.random() * 12)) * dir;
+        const delta = (3 + Math.floor(Math.random() * 10)) * dir;
         const next = Math.max(4800, Math.min(6800, n + delta));
         if (next === 4800 || next === 6800) setDir((d) => (d === 1 ? -1 : 1));
         return next;
@@ -45,7 +44,7 @@ function Header() {
   return (
     <header className="hdr">
       <div className="hdr__in">
-        {/* Sol blok: Logo + LIVE strip (logo sağında) */}
+        {/* Sol: Logo + LIVE strip */}
         <div className="left">
           <a className="logoWrap" href="/" onClick={(e) => e.preventDefault()}>
             <img className="logo" src={LOGO} alt="Radisson" />
@@ -53,7 +52,7 @@ function Header() {
           <LiveStrip value={online} />
         </div>
 
-        {/* Sağ blok: Hızlı Bonus + Giriş */}
+        {/* Sağ: Hızlı Bonus + Giriş */}
         <div className="right">
           <button className="btn bonus" onClick={(e) => e.preventDefault()} title="Hızlı Bonus (demo)">
             <BellIcon />
@@ -172,12 +171,12 @@ function BellIcon() {
 
 /* -------- CSS -------- */
 const css = `
-@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue:wght@400..700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700;800;900&display=swap');
 
 :root{
   --bg:#0b1224; --bg2:#0e1a33; --text:#eaf2ff;
   --aqua:#00e5ff; --red:#ff2a2a;
-  --tv:'Bebas Neue', Impact, 'Helvetica Neue Condensed', system-ui, sans-serif;
+  --digital:'Orbitron', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 *{box-sizing:border-box}
 body{margin:0}
@@ -185,67 +184,65 @@ body{margin:0}
 
 /* Header */
 .hdr{background:rgba(8,14,28,.5);backdrop-filter:blur(10px);border-bottom:1px solid rgba(255,255,255,.06)}
-.hdr__in{max-width:1200px;margin:0 auto;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}
-.left{display:flex;align-items:center;gap:16px}
+.hdr__in{max-width:1200px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.left{display:flex;align-items:center;gap:14px}
 .right{display:flex;align-items:center;gap:10px}
 
-/* Logo */
-.logo{height:44px;display:block;filter:drop-shadow(0 0 12px rgba(0,229,255,.28))}
-@media (max-width:720px){ .logo{height:36px} }
+/* Logo — biraz küçültüldü */
+.logo{height:36px;display:block;filter:drop-shadow(0 0 10px rgba(0,229,255,.26))}
+@media (max-width:720px){ .logo{height:32px} }
 
 /* LIVE strip (logo sağı) */
-.liveWrap{display:flex;flex-direction:column;align-items:flex-start;gap:6px}
-.liveRow{display:flex;align-items:center;gap:12px}
+.liveWrap{display:flex;flex-direction:column;align-items:flex-start;gap:4px}
+.liveRow{display:flex;align-items:center;gap:10px}
 .liveWord{
-  display:inline-flex;align-items:center;gap:8px;
-  font-family:var(--tv); font-weight:900; letter-spacing:1px;
-  color:var(--red); font-size:26px; line-height:1;
+  display:inline-flex;align-items:center;gap:6px;
+  font-family:var(--digital); font-weight:800; letter-spacing:.8px;
+  color:var(--red); font-size:18px; line-height:1;
 }
-.dot{width:10px;height:10px;border-radius:999px;background:var(--red);box-shadow:0 0 12px rgba(255,42,42,.85);animation:blink 1s infinite}
+.dot{width:8px;height:8px;border-radius:999px;background:var(--red);box-shadow:0 0 10px rgba(255,42,42,.85);animation:blink 1s infinite}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
 
 .roller{
-  display:inline-flex;align-items:center;gap:6px;
-  font-family:var(--tv); font-weight:900; font-size:26px; color:#fff;
+  display:inline-flex;align-items:center;gap:4px;
+  font-family:var(--digital); font-weight:800; font-size:18px; color:#fff;
 }
-.sep{opacity:.75;margin:0 1px}
+.sep{opacity:.7;margin:0 1px}
 
-/* Digit roller */
-.grp{display:inline-flex;gap:2px}
-.digit{display:inline-block;width:20px;height:26px;overflow:hidden}
+/* Digit roller — kompakt */
+.grp{display:inline-flex;gap:1px}
+.digit{display:inline-block;width:14px;height:18px;overflow:hidden}
 .col{display:flex;flex-direction:column;transition:transform .6s cubic-bezier(.2,.7,.2,1)}
-.cell{height:26px;line-height:26px;text-align:center}
+.cell{height:18px;line-height:18px;text-align:center}
 
-/* Kayan neon alt şerit */
+/* Kayan neon alt şerit (daha ince) */
 .liveUnderline{
-  width:100%; height:3px; border-radius:2px;
+  width:100%; height:2px; border-radius:2px;
   background:linear-gradient(90deg, rgba(255,42,42,0), rgba(255,42,42,1), rgba(255,42,42,0));
-  background-size:200% 100%;
-  animation:slidebar 3s linear infinite;
-  box-shadow:0 0 14px rgba(255,42,42,.6);
+  background-size:180% 100%;
+  animation:slidebar 2.8s linear infinite;
+  box-shadow:0 0 10px rgba(255,42,42,.55);
 }
 @keyframes slidebar{
   0%{background-position:0% 0}
-  100%{background-position:200% 0}
+  100%{background-position:180% 0}
 }
 
 /* Hızlı Bonus */
 .btn{display:inline-flex;align-items:center;gap:8px;cursor:pointer;border:1px solid transparent;background:transparent;color:var(--text);padding:8px 12px;border-radius:12px;transition:.15s}
 .btn:hover{filter:brightness(1.06);transform:translateY(-1px)}
 .btn.bonus{color:#fff;border-color:rgba(255,255,255,.18)}
-.btn.bonus .notif{display:inline-block;width:10px;height:10px;border-radius:999px;background:#ff4d6d;box-shadow:0 0 0 8px rgba(255,77,109,.18);animation:pulse 1.8s infinite}
+.btn.bonus .notif{display:inline-block;width:9px;height:9px;border-radius:999px;background:#ff4d6d;box-shadow:0 0 0 8px rgba(255,77,109,.18);animation:pulse 1.8s infinite}
 @keyframes pulse{0%{transform:scale(.9)}50%{transform:scale(1.15)}100%{transform:scale(.9)}}
 
 /* Giriş CTA */
 .btn.cta{
   color:#001018;background:linear-gradient(90deg,var(--aqua),#4aa7ff);
-  border-color:#0f6d8c;box-shadow:0 4px 18px rgba(0,229,255,.25),inset 0 0 0 1px rgba(255,255,255,.18);
+  border-color:#0f6d8c;box-shadow:0 4px 16px rgba(0,229,255,.22),inset 0 0 0 1px rgba(255,255,255,.18);
   font-weight:900;letter-spacing:.3px;position:relative;overflow:hidden
 }
 .btn.cta.clicked::after{
-  content:"";position:absolute;inset:0;
-  background:radial-gradient(120px 120px at 50% 50%,rgba(255,255,255,.45),transparent 60%);
-  animation:clickflash .45s ease-out forwards
+  content:"";position:absolute;inset:0;background:radial-gradient(120px 120px at 50% 50%,rgba(255,255,255,.45),transparent 60%);animation:clickflash .45s ease-out forwards
 }
 @keyframes clickflash{0%{opacity:.9;transform:scale(.9)}100%{opacity:0;transform:scale(1.2)}}
 .mouse{color:#001018}
