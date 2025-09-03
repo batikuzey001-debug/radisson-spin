@@ -5,13 +5,11 @@ import Header from "../components/Header";
 /**
  * DEMO • Popüler Maçlar (Canlı & Yakında) – xG + Oranlar + Geri Sayım
  * Revizyon:
- *  - Kartlar daha büyük (min 320px)
- *  - Lig ve takım logoları daha büyük
- *  - Takım adları 2 satıra KELİME KELİME kayar (ellipsis yok)
- *  - xG / Oranlar yoksa hiç çizilmez
- *  - Skor daha vurucu; gol olduğunda 2sn yeşil yanıp söner
- *  - Kart arka planında lig logosu “bayrak efekti” (blur + düşük opak)
- *  - Dakika rozeti daha dikkat çekici (pulsing kırmızı)
+ *  - Arka plan: ÜLKE BAYRAĞI (varsa) → yoksa lig logosu
+ *  - Dakika: pulsing yok, yalnızca BÜYÜK ve belirgin metin
+ *  - Takım isimleri kelime kelime alt satıra kayar (harf bölünmez)
+ *  - Lig ve takım logoları daha büyük, çerçevesiz (PNG gibi)
+ *  - xG / Oranlar veri yoksa hiç gösterilmez
  */
 
 const API = import.meta.env.VITE_API_BASE_URL;
@@ -20,7 +18,8 @@ type Team = { name: string; logo?: string };
 type Match = {
   id: string;
   league: string;
-  leagueLogo?: string;   // arka plan için kullanıyoruz
+  leagueLogo?: string;   // fallback
+  leagueFlag?: string;   // ülke bayrağı (varsa bunu kullan)
   home: Team;
   away: Team;
   minute: number;        // 0 => başlamamış
@@ -164,34 +163,30 @@ function MatchCard({ m }: { m: Enriched }) {
 
   const hasXG = (m.xgH ?? 0) > 0 || (m.xgA ?? 0) > 0;
   const hasOdds = !!(m.odds?.H || m.odds?.D || m.odds?.A);
+  const bgImage = m.leagueFlag || m.leagueLogo || "";
 
   return (
     <a
       className={`card ${isLive ? "live" : "prematch"} ${flash ? "goal" : ""}`}
       href="#"
       onClick={(e) => e.preventDefault()}
-      style={
-        m.leagueLogo
-          ? ({ ["--bgimg" as any]: `url('${m.leagueLogo}')` } as any)
-          : undefined
-      }
+      style={bgImage ? ({ ["--bgimg" as any]: `url('${bgImage}')` } as any) : undefined}
+      title={`${m.league} • ${m.home.name} vs ${m.away.name}`}
     >
       {/* üst satır */}
       <div className="top">
         <div className="league">
-          {m.leagueLogo ? <img className="lgLogo big" src={m.leagueLogo} alt="" /> : null}
+          {/* ön yüzde küçük logo/flag gösterim (çerçevesiz) */}
+          {bgImage ? <img className="lgLogo big" src={bgImage} alt="" /> : null}
           <span className="lg">{m.league}</span>
         </div>
         <div className="min">
           {isLive ? (
-            <span className="minBadge live">
-              <span className="ping" />
-              {m.minute}'
-            </span>
+            <span className="minText">{m.minute}'</span> // sade ve büyük
           ) : m.kickoff ? (
-            <span className="minBadge pre"><Countdown iso={m.kickoff} /></span>
+            <span className="minText pre"><Countdown iso={m.kickoff} /></span>
           ) : (
-            <span className="badge">MAÇ ÖNÜ</span>
+            <span className="minText pre">MAÇ ÖNÜ</span>
           )}
         </div>
       </div>
@@ -199,7 +194,7 @@ function MatchCard({ m }: { m: Enriched }) {
       {/* takımlar + skor */}
       <div className="teams">
         <div className="side">
-          <TeamLogo name={m.home.name} logo={m.home.logo} size={36} />
+          <TeamLogo name={m.home.name} logo={m.home.logo} size={42} />
           <span className="name">{m.home.name}</span>
         </div>
 
@@ -210,7 +205,7 @@ function MatchCard({ m }: { m: Enriched }) {
         </div>
 
         <div className="side right">
-          <TeamLogo name={m.away.name} logo={m.away.logo} size={36} />
+          <TeamLogo name={m.away.name} logo={m.away.logo} size={42} />
           <span className="name">{m.away.name}</span>
         </div>
       </div>
@@ -264,18 +259,13 @@ function Countdown({ iso }: { iso: string }) {
 }
 
 /* Logo varsa göster, kırık/boşsa avatar fallback (boyut ayarlı) */
-function TeamLogo({ name, logo, size = 32 }: { name: string; logo?: string; size?: number }) {
+function TeamLogo({ name, logo, size = 36 }: { name: string; logo?: string; size?: number }) {
   const [imgOk, setImgOk] = useState<boolean>(!!logo);
   const initials = useMemo(() => {
     const parts = name.split(" ").filter(Boolean);
     const first = parts[0]?.[0] ?? "?";
     const second = parts.length > 1 ? parts[1][0] : "";
     return (first + second).toUpperCase();
-  }, [name]);
-  const hue = useMemo(() => {
-    let h = 0;
-    for (let i = 0; i < name.length; i++) h = (h + name.charCodeAt(i) * 7) % 360;
-    return h;
   }, [name]);
 
   if (logo && imgOk) {
@@ -298,7 +288,8 @@ function TeamLogo({ name, logo, size = 32 }: { name: string; logo?: string; size
       style={{
         width: size,
         height: size,
-        background: `linear-gradient(160deg, hsl(${hue} 80% 55%), hsl(${(hue + 40) % 360} 80% 45%))`,
+        background:
+          "linear-gradient(160deg, rgba(255,255,255,.15), rgba(255,255,255,.05))",
       }}
     >
       {initials}
@@ -369,60 +360,45 @@ const css = `
 
 .card{
   position:relative;
-  display:flex;flex-direction:column;gap:10px;
-  min-width:320px;max-width:320px;padding:14px;
+  display:flex;flex-direction:column;gap:12px;
+  min-width:340px;max-width:340px;padding:16px;
   text-decoration:none;color:#eaf2ff;
-  background:
-    radial-gradient(120px 70px at 100% -20%, rgba(255,255,255,.08), transparent 60%),
-    linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+  background:linear-gradient(180deg, rgba(11,17,34,.9), rgba(10,18,35,.85));
   border:1px solid rgba(255,255,255,.10);border-radius:18px;
   box-shadow:0 10px 18px rgba(0,0,0,.28), inset 0 0 0 1px rgba(255,255,255,.05);
   overflow:hidden;
 }
 .card::before{
-  content:""; position:absolute; inset:-20px -20px auto auto; width:60%; height:120%;
-  background-image:var(--bgimg); background-repeat:no-repeat; background-position:center; background-size:contain;
-  filter:blur(12px) opacity(.15);
+  content:""; position:absolute; inset:-10% -10% auto auto; width:120%; height:120%;
+  background-image:var(--bgimg); background-repeat:no-repeat; background-position:center; background-size:cover;
+  filter:blur(6px) opacity(.35);
   pointer-events:none;
 }
 .card:hover{filter:brightness(1.05)}
 
-.top{display:flex;align-items:center;justify-content:space-between;font-size:12px}
-.league{display:flex;align-items:center;gap:10px}
-.lg{color:#cfe0ff;font-weight:700}
-.lgLogo{width:22px;height:22px;border-radius:6px;object-fit:contain;border:1px solid rgba(255,255,255,.18)}
-.lgLogo.big{width:24px;height:24px}
+.top{display:flex;align-items:center;justify-content:space-between}
+.league{display:flex;align-items:center;gap:12px}
+.lg{color:#cfe0ff;font-weight:800;font-size:14px}
+.lgLogo{width:28px;height:28px;object-fit:contain}
 
-.min{display:flex;align-items:center}
-.minBadge{
-  display:inline-flex;align-items:center;gap:8px;
-  padding:6px 10px;border-radius:999px;font-weight:900;
-  border:1px solid rgba(255,255,255,.16);
+.min .minText{
+  font-weight:900; font-size:18px; color:#ffd1d1;
+  background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.16);
+  padding:4px 10px; border-radius:10px;
 }
-.minBadge.live{
-  background:rgba(255, 42, 42, .10); color:#ffd1d1; position:relative;
-}
-.minBadge.live .ping{
-  position:absolute; inset:-2px; border:2px solid rgba(255,42,42,.45); border-radius:999px;
-  animation:ping 1.4s infinite;
-}
-@keyframes ping{0%{transform:scale(.9);opacity:.9}70%{transform:scale(1.2);opacity:.15}100%{transform:scale(1.2);opacity:0}}
-.badge{display:inline-block;padding:4px 8px;border-radius:8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:#e8efff;font-size:11px}
-.badge.cnt{background:rgba(0,229,255,.08);border-color:rgba(0,229,255,.25);color:#ccfaff}
 
-.teams{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center}
-.side{display:flex;align-items:center;gap:10px;min-width:0}
+.teams{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center}
+.side{display:flex;align-items:center;gap:12px;min-width:0}
 .side.right{justify-content:flex-end}
 .name{
-  color:#e8f0ff;font-size:14px;font-weight:700;
-  white-space:normal; word-break:break-word; overflow-wrap:anywhere; line-height:1.2;
-  max-height:2.4em; /* en fazla 2 satır */
+  color:#e8f0ff;font-size:15px;font-weight:800;
+  white-space:normal; word-break:normal; overflow-wrap:break-word; line-height:1.25;
 }
 
 .score{
-  display:flex;align-items:center;gap:10px;
-  font-weight:900;font-size:24px; padding:4px 14px;border-radius:999px;
-  background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.18);
+  display:flex;align-items:center;gap:12px;
+  font-weight:900;font-size:28px; padding:8px 18px;border-radius:999px;
+  background:rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.18);
 }
 .card.goal .score{
   animation:goalflash .25s ease-in-out 0s 8 alternate;
@@ -436,27 +412,28 @@ const css = `
 .xg{
   display:flex;align-items:center;gap:6px;font-weight:900;color:#ffe3e3;
   background:rgba(255,42,42,.12);border:1px solid rgba(255,42,42,.25);
-  padding:6px 10px;border-radius:12px;width:max-content
+  padding:6px 12px;border-radius:12px;width:max-content
 }
-.xgLabel{font-size:11px;letter-spacing:.4px;opacity:.9}
-.xgVal{font-size:14px}
+.xgLabel{font-size:12px;letter-spacing:.4px;opacity:.9}
+.xgVal{font-size:15px}
 .xgSep{opacity:.7}
 
 .odds{display:flex;gap:10px;margin-top:2px}
 .odd{
-  display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;
-  background:rgba(0,229,255,.10); border:1px solid rgba(0,229,255,.28); color:#ccfaff; font-size:12px
+  display:inline-flex;align-items:center;gap:8px;padding:6px 14px;border-radius:999px;
+  background:rgba(0,229,255,.10); border:1px solid rgba(0,229,255,.28); color:#ccfaff; font-size:13px
 }
 .ol{font-weight:900}
 .ov{font-weight:800}
 
 .ava{
   display:inline-grid;place-items:center;border-radius:999px;
-  font-size:14px;font-weight:900;color:#001018;
-  box-shadow:0 0 0 1px rgba(255,255,255,.15),0 6px 14px rgba(0,0,0,.25);
-  background:#0c1224;
+  font-size:16px;font-weight:900;color:#001018;
+  background:transparent;
 }
-.ava.img{object-fit:cover}
+.ava.img{object-fit:cover;border:none;box-shadow:none}
 
-@media(max-width:420px){ .card{min-width:280px;max-width:280px} }
+@media(max-width:420px){
+  .card{min-width:300px;max-width:300px}
+}
 `;
