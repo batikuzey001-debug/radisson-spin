@@ -3,11 +3,12 @@ import { useEffect, useMemo, useState } from "react";
 
 /**
  * HEADER DEMO (only header)
- * Revize: LIVE PLAYERS bloğu daha uyumlu ve tek etiket gibi görünecek.
- * - Logo büyük
- * - Sol: Hızlı Bonus (bildirim)
- * - Orta: LIVE PLAYERS (tek şerit etiket) + animasyonlu sayı (aynı font)
+ * Revize:
+ * - Dot (•) en solda
+ * - LIVE / PLAYERS / SAYILAR = aynı “dijital saat” fontu (Share Tech Mono)
+ * - Tek şerit/etiket gibi uyumlu görünüm
  * - Sağ: Radissonbet Giriş (cursor-click efekti)
+ * - Sol: Hızlı Bonus (dikkat çekici bildirim)
  */
 
 const LOGO =
@@ -27,7 +28,6 @@ function Header() {
   const [dir, setDir] = useState<1 | -1>(1);
   const [clicked, setClicked] = useState(false);
 
-  // Mock dalgalanma (ileride gerçek API)
   useEffect(() => {
     const t = setInterval(() => {
       setOnline((n) => {
@@ -51,7 +51,7 @@ function Header() {
           <LivePlayers value={online} />
         </div>
 
-        {/* Sağ: önce Hızlı Bonus, sonra Giriş CTA */}
+        {/* Sağ: Hızlı Bonus + Giriş CTA */}
         <div className="right">
           <button className="btn bonus" onClick={(e) => e.preventDefault()} title="Hızlı Bonus (demo)">
             <BellIcon />
@@ -77,23 +77,21 @@ function Header() {
   );
 }
 
-/* -------------- CENTER: LIVE PLAYERS (tek etiket) + DIGIT ROLLER -------------- */
+/* -------- LIVE + PLAYERS (tek etiket) + dijital sayı roller -------- */
 function LivePlayers({ value }: { value: number }) {
   const parts = useMemo(() => splitThousands(value), [value]);
   return (
     <div className="livebar" aria-label="live-players">
-      <span className="liveLabel">
+      <span className="liveChip">
+        <span className="dot" aria-hidden />
         <span className="liveWord">LIVE</span>
-        <span className="dot" />
         <span className="playersWord">PLAYERS</span>
       </span>
 
       <span className="roller">
         {parts.map((p, i) =>
           p.kind === "sep" ? (
-            <span key={`sep-${i}`} className="sep">
-              .
-            </span>
+            <span key={`sep-${i}`} className="sep">.</span>
           ) : (
             <DigitGroup key={`grp-${i}`} digits={p.value} />
           )
@@ -119,9 +117,7 @@ function Digit({ target }: { target: string }) {
     <span className="digit">
       <span className="col" style={{ transform: `translateY(-${t * 10}%)` }}>
         {Array.from({ length: 10 }).map((_, n) => (
-          <span key={n} className="cell">
-            {n}
-          </span>
+          <span key={n} className="cell">{n}</span>
         ))}
       </span>
     </span>
@@ -133,23 +129,23 @@ function splitThousands(n: number): Array<{ kind: "num"; value: string } | { kin
   const rev = s.split("").reverse();
   const out: string[] = [];
   for (let i = 0; i < rev.length; i++) {
-    if (i > 0 && i % 3 === 0) out.push(".");
-    out.push(rev[i]);
+      if (i > 0 && i % 3 === 0) out.push(".");
+      out.push(rev[i]);
   }
   const grouped = out.reverse().join("");
   const parts: Array<{ kind: "num"; value: string } | { kind: "sep" }> = [];
-  let buffer = "";
+  let buf = "";
   for (const ch of grouped) {
     if (ch === ".") {
-      if (buffer) parts.push({ kind: "num", value: buffer }), (buffer = "");
+      if (buf) parts.push({ kind: "num", value: buf }), (buf = "");
       parts.push({ kind: "sep" });
-    } else buffer += ch;
+    } else buf += ch;
   }
-  if (buffer) parts.push({ kind: "num", value: buffer });
+  if (buf) parts.push({ kind: "num", value: buf });
   return parts;
 }
 
-/* -------------- ICONS -------------- */
+/* -------- ICONS -------- */
 function MouseClickIcon() {
   return (
     <svg className="mouse" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
@@ -159,7 +155,6 @@ function MouseClickIcon() {
     </svg>
   );
 }
-
 function BellIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
@@ -168,12 +163,14 @@ function BellIcon() {
   );
 }
 
-/* -------------- CSS -------------- */
+/* -------- CSS -------- */
 const css = `
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+
 :root{
   --bg:#0b1224; --bg2:#0e1a33; --text:#eaf2ff; --muted:#a9bddb;
   --aqua:#00e5ff; --aqua2:#79e8ff; --red:#ff2a2a;
-  --live-font: "Roboto Condensed", "Arial Narrow", "Segoe UI", system-ui, sans-serif;
+  --digital: 'Share Tech Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 *{box-sizing:border-box}
 body{margin:0}
@@ -197,40 +194,31 @@ body{margin:0}
 .btn.bonus .notif{display:inline-block;width:9px;height:9px;border-radius:999px;background:#ff4d6d;box-shadow:0 0 0 8px rgba(255,77,109,.18);animation:pulse 1.8s infinite}
 @keyframes pulse{0%{transform:scale(.9)}50%{transform:scale(1.15)}100%{transform:scale(.9)}}
 
-/* LIVE PLAYERS (tek etiket) + sayı */
-.livebar{
-  display:flex; align-items:center; gap:12px;
-  font-variant-numeric:tabular-nums;
-  font-family:var(--live-font);
+/* LIVE PLAYERS (tek şerit etiket) + dijital sayı */
+.livebar{display:flex;align-items:center;gap:12px;margin-left:2px}
+.liveChip{
+  display:inline-flex; align-items:center; gap:10px;
+  font-family:var(--digital); font-weight:700; letter-spacing:.8px;
+  color:#ffdede;
 }
-.liveLabel{
-  position:relative; display:flex; align-items:center; gap:10px;
-  letter-spacing:.6px; font-weight:900;
-}
-.liveLabel::after{
-  content:""; position:absolute; left:0; right:0; bottom:-2px; height:2px;
-  background:linear-gradient(90deg,transparent,var(--red),transparent);
-  opacity:.55;
-}
-.liveWord{color:var(--red)}
 .dot{
-  width:6px; height:6px; border-radius:999px; background:var(--red);
-  box-shadow:0 0 10px rgba(255,42,42,.9); animation:blink 1s infinite;
+  width:8px; height:8px; border-radius:999px; background:var(--red);
+  box-shadow:0 0 14px rgba(255,42,42,.9); margin-right:2px; animation:blink 1s infinite;
 }
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
-.playersWord{color:#e9f1ff; opacity:.92}
-.roller{display:inline-flex; align-items:center; gap:6px; color:#fff; margin-left:2px}
-.sep{opacity:.6; margin:0 1px}
+.liveWord{color:var(--red)}
+.playersWord{color:#ffdede; opacity:.95}
 
-/* Digit roller */
-.grp{display:inline-flex; gap:2px}
-.digit{display:inline-block; width:16px; height:20px; overflow:hidden}
-.col{display:flex; flex-direction:column; transition:transform .6s cubic-bezier(.2,.7,.2,1)}
+/* Dijital roller */
+.roller{display:inline-flex;align-items:center;gap:6px;color:#fff;font-family:var(--digital)}
+.sep{opacity:.6;margin:0 1px}
+.grp{display:inline-flex;gap:2px}
+.digit{display:inline-block;width:16px;height:20px;overflow:hidden}
+.col{display:flex;flex-direction:column;transition:transform .6s cubic-bezier(.2,.7,.2,1)}
 .cell{
   height:20px; line-height:20px; text-align:center;
-  font-weight:900; letter-spacing:.1px; color:#e8f4ff;
+  font-weight:700; letter-spacing:.6px; color:#e8f4ff;
   text-shadow:0 0 10px rgba(0,229,255,.15);
-  font-family:var(--live-font);
 }
 
 /* Giriş CTA */
