@@ -2,11 +2,14 @@
 import { useEffect, useMemo, useState } from "react";
 
 /**
- * HEADER DEMO (TV Spor Kanalı Tarzı)
- * - Logo büyük ve önde
- * - Ortada: LIVE PLAYERS (Bebas Neue, ultra bold, dar) + sayı (digit roll)
- * - Altında: ince kırmızı neon şerit
- * - Sağda: Hızlı Bonus (bildirimli) + Radissonbet Giriş (cursor-click efekti)
+ * HEADER DEMO (TV tarzı — logo + LIVE + sayı)
+ * İstekler:
+ * - LIVE yazısı kırmızı, logonun SAĞINDA
+ * - PLAYERS kaldırıldı
+ * - Sayı fontu LIVE’a benzer (Bebas Neue, kalın/dar)
+ * - Digit-roll animasyonu
+ * - Altında kırmızı neon şerit ve bu şerit akıyor (kayma animasyonu)
+ * - Sağda: Hızlı Bonus (bildirim) + Radissonbet Giriş (klik efekti)
  */
 
 const LOGO =
@@ -26,6 +29,7 @@ function Header() {
   const [dir, setDir] = useState<1 | -1>(1);
   const [clicked, setClicked] = useState(false);
 
+  // Mock dalgalanma
   useEffect(() => {
     const t = setInterval(() => {
       setOnline((n) => {
@@ -41,21 +45,22 @@ function Header() {
   return (
     <header className="hdr">
       <div className="hdr__in">
-        {/* Sol: Logo */}
-        <a className="logoWrap" href="/" onClick={(e) => e.preventDefault()}>
-          <img className="logo" src={LOGO} alt="Radisson" />
-        </a>
+        {/* Sol blok: Logo + LIVE strip (logo sağında) */}
+        <div className="left">
+          <a className="logoWrap" href="/" onClick={(e) => e.preventDefault()}>
+            <img className="logo" src={LOGO} alt="Radisson" />
+          </a>
+          <LiveStrip value={online} />
+        </div>
 
-        {/* Orta: LIVE PLAYERS */}
-        <LivePlayers value={online} />
-
-        {/* Sağ: Hızlı Bonus + Giriş */}
+        {/* Sağ blok: Hızlı Bonus + Giriş */}
         <div className="right">
-          <button className="btn bonus" onClick={(e) => e.preventDefault()}>
+          <button className="btn bonus" onClick={(e) => e.preventDefault()} title="Hızlı Bonus (demo)">
             <BellIcon />
             <span>Hızlı Bonus</span>
             <span className="notif" aria-hidden />
           </button>
+
           <button
             className={`btn cta ${clicked ? "clicked" : ""}`}
             onClick={() => {
@@ -63,6 +68,7 @@ function Header() {
               setTimeout(() => setClicked(false), 600);
               window.location.assign("/");
             }}
+            title="Radissonbet Giriş"
           >
             <MouseClickIcon />
             <span>Radissonbet Giriş</span>
@@ -73,25 +79,29 @@ function Header() {
   );
 }
 
-/* -------- LIVE PLAYERS + sayı -------- */
-function LivePlayers({ value }: { value: number }) {
+/* -------- LIVE (kırmızı) + dijital sayı + kayan neon alt şerit -------- */
+function LiveStrip({ value }: { value: number }) {
   const parts = useMemo(() => splitThousands(value), [value]);
   return (
-    <div className="livebar">
-      <div className="liveText">
-        <span className="dot" />
-        LIVE PLAYERS
+    <div className="liveWrap" aria-label="live">
+      <div className="liveRow">
+        <span className="liveWord">
+          <span className="dot" />
+          LIVE
+        </span>
+        <span className="roller">
+          {parts.map((p, i) =>
+            p.kind === "sep" ? (
+              <span key={`sep-${i}`} className="sep">
+                .
+              </span>
+            ) : (
+              <DigitGroup key={`grp-${i}`} digits={p.value} />
+            )
+          )}
+        </span>
       </div>
-      <div className="roller">
-        {parts.map((p, i) =>
-          p.kind === "sep" ? (
-            <span key={`sep-${i}`} className="sep">.</span>
-          ) : (
-            <DigitGroup key={`grp-${i}`} digits={p.value} />
-          )
-        )}
-      </div>
-      <div className="underline" />
+      <div className="liveUnderline" aria-hidden />
     </div>
   );
 }
@@ -112,7 +122,9 @@ function Digit({ target }: { target: string }) {
     <span className="digit">
       <span className="col" style={{ transform: `translateY(-${t * 10}%)` }}>
         {Array.from({ length: 10 }).map((_, n) => (
-          <span key={n} className="cell">{n}</span>
+          <span key={n} className="cell">
+            {n}
+          </span>
         ))}
       </span>
     </span>
@@ -124,8 +136,8 @@ function splitThousands(n: number): Array<{ kind: "num"; value: string } | { kin
   const rev = s.split("").reverse();
   const out: string[] = [];
   for (let i = 0; i < rev.length; i++) {
-      if (i > 0 && i % 3 === 0) out.push(".");
-      out.push(rev[i]);
+    if (i > 0 && i % 3 === 0) out.push(".");
+    out.push(rev[i]);
   }
   const grouped = out.reverse().join("");
   const parts: Array<{ kind: "num"; value: string } | { kind: "sep" }> = [];
@@ -160,12 +172,12 @@ function BellIcon() {
 
 /* -------- CSS -------- */
 const css = `
-@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue:wght@400..700&display=swap');
 
 :root{
   --bg:#0b1224; --bg2:#0e1a33; --text:#eaf2ff;
   --aqua:#00e5ff; --red:#ff2a2a;
-  --tvfont:'Bebas Neue', Impact, sans-serif;
+  --tv:'Bebas Neue', Impact, 'Helvetica Neue Condensed', system-ui, sans-serif;
 }
 *{box-sizing:border-box}
 body{margin:0}
@@ -174,26 +186,48 @@ body{margin:0}
 /* Header */
 .hdr{background:rgba(8,14,28,.5);backdrop-filter:blur(10px);border-bottom:1px solid rgba(255,255,255,.06)}
 .hdr__in{max-width:1200px;margin:0 auto;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}
-.left{display:flex;align-items:center;gap:14px}
+.left{display:flex;align-items:center;gap:16px}
 .right{display:flex;align-items:center;gap:10px}
 
 /* Logo */
 .logo{height:44px;display:block;filter:drop-shadow(0 0 12px rgba(0,229,255,.28))}
+@media (max-width:720px){ .logo{height:36px} }
 
-/* LIVE PLAYERS */
-.livebar{position:relative;display:flex;align-items:center;gap:14px}
-.liveText{display:flex;align-items:center;gap:8px;font-family:var(--tvfont);font-size:22px;font-weight:900;letter-spacing:1px;color:#fff}
-.dot{width:10px;height:10px;border-radius:999px;background:var(--red);box-shadow:0 0 12px rgba(255,42,42,.9);animation:blink 1s infinite}
+/* LIVE strip (logo sağı) */
+.liveWrap{display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+.liveRow{display:flex;align-items:center;gap:12px}
+.liveWord{
+  display:inline-flex;align-items:center;gap:8px;
+  font-family:var(--tv); font-weight:900; letter-spacing:1px;
+  color:var(--red); font-size:26px; line-height:1;
+}
+.dot{width:10px;height:10px;border-radius:999px;background:var(--red);box-shadow:0 0 12px rgba(255,42,42,.85);animation:blink 1s infinite}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
-.roller{display:flex;align-items:center;gap:6px;font-family:var(--tvfont);font-size:22px;color:#fff}
-.sep{margin:0 2px;opacity:.7}
-.underline{position:absolute;left:0;right:0;bottom:-4px;height:3px;background:linear-gradient(90deg,transparent,var(--red),transparent);box-shadow:0 0 12px rgba(255,42,42,.7)}
+
+.roller{
+  display:inline-flex;align-items:center;gap:6px;
+  font-family:var(--tv); font-weight:900; font-size:26px; color:#fff;
+}
+.sep{opacity:.75;margin:0 1px}
 
 /* Digit roller */
 .grp{display:inline-flex;gap:2px}
-.digit{display:inline-block;width:18px;height:22px;overflow:hidden}
+.digit{display:inline-block;width:20px;height:26px;overflow:hidden}
 .col{display:flex;flex-direction:column;transition:transform .6s cubic-bezier(.2,.7,.2,1)}
-.cell{height:22px;line-height:22px;text-align:center;font-weight:900;color:#fff}
+.cell{height:26px;line-height:26px;text-align:center}
+
+/* Kayan neon alt şerit */
+.liveUnderline{
+  width:100%; height:3px; border-radius:2px;
+  background:linear-gradient(90deg, rgba(255,42,42,0), rgba(255,42,42,1), rgba(255,42,42,0));
+  background-size:200% 100%;
+  animation:slidebar 3s linear infinite;
+  box-shadow:0 0 14px rgba(255,42,42,.6);
+}
+@keyframes slidebar{
+  0%{background-position:0% 0}
+  100%{background-position:200% 0}
+}
 
 /* Hızlı Bonus */
 .btn{display:inline-flex;align-items:center;gap:8px;cursor:pointer;border:1px solid transparent;background:transparent;color:var(--text);padding:8px 12px;border-radius:12px;transition:.15s}
@@ -203,8 +237,16 @@ body{margin:0}
 @keyframes pulse{0%{transform:scale(.9)}50%{transform:scale(1.15)}100%{transform:scale(.9)}}
 
 /* Giriş CTA */
-.btn.cta{color:#001018;background:linear-gradient(90deg,var(--aqua),#4aa7ff);border-color:#0f6d8c;box-shadow:0 4px 18px rgba(0,229,255,.25),inset 0 0 0 1px rgba(255,255,255,.18);font-weight:900;letter-spacing:.3px;position:relative;overflow:hidden}
-.btn.cta.clicked::after{content:"";position:absolute;inset:0;background:radial-gradient(120px 120px at 50% 50%,rgba(255,255,255,.45),transparent 60%);animation:clickflash .45s ease-out forwards}
+.btn.cta{
+  color:#001018;background:linear-gradient(90deg,var(--aqua),#4aa7ff);
+  border-color:#0f6d8c;box-shadow:0 4px 18px rgba(0,229,255,.25),inset 0 0 0 1px rgba(255,255,255,.18);
+  font-weight:900;letter-spacing:.3px;position:relative;overflow:hidden
+}
+.btn.cta.clicked::after{
+  content:"";position:absolute;inset:0;
+  background:radial-gradient(120px 120px at 50% 50%,rgba(255,255,255,.45),transparent 60%);
+  animation:clickflash .45s ease-out forwards
+}
 @keyframes clickflash{0%{opacity:.9;transform:scale(.9)}100%{opacity:0;transform:scale(1.2)}}
 .mouse{color:#001018}
 `;
