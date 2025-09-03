@@ -18,7 +18,8 @@ from app.api.routers.health import router as health_router
 from app.api.routers.spin import router as spin_router
 from app.api.routers.home import router as home_router
 from app.api.routers.site import router as site_router
-from app.api.routers.live import router as live_router  # <-- eklendi
+from app.api.routers.live import router as live_router
+from app.api.routers.schedule import router as schedule_router  # <-- YENİ: upcoming fikstürler için
 from app.api.routers.admin_mod import admin_router
 from app.db.session import SessionLocal, engine
 from app.db.models import Base, Prize, Code
@@ -63,7 +64,7 @@ app.add_middleware(
     SessionMiddleware,
     secret_key=settings.SECRET_KEY,
     same_site="lax",
-    https_only=False,  # Why: Railway önizleme/HTTP için esnek; prod HTTPS'e geçince True yap.
+    https_only=False,  # prod'da True yap
 )
 
 # -----------------------------
@@ -77,12 +78,13 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 # -----------------------------
 # Routers
 # -----------------------------
-app.include_router(health_router, prefix="/api")  # /api/health
-app.include_router(spin_router, prefix="/api")    # /api/spin/...
-app.include_router(home_router, prefix="/api")    # /api/home/...
-app.include_router(site_router, prefix="/api")    # /api/site/...
-app.include_router(live_router, prefix="/api")    # /api/live/...   <-- eklendi
-app.include_router(admin_router)                  # /admin/...
+app.include_router(health_router, prefix="/api")     # /api/health
+app.include_router(spin_router,   prefix="/api")     # /api/spin/...
+app.include_router(home_router,   prefix="/api")     # /api/home/...
+app.include_router(site_router,   prefix="/api")     # /api/site/...
+app.include_router(live_router,   prefix="/api")     # /api/live/...
+app.include_router(schedule_router, prefix="/api")   # /api/schedule/...   <-- YENİ
+app.include_router(admin_router)                     # /admin/...
 
 # -----------------------------
 # Root & Status
@@ -100,13 +102,12 @@ def status():
 # -----------------------------
 @app.get("/admin", response_class=HTMLResponse, include_in_schema=False)
 def admin_root():
-    # /admin -> /admin/panel
     return RedirectResponse(url="/admin/panel", status_code=303)
 
 @app.exception_handler(StarletteHTTPException)
 async def _admin_auth_redirect(request: Request, exc: StarletteHTTPException):
     """
-    Why: HTML isteklerinde /admin altında 401/403'de login sayfasına yönlendirme.
+    HTML isteklerinde /admin altında 401/403'de login sayfasına yönlendirme.
     """
     path = request.url.path or ""
     is_html = "text/html" in (request.headers.get("accept") or "")
@@ -119,7 +120,7 @@ async def _admin_auth_redirect(request: Request, exc: StarletteHTTPException):
     return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
 
 # -----------------------------
-# Startup: tablo oluştur + idempotent mini migration + seed
+# Startup: tablo oluştur + mini migration + seed
 # -----------------------------
 @app.on_event("startup")
 def on_startup() -> None:
@@ -127,7 +128,6 @@ def on_startup() -> None:
 
     if engine.dialect.name.lower() in ("postgresql", "postgres"):
         with engine.begin() as conn:
-            # admin_users.token_hash -> password_hash (varsa)
             conn.execute(text("""
             DO $$
             BEGIN
@@ -139,8 +139,6 @@ def on_startup() -> None:
                 END IF;
             END $$;
             """))
-
-            # admin_users.password_hash kolonu yoksa ekle
             conn.execute(text("""
             DO $$
             BEGIN
@@ -152,8 +150,6 @@ def on_startup() -> None:
                 END IF;
             END $$;
             """))
-
-            # prizes.image_url kolonu yoksa ekle
             conn.execute(text("""
             DO $$
             BEGIN
