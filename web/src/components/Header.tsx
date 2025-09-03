@@ -1,12 +1,13 @@
 // web/src/components/Header.tsx
 import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { getHeaderConfig, type HeaderConfig } from "../api/site";
 
 /**
- * Global Header (TV tarzı)
- * - Logo: admin CMS (logo_url boş olabilir)
- * - LIVE + sayı: saat dilimine göre min/max aralıklarda dalgalanır
- * - Sağ: Hızlı Bonus (mock) + Giriş CTA (metin/link CMS’den)
+ * Global Header
+ * - LOGO: tıklanınca her koşulda anasayfaya ("/") götürür (Link + navigate yedeği)
+ * - LIVE sayaç
+ * - Sağda Hızlı Bonus ve Giriş CTA
  */
 
 type HeaderConfigExt = HeaderConfig & {
@@ -19,6 +20,7 @@ export default function Header() {
   const [online, setOnline] = useState<number>(0);
   const [dir, setDir] = useState<1 | -1>(1);
   const [clicked, setClicked] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     getHeaderConfig()
@@ -57,9 +59,20 @@ export default function Header() {
       <div className="hdr__in">
         <div className="left">
           {cfg?.logo_url ? (
-            <a className="logoWrap" href="/" onClick={(e) => e.preventDefault()}>
+            // Link + navigate backup (bazı ortamlarda event yakalanırsa yine gider)
+            <Link
+              className="logoWrap"
+              to="/"
+              onClick={(e) => {
+                // Bazı buildlerde dış kapsayıcı tıklamayı iptal edebiliyor, güvence olsun
+                try {
+                  e.stopPropagation();
+                } catch {}
+                navigate("/");
+              }}
+            >
               <img className="logo" src={cfg.logo_url} alt="Logo" />
-            </a>
+            </Link>
           ) : null}
           <LiveStrip value={online} />
         </div>
@@ -226,7 +239,7 @@ const css = `
 }
 *{box-sizing:border-box}
 
-/* SOLID arka plan: sayfa ne olursa olsun header koyu görünsün */
+/* SOLID arka plan */
 .hdr{
   background: linear-gradient(180deg, var(--bg), var(--bg2));
   border-bottom: 1px solid rgba(255,255,255,.06);
@@ -236,8 +249,8 @@ const css = `
 .hdr__in{max-width:1200px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}
 .left,.right{display:flex;align-items:center;gap:12px}
 
-/* Logo */
-.logo{height:36px;display:block;filter:drop-shadow(0 0 10px rgba(0,229,255,.26))}
+/* Logo (Link) */
+.logo{height:36px;display:block;filter:drop-shadow(0 0 10px rgba(0,229,255,.26)); cursor:pointer}
 @media (max-width:720px){ .logo{height:32px} }
 
 /* LIVE strip */
@@ -250,14 +263,8 @@ const css = `
 }
 .dot{width:8px;height:8px;border-radius:999px;background:var(--red);box-shadow:0 0 10px rgba(255,42,42,.85);animation:blink 1s infinite}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
-
-.roller{
-  display:inline-flex;align-items:center;gap:4px;
-  font-family:var(--digital); font-weight:800; font-size:18px; color:#fff;
-}
+.roller{display:inline-flex;align-items:center;gap:4px;font-family:var(--digital); font-weight:800; font-size:18px; color:#fff;}
 .sep{opacity:.7;margin:0 1px}
-
-/* Digit roller */
 .grp{display:inline-flex;gap:1px}
 .digit{display:inline-block;width:14px;height:18px;overflow:hidden}
 .col{display:flex;flex-direction:column;transition:transform .6s cubic-bezier(.2,.7,.2,1)}
