@@ -3,11 +3,14 @@ import os
 import json
 from pathlib import Path
 from typing import List, Union
+from urllib.parse import quote
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse, JSONResponse
+from fastapi.responses import RedirectResponse, JSONResponse, HTMLResponse
+from starlette.middleware.sessions import SessionMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from sqlalchemy import text
 
 from app.core.config import settings
@@ -19,7 +22,6 @@ from app.db.models import Base, Prize, Code
 
 
 def _normalize_origins(val: Union[str, List[str]]) -> List[str]:
-    """CORS allow_origins değerini güvenle listeye çevirir."""
     if isinstance(val, list):
         return [s.strip() for s in val if s and s.strip()]
     if not val:
@@ -49,6 +51,16 @@ app.add_middleware(
 )
 
 # -----------------------------
+# Session (admin için gerekli)
+# -----------------------------
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.SECRET_KEY,
+    same_site="lax",
+    https_only=False,  # prod HTTPS'te True yap
+)
+
+# -----------------------------
 # Static Files: /static -> <kök>/static
 # -----------------------------
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -73,6 +85,27 @@ def root():
 @app.get("/status")
 def status():
     return JSONResponse({"ok": True, "service": "radisson-spin-backend"})
+
+# -----------------------------
+# Admin yönlendirmeleri
+# -----------------------------
+@app.get("/admin", response_class=HTMLResponse, include_in_schema=False)
+def admin_root():
+    # /admin -> /admin/panel
+    return RedirectResponse(url="/admin/panel", status_code=303)
+
+@app.exception_handler(StarletteHTTPException)
+async def _admin_auth_redirect(request: Request, exc: StarletteHTTPException):
+    # Sadece HTML isteklerinde, /admin altında 401/403'ü login'e yönlendir
+    path = request.url.path or ""
+    is_html = "text/html" in (request.headers.get("accept") or "")
+    is_admin = path.startswith("/admin")
+    is_login = path.startswith("/admin/login")
+    if exc.status_code in (401, 403) and is_html and is_admin and not is_login:
+        qs = ("?" + request.url.query) if request.url.query else ""
+        nxt = quote(path + qs, safe="/:=&?")
+        return RedirectResponse(url=f"/admin/login?next={nxt}", status_code=303)
+    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
 
 # -----------------------------
 # Startup: tablo oluştur + idempotent mini migration + seed
@@ -109,7 +142,7 @@ def on_startup() -> None:
             END $$;
             """))
 
-            # prizes.image_url kolonu yoksa ekle
+            # prizes.image_url kolonu yoksa ekle (TABLO/kolon varlığı kontrolü ile)
             conn.execute(text("""
             DO $$
             BEGIN
@@ -127,7 +160,7 @@ def on_startup() -> None:
             END $$;
             """))
 
-    # Seed (spin için temel veriler)
+    # Seed (spin için)
     with SessionLocal() as db:
         if db.query(Prize).count() == 0:
             db.add_all([
