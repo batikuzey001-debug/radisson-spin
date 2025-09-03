@@ -20,10 +20,11 @@ Uçlar:
       canlı maç listesi (kart için temel alanlar)
   - GET /api/live/stats?fixture={id}
       xG (yoksa 0)
-  - GET /api/live/odds?fixture={id}&market=1
-      1X2 vb. oranlar (H/D/A)
+  - GET /api/live/odds?fixture={id}&market=1[&bookmaker=...][&minute=...]
+      Akıllı oran: minute>0 ise canlı / değilse prematch; boşsa fallback
+      Dönüş: { H, D, A }
   - GET /api/live/featured?limit=12
-      * ÖNEMLİ: Sadece popüler ligler (major ligler + TR lig/kupalar + Avrupa/ulusal turnuvalar)
+      * Sadece popüler ligler (major ligler + TR lig/kupalar + Avrupa/ulusal)
       * Canlı maçları önem puanına göre sırala, canlı yoksa en yakın popüler maçları getir
 """
 
@@ -63,6 +64,17 @@ def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
+async def _fetch_json(url: str, headers: Dict[str, str], params: Dict[str, str | int]) -> Dict:
+    async with httpx.AsyncClient(timeout=12.0) as client:
+        try:
+            resp = await client.get(url, headers=headers, params=params)
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=502, detail=f"Upstream request failed: {e}") from e
+    if resp.status_code != 200:
+        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+    return resp.json() or {}
+
+
 # ------------------------------
 # Matches (live)
 # ------------------------------
@@ -76,17 +88,8 @@ async def list_live_matches(
     url = f"{API_BASE}/fixtures"
     params = {"live": "all"}
 
-    async with httpx.AsyncClient(timeout=12.0) as client:
-        try:
-            resp = await client.get(url, headers=headers, params=params)
-        except httpx.RequestError as e:
-            raise HTTPException(status_code=502, detail=f"Upstream request failed: {e}") from e
-
-    if resp.status_code != 200:
-        raise HTTPException(status_code=resp.status_code, detail=resp.text)
-
-    data = resp.json() or {}
-    items = data.get("response", []) or []
+    js = await _fetch_json(url, headers, params)
+    items = js.get("response", []) or []
 
     out: List[Dict] = []
     for it in items:
@@ -138,16 +141,7 @@ async def fixture_stats(
     url = f"{API_BASE}/fixtures/statistics"
     params = {"fixture": str(fixture)}
 
-    async with httpx.AsyncClient(timeout=12.0) as client:
-        try:
-            resp = await client.get(url, headers=headers, params=params)
-        except httpx.RequestError as e:
-            raise HTTPException(status_code=502, detail=f"Upstream request failed: {e}") from e
-
-    if resp.status_code != 200:
-        raise HTTPException(status_code=resp.status_code, detail=resp.text)
-
-    js = resp.json() or {}
+    js = await _fetch_json(url, headers, params)
     rows = js.get("response", []) or []
 
     xg_home = 0.0
@@ -169,41 +163,67 @@ async def fixture_stats(
 
 
 # ------------------------------
-# Odds (bookmakers / markets)
+# Odds (akıllı: canlı/prematch + fallback)
 # ------------------------------
 @router.get("/odds")
 async def fixture_odds(
     fixture: int = Query(..., description="Fixture (maç) ID"),
     market: int = Query(1, description="Market ID (1 = 1X2 / Match Winner)"),
     bookmaker: Optional[int] = Query(None, description="Bookmaker ID (opsiyonel)"),
+    minute: Optional[int] = Query(None, description="Dakika (opsiyonel) — verilmezse fixture'tan alınır"),
 ) -> Dict[str, Optional[float]]:
     """
-    1X2 varsayılan: H/D/A oranları döner.
-    Kaynak: /v3/odds?fixture={id}&market={market}[&bookmaker={id}]
-    Dönüş: { H: 1.85, D: 3.40, A: 4.20 }
+    minute > 0  -> /odds/live (canlı)
+    minute == 0 -> /odds       (prematch)
+    Boşsa fallback diğerine.
+    Dönüş: { H: 1.85, D: 3.40, A: 4.20 } (yoksa None)
     """
     headers = {"x-apisports-key": _api_key()}
-    url = f"{API_BASE}/odds"
+
+    # minute yoksa fixture'tan al
+    if minute is None:
+        minute = await _fetch_fixture_minute(headers, fixture)
+
+    # canlı mı prematch mi?
+    paths = []
+    if (minute or 0) > 0:
+        paths = [f"{API_BASE}/odds/live", f"{API_BASE}/odds"]  # önce canlı, sonra prematch
+    else:
+        paths = [f"{API_BASE}/odds", f"{API_BASE}/odds/live"]  # önce prematch, sonra canlı
+
     params = {"fixture": str(fixture), "market": str(market)}
     if bookmaker:
         params["bookmaker"] = str(bookmaker)
 
-    async with httpx.AsyncClient(timeout=12.0) as client:
-        try:
-            resp = await client.get(url, headers=headers, params=params)
-        except httpx.RequestError as e:
-            raise HTTPException(status_code=502, detail=f"Upstream request failed: {e}") from e
+    # dene: primary -> fallback
+    parsed = {"H": None, "D": None, "A": None}
+    for url in paths:
+        js = await _fetch_json(url, headers, params)
+        tmp = _parse_odds_response(js, market)
+        if any(v is not None for v in tmp.values()):
+            return tmp
+        # değilse fallback'e devam
+    return parsed
 
-    if resp.status_code != 200:
-        raise HTTPException(status_code=resp.status_code, detail=resp.text)
 
-    js = resp.json() or {}
-    items = js.get("response", []) or []
+async def _fetch_fixture_minute(headers: Dict[str, str], fixture_id: int) -> int:
+    """ /fixtures?id=... ile dakika tespit et """
+    url = f"{API_BASE}/fixtures"
+    params = {"id": str(fixture_id)}
+    js = await _fetch_json(url, headers, params)
+    rows = js.get("response", []) or []
+    if not rows:
+        return 0
+    status = (rows[0].get("fixture") or {}).get("status") or {}
+    return _to_int(status.get("elapsed"))
 
+
+def _parse_odds_response(js: Dict, market: int) -> Dict[str, Optional[float]]:
     result: Dict[str, Optional[float]] = {"H": None, "D": None, "A": None}
+    items = js.get("response", []) or []
     if not items:
         return result
-
+    # Genellikle items[0].bookmakers[].bets[] altında market bulunur
     for bm in items[0].get("bookmakers", []) or []:
         for bet in bm.get("bets", []) or []:
             try:
@@ -324,12 +344,8 @@ async def _fetch_live(headers: Dict[str, str], weights: Dict[int, float]) -> Lis
     params = {"live": "all"}
     out: List[Dict] = []
 
-    async with httpx.AsyncClient(timeout=12.0) as client:
-        resp = await client.get(url, headers=headers, params=params)
-    if resp.status_code != 200:
-        return out
-
-    rows = (resp.json() or {}).get("response", []) or []
+    js = await _fetch_json(url, headers, params)
+    rows = js.get("response", []) or []
     for it in rows:
         fixture = it.get("fixture") or {}
         league = it.get("league") or {}
@@ -372,9 +388,8 @@ async def _fetch_live(headers: Dict[str, str], weights: Dict[int, float]) -> Lis
 
 
 def _live_score(lig_w: float, minute: int, diff: int, total: int) -> float:
-    # Lig ağırlığı (1.2 UCL, 1.0 büyük lig, 0.9-0.8 diğer popüler)
+    # Lig ağırlığı
     s = lig_w
-
     # Dakika etkisi (kritik anlar)
     if 70 <= minute <= 90:
         s += 0.45
@@ -382,17 +397,14 @@ def _live_score(lig_w: float, minute: int, diff: int, total: int) -> float:
         s += 0.20
     elif 1 <= minute <= 15:
         s += 0.10
-
     # Skor yakınlığı
     if diff == 0:
         s += 0.30
     elif diff == 1:
         s += 0.15
-
     # Gol sayısı (tempo göstergesi)
     if total >= 3:
         s += 0.10
-
     return s
 
 
@@ -405,13 +417,9 @@ async def _fetch_upcoming(headers: Dict[str, str], weights: Dict[int, float]) ->
     params = {"next": 60}
     out: List[Dict] = []
 
-    async with httpx.AsyncClient(timeout=12.0) as client:
-        resp = await client.get(url, headers=headers, params=params)
-    if resp.status_code != 200:
-        return out
-
+    js = await _fetch_json(url, headers, params)
     now = _now_utc()
-    rows = (resp.json() or {}).get("response", []) or []
+    rows = js.get("response", []) or []
     for it in rows:
         fixture = it.get("fixture") or {}
         league = it.get("league") or {}
