@@ -6,11 +6,6 @@ import { getHeaderConfig, type HeaderConfig } from "../api/site";
  * Global Header (TV tarzı)
  * - Logo: admin CMS (logo_url boş olabilir)
  * - LIVE + sayı: saat dilimine göre min/max aralıklarda dalgalanır
- *   Kurallar (yerel saat):
- *     03:00–06:00  -> minimum seviyede
- *     06:00–15:00  -> minimum-orta arası
- *     15:00–22:00  -> maksimum seviyeye yakın
- *     22:00–03:00  -> maksimum seviyelerde
  * - Sağ: Hızlı Bonus (mock) + Giriş CTA (metin/link CMS’den)
  */
 
@@ -25,12 +20,10 @@ export default function Header() {
   const [dir, setDir] = useState<1 | -1>(1);
   const [clicked, setClicked] = useState(false);
 
-  // CMS'den header ayarları
   useEffect(() => {
     getHeaderConfig()
       .then((data) => {
         setCfg(data as HeaderConfigExt);
-        // Başlangıç değeri: saat bandına göre hedef aralıktan
         const { low, high } = calcBandRange(data);
         setOnline(randInt(low, high));
       })
@@ -42,19 +35,15 @@ export default function Header() {
       });
   }, []);
 
-  // 4 sn'de bir online sayısını band hedeflerine doğru güncelle
   useEffect(() => {
     const t = setInterval(() => {
       const { low, high } = calcBandRange(cfg);
       const target = randInt(low, high);
       setOnline((n) => {
-        // düşük adımlarla hedefe yaklaş (ani zıplama olmasın)
         const diff = target - n;
         const step = clamp(Math.round(diff * 0.25) + jitter(2), -120, 120);
         let next = n + step * dir;
-        // sınırlar içinde tut
         next = Math.max(low, Math.min(high, next));
-        // yön değiştir (çok yaklaştıysa)
         if (Math.abs(diff) < 20) setDir((d) => (d === 1 ? -1 : 1));
         return next;
       });
@@ -66,7 +55,6 @@ export default function Header() {
   return (
     <header className="hdr">
       <div className="hdr__in">
-        {/* Sol: Logo + LIVE strip */}
         <div className="left">
           {cfg?.logo_url ? (
             <a className="logoWrap" href="/" onClick={(e) => e.preventDefault()}>
@@ -76,7 +64,6 @@ export default function Header() {
           <LiveStrip value={online} />
         </div>
 
-        {/* Sağ: Hızlı Bonus + Giriş */}
         <div className="right">
           <button className="btn bonus" onClick={(e) => e.preventDefault()} title="Hızlı Bonus (demo)">
             <BellIcon />
@@ -159,39 +146,21 @@ function Digit({ target }: { target: string }) {
 
 /* ----------------- Helpers ----------------- */
 function calcBandRange(cfg?: HeaderConfigExt | null): { low: number; high: number } {
-  // CMS değerlerini sayıya çevir
   const min = toNum(cfg?.online_min, 4800);
   const max = toNum(cfg?.online_max, 6800);
   const span = Math.max(0, max - min);
 
-  const hour = new Date().getHours(); // tarayıcı yerel saat (IST varsayılan)
-  // Saat bandına göre aralık seçimi
+  const hour = new Date().getHours();
   if (hour >= 3 && hour < 6) {
-    // Minimum
-    return {
-      low: min,
-      high: min + Math.max(10, Math.round(span * 0.15)),
-    };
+    return { low: min, high: min + Math.max(10, Math.round(span * 0.15)) };
   }
   if (hour >= 6 && hour < 15) {
-    // Min-orta
-    return {
-      low: min + Math.round(span * 0.20),
-      high: min + Math.round(span * 0.55),
-    };
+    return { low: min + Math.round(span * 0.2), high: min + Math.round(span * 0.55) };
   }
   if (hour >= 15 && hour < 22) {
-    // Maks seviyeye yakın
-    return {
-      low: min + Math.round(span * 0.70),
-      high: max - Math.round(span * 0.10),
-    };
+    return { low: min + Math.round(span * 0.7), high: max - Math.round(span * 0.1) };
   }
-  // 22:00–03:00 Maks seviyeler
-  return {
-    low: max - Math.round(span * 0.15),
-    high: max,
-  };
+  return { low: max - Math.round(span * 0.15), high: max };
 }
 
 function toNum(v: unknown, def: number): number {
@@ -256,7 +225,14 @@ const css = `
   --digital:'Orbitron', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 *{box-sizing:border-box}
-.hdr{background:rgba(8,14,28,.5);backdrop-filter:blur(10px);border-bottom:1px solid rgba(255,255,255,.06)}
+
+/* SOLID arka plan: sayfa ne olursa olsun header koyu görünsün */
+.hdr{
+  background: linear-gradient(180deg, var(--bg), var(--bg2));
+  border-bottom: 1px solid rgba(255,255,255,.06);
+  position: relative;
+  width: 100%;
+}
 .hdr__in{max-width:1200px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}
 .left,.right{display:flex;align-items:center;gap:12px}
 
