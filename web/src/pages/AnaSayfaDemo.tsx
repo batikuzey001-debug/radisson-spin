@@ -2,11 +2,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 /* =========================================================
-   ANA SAYFA DEMO (Neon Mock-up v2)
-   - Header: daha vurucu, CTA'lı, altına şerit sub-nav
-   - Canlı skor: kart benzeri neon chip'ler, daha ön planda
-   - Hero: güçlü tipografi + aurora + promo geri sayım rozeti
-   - Genel: kutu hissi azaltıldı, cam/neon vurgu, sade ve akıcı
+   ANA SAYFA DEMO (Neon Mock-up v2 – FIXED)
+   - Header: vurucu CTA + alt sub-nav
+   - Canlı skor: neon chip'ler, daha ön planda
+   - Hero: aurora + promo geri sayım rozeti
+   - Genel: kutu hissi az, neon/cam vurgu
    ========================================================= */
 
 /* ---------- Sabitler ---------- */
@@ -92,7 +92,6 @@ function Header() {
   const [online, setOnline] = useState<number>(() => 4820 + Math.floor(Math.random() * 500));
   const [dir, setDir] = useState<1 | -1>(1);
 
-  // Demo online sayacı için küçük dalgalanma
   useEffect(() => {
     const t = setInterval(() => {
       setOnline((n) => {
@@ -154,21 +153,11 @@ function SubNav() {
   return (
     <div className="subnav">
       <div className="subnav__inner">
-        <a href="#" onClick={(e) => e.preventDefault()}>
-          Spor
-        </a>
-        <a href="#" onClick={(e) => e.preventDefault()}>
-          Casino
-        </a>
-        <a href="#" onClick={(e) => e.preventDefault()}>
-          Canlı
-        </a>
-        <a href="#" onClick={(e) => e.preventDefault()}>
-          Promolar
-        </a>
-        <a href="#" onClick={(e) => e.preventDefault()}>
-          Yardım
-        </a>
+        <a href="#" onClick={(e) => e.preventDefault()}>Spor</a>
+        <a href="#" onClick={(e) => e.preventDefault()}>Casino</a>
+        <a href="#" onClick={(e) => e.preventDefault()}>Canlı</a>
+        <a href="#" onClick={(e) => e.preventDefault()}>Promolar</a>
+        <a href="#" onClick={(e) => e.preventDefault()}>Yardım</a>
       </div>
     </div>
   );
@@ -242,7 +231,9 @@ function Hero() {
               <h2 className="h-title">
                 <span className="stroke">Radisson</span> <span className="glow">Spin</span>
               </h2>
-              <p className="h-sub">{b.title} — {b.subtitle}</p>
+              <p className="h-sub">
+                {b.title} — {b.subtitle}
+              </p>
               <div className="h-row">
                 <button className="btn grad">Şimdi Katıl</button>
                 <a className="btn ghost" href="#" onClick={(e) => e.preventDefault()}>
@@ -432,16 +423,12 @@ function VoteBar() {
       <h4>Tahmin Kutusu</h4>
       <p className="muted">Bugün Galatasaray mı kazanır?</p>
       <div className="vote">
-        <button className="btn" onClick={() => setA((x) => x + 1)}>
-          GS
-        </button>
-        <button className="btn" onClick={() => setB((x) => x + 1)}>
-          Rakip
-        </button>
+        <button className="btn" onClick={() => setA((x) => x + 1)}>GS</button>
+        <button className="btn" onClick={() => setB((x) => x + 1)}>Rakip</button>
       </div>
       <div className="vbar">
         <div className="vbar__a" style={{ width: `${(a / total) * 100}%` }} />
-        <div className="vbar__b" style={{ width: `${(b / total) * 100)%` }} />
+        <div className="vbar__b" style={{ width: `${(b / total) * 100}%` }} />
       </div>
       <small className="muted">
         GS: {Math.round((a / total) * 100)}% • Diğer: {Math.round((b / total) * 100)}%
@@ -557,9 +544,9 @@ const css = `
 body{margin:0}
 .demo-page{
   min-height:100vh;
-  background:radial-gradient(1200px 600px at 10% -10%, rgba(0,229,255,.08), transparent 60%)
-             ,radial-gradient(1000px 500px at 110% 10%, rgba(156,39,176,.07), transparent 55%)
-             ,linear-gradient(180deg,var(--bg1),var(--bg2));
+  background:radial-gradient(1200px 600px at 10% -10%, rgba(0,229,255,.08), transparent 60%),
+             radial-gradient(1000px 500px at 110% 10%, rgba(156,39,176,.07), transparent 55%),
+             linear-gradient(180deg,var(--bg1),var(--bg2));
   color:var(--text);
 }
 a{color:inherit}
