@@ -18,35 +18,46 @@ export default function SubNav() {
 }
 
 const css = `
+/* Menü arka planı kaldırıldı */
 .subnav-wrap{
   position:sticky; top:0; z-index:40;
-  background:rgba(6,10,22,.85);
-  backdrop-filter: blur(10px);
-  border-bottom:1px solid rgba(255,255,255,.08);
+  border-bottom:1px solid rgba(255,255,255,.06);
+  background:transparent;
 }
 .subnav{
-  max-width:1200px; margin:0 auto; padding:10px 16px;
-  display:flex; gap:14px; flex-wrap:wrap;
+  max-width:1200px; margin:0 auto; padding:6px 16px;
+  display:flex; gap:20px; flex-wrap:wrap;
 }
+
+/* Linkler */
 .item{
-  display:inline-block; padding:8px 14px; border-radius:12px;
-  color:#dfe8ff; text-decoration:none; font-weight:600;
-  border:1px solid rgba(255,255,255,.1);
-  transition:all .2s;
+  position:relative;
+  display:inline-block;
+  padding:6px 0;
+  color:#cfe0ff;
+  text-decoration:none;
+  font-weight:600;
+  font-size:15px;
+  transition:color .2s;
 }
 .item:hover{
-  background:rgba(0,229,255,.12);
-  border-color:rgba(0,229,255,.35);
   color:#fff;
 }
 .item.active{
-  background:linear-gradient(90deg,#00e5ff,#4aa7ff);
-  border-color:#0f6d8c;
-  color:#001018;
-  box-shadow:0 0 10px rgba(0,229,255,.3);
+  color:#00e5ff;
 }
+.item.active::after{
+  content:"";
+  position:absolute;
+  left:0; right:0; bottom:-3px;
+  height:2px;
+  background:linear-gradient(90deg,#00e5ff,#4aa7ff);
+  border-radius:2px;
+  box-shadow:0 0 6px rgba(0,229,255,.6);
+}
+
 @media(max-width:600px){
-  .subnav{gap:10px}
-  .item{padding:7px 12px;font-size:14px}
+  .subnav{gap:14px}
+  .item{font-size:14px}
 }
 `;
