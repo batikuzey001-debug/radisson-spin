@@ -26,8 +26,9 @@ def _render_flash_blocks(request: Request) -> str:
 def _header_nav(active: str = "", is_super: bool = False) -> str:
     links = [
         ("Dashboard", "/admin", active == "panel"),
-        ("Kod Yönetimi", "/admin/kod-yonetimi", active == "kod"),  # ← düzeltildi
+        ("Kod Yönetimi", "/admin/kod-yonetimi", active == "kod"),
         ("Turnuva / Bonus", "/admin/turnuvabonus", active == "tb"),
+        ("Ana Sayfa Slider", "/admin/home-banners", active == "home"),  # eklendi
         ("Adminler", "/admin/users", active == "users" if is_super else False),
         ("Çıkış", "/admin/logout", False),
     ]
