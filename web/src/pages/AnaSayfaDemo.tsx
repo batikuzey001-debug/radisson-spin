@@ -1,249 +1,250 @@
 // web/src/pages/AnaSayfaDemo.tsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import Header from "../components/Header";
 
 /**
- * HEADER DEMO (TV tarzı — logo + LIVE + sayı)
- * Güncelleme:
- * - Font: Orbitron (dijital görünüm) — LIVE ve sayılar aynı font
- * - Boyutlar küçültüldü, daha dengeli
- * - LIVE kırmızı, PLAYERS kaldırıldı
- * - Alt kırmızı neon şerit akarak kayıyor
- * - Sağ: Hızlı Bonus (bildirim) + Radissonbet Giriş (klik efekti)
+ * DEMO • Header + Kayan Canlı Maç Kartları
+ * - Sadece DEMO: veriler mock
+ * - Header aynı kalır (global)
+ * - Header altında yatay kayan maç KARTLARI (takım “logo” avatarı + skor + dakika)
  */
 
-const LOGO =
-  "https://cdn.prod.website-files.com/68ad80d65417514646edf3a3/68adb798dfed270f5040c714_logowhite.png";
+type Match = {
+  id: string;
+  league: string;
+  leagueLogo?: string; // opsiyon
+  home: { name: string; logo?: string };
+  away: { name: string; logo?: string };
+  minute: number;
+  scoreH: number;
+  scoreA: number;
+};
+
+const MOCK_MATCHES: Match[] = [
+  {
+    id: "m1",
+    league: "Süper Lig",
+    home: { name: "Galatasaray" },
+    away: { name: "Fenerbahçe" },
+    minute: 62,
+    scoreH: 2,
+    scoreA: 0,
+  },
+  {
+    id: "m2",
+    league: "Premier League",
+    home: { name: "Man. City" },
+    away: { name: "Arsenal" },
+    minute: 74,
+    scoreH: 1,
+    scoreA: 1,
+  },
+  {
+    id: "m3",
+    league: "La Liga",
+    home: { name: "Barcelona" },
+    away: { name: "Real Madrid" },
+    minute: 18,
+    scoreH: 0,
+    scoreA: 1,
+  },
+  {
+    id: "m4",
+    league: "UCL",
+    home: { name: "Bayern" },
+    away: { name: "PSG" },
+    minute: 55,
+    scoreH: 2,
+    scoreA: 2,
+  },
+  {
+    id: "m5",
+    league: "Serie A",
+    home: { name: "Inter" },
+    away: { name: "Milan" },
+    minute: 33,
+    scoreH: 1,
+    scoreA: 0,
+  },
+];
 
 export default function AnaSayfaDemo() {
   return (
     <div className="demo">
       <Header />
+      <LiveMatchCarousel />
       <style>{css}</style>
     </div>
   );
 }
 
-function Header() {
-  const [online, setOnline] = useState<number>(() => 5200 + Math.floor(Math.random() * 300));
-  const [dir, setDir] = useState<1 | -1>(1);
-  const [clicked, setClicked] = useState(false);
+/* -------------------- Kayan Maç Kartları -------------------- */
+function LiveMatchCarousel() {
+  const [list, setList] = useState<Match[]>(MOCK_MATCHES);
+  const trackRef = useRef<HTMLDivElement | null>(null);
 
-  // Mock dalgalanma
+  // DEMO canlı hissi: 6 sn'de bir sırayı döndür (en sonda başa)
   useEffect(() => {
     const t = setInterval(() => {
-      setOnline((n) => {
-        const delta = (3 + Math.floor(Math.random() * 10)) * dir;
-        const next = Math.max(4800, Math.min(6800, n + delta));
-        if (next === 4800 || next === 6800) setDir((d) => (d === 1 ? -1 : 1));
-        return next;
+      setList((prev) => {
+        const [f, ...rest] = prev;
+        return [...rest, f];
       });
-    }, 4000);
+    }, 6000);
     return () => clearInterval(t);
-  }, [dir]);
+  }, []);
+
+  // Sonsuz akış için list + list
+  const flow = useMemo(() => list.concat(list), [list]);
 
   return (
-    <header className="hdr">
-      <div className="hdr__in">
-        {/* Sol: Logo + LIVE strip */}
-        <div className="left">
-          <a className="logoWrap" href="/" onClick={(e) => e.preventDefault()}>
-            <img className="logo" src={LOGO} alt="Radisson" />
-          </a>
-          <LiveStrip value={online} />
-        </div>
+    <section className="liveWrap">
+      <div className="liveHead">
+        <span className="led" />
+        <span className="title">CANLI MAÇLAR</span>
+        <span className="sub">demo akış</span>
+      </div>
 
-        {/* Sağ: Hızlı Bonus + Giriş */}
-        <div className="right">
-          <button className="btn bonus" onClick={(e) => e.preventDefault()} title="Hızlı Bonus (demo)">
-            <BellIcon />
-            <span>Hızlı Bonus</span>
-            <span className="notif" aria-hidden />
-          </button>
-
-          <button
-            className={`btn cta ${clicked ? "clicked" : ""}`}
-            onClick={() => {
-              setClicked(true);
-              setTimeout(() => setClicked(false), 600);
-              window.location.assign("/");
-            }}
-            title="Radissonbet Giriş"
-          >
-            <MouseClickIcon />
-            <span>Radissonbet Giriş</span>
-          </button>
+      <div className="rail" ref={trackRef}>
+        <div className="track">
+          {flow.map((m, i) => (
+            <MatchCard key={`${m.id}-${i}`} m={m} />
+          ))}
         </div>
       </div>
-    </header>
+    </section>
   );
 }
 
-/* -------- LIVE (kırmızı) + dijital sayı + kayan neon alt şerit -------- */
-function LiveStrip({ value }: { value: number }) {
-  const parts = useMemo(() => splitThousands(value), [value]);
+function MatchCard({ m }: { m: Match }) {
   return (
-    <div className="liveWrap" aria-label="live">
-      <div className="liveRow">
-        <span className="liveWord">
+    <a className="card" href="#" onClick={(e) => e.preventDefault()} title={`${m.league} • ${m.home.name} vs ${m.away.name}`}>
+      <div className="league">
+        <LogoAvatar label={m.league} small />
+        <span className="lg">{m.league}</span>
+      </div>
+
+      <div className="teams">
+        <div className="side">
+          <LogoAvatar label={m.home.name} />
+          <span className="name">{m.home.name}</span>
+        </div>
+
+        <div className="score">
+          <span className="h">{m.scoreH}</span>
+          <span className="sep">-</span>
+          <span className="a">{m.scoreA}</span>
+        </div>
+
+        <div className="side right">
+          <LogoAvatar label={m.away.name} />
+          <span className="name">{m.away.name}</span>
+        </div>
+      </div>
+
+      <div className="meta">
+        <span className="min">
           <span className="dot" />
-          LIVE
+          {m.minute}'
         </span>
-        <span className="roller">
-          {parts.map((p, i) =>
-            p.kind === "sep" ? (
-              <span key={`sep-${i}`} className="sep">
-                .
-              </span>
-            ) : (
-              <DigitGroup key={`grp-${i}`} digits={p.value} />
-            )
-          )}
-        </span>
+        <span className="cta">Detay</span>
       </div>
-      <div className="liveUnderline" aria-hidden />
-    </div>
+    </a>
   );
 }
 
-function DigitGroup({ digits }: { digits: string }) {
+/* Basit logo avatar: renkli daire içinde baş harfler (logo yoksa) */
+function LogoAvatar({ label, small = false }: { label: string; small?: boolean }) {
+  const initials = useMemo(() => {
+    const parts = label.split(" ").filter(Boolean);
+    const first = parts[0]?.[0] ?? "?";
+    const second = parts.length > 1 ? parts[1][0] : "";
+    return (first + second).toUpperCase();
+  }, [label]);
+
+  const hue = useMemo(() => {
+    // aynı label hep benzer renk versin
+    let h = 0;
+    for (let i = 0; i < label.length; i++) h = (h + label.charCodeAt(i) * 7) % 360;
+    return h;
+  }, [label]);
+
   return (
-    <span className="grp">
-      {digits.split("").map((d, i) => (
-        <Digit key={i} target={d} />
-      ))}
+    <span
+      className={`ava ${small ? "sm" : ""}`}
+      style={{
+        background: `linear-gradient(160deg, hsl(${hue} 80% 55%), hsl(${(hue + 40) % 360} 80% 45%))`,
+      }}
+    >
+      {initials}
     </span>
   );
 }
 
-function Digit({ target }: { target: string }) {
-  const t = Math.max(0, Math.min(9, parseInt(target, 10)));
-  return (
-    <span className="digit">
-      <span className="col" style={{ transform: `translateY(-${t * 10}%)` }}>
-        {Array.from({ length: 10 }).map((_, n) => (
-          <span key={n} className="cell">
-            {n}
-          </span>
-        ))}
-      </span>
-    </span>
-  );
-}
-
-function splitThousands(n: number): Array<{ kind: "num"; value: string } | { kind: "sep" }> {
-  const s = n.toString();
-  const rev = s.split("").reverse();
-  const out: string[] = [];
-  for (let i = 0; i < rev.length; i++) {
-    if (i > 0 && i % 3 === 0) out.push(".");
-    out.push(rev[i]);
-  }
-  const grouped = out.reverse().join("");
-  const parts: Array<{ kind: "num"; value: string } | { kind: "sep" }> = [];
-  let buf = "";
-  for (const ch of grouped) {
-    if (ch === ".") {
-      if (buf) parts.push({ kind: "num", value: buf }), (buf = "");
-      parts.push({ kind: "sep" });
-    } else buf += ch;
-  }
-  if (buf) parts.push({ kind: "num", value: buf });
-  return parts;
-}
-
-/* -------- ICONS -------- */
-function MouseClickIcon() {
-  return (
-    <svg className="mouse" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M12 2a5 5 0 0 1 5 5v4H7V7a5 5 0 0 1 5-5Z" fill="currentColor" />
-      <path d="M7 11h10v5a5 5 0 0 1-10 0v-5Z" fill="currentColor" opacity=".7" />
-      <path d="M12 6v12" stroke="currentColor" strokeWidth="1.6" />
-    </svg>
-  );
-}
-function BellIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M12 22a2 2 0 0 0 2-2h-4a2 2 0 0 0 2 2Zm6-6v-5a6 6 0 0 0-12 0v5l-2 2v1h16v-1l-2-2Z" fill="currentColor" />
-    </svg>
-  );
-}
-
-/* -------- CSS -------- */
+/* -------------------- CSS -------------------- */
 const css = `
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700;800;900&display=swap');
-
 :root{
-  --bg:#0b1224; --bg2:#0e1a33; --text:#eaf2ff;
-  --aqua:#00e5ff; --red:#ff2a2a;
-  --digital:'Orbitron', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --bg:#0b1224; --bg2:#0e1a33; --text:#eaf2ff; --muted:#b0c0d8;
+  --chip:#141b33; --line:#1d2747; --aqua:#00e5ff; --red:#ff2a2a;
 }
 *{box-sizing:border-box}
-body{margin:0}
-.demo{min-height:40vh;background:linear-gradient(180deg,var(--bg),var(--bg2));}
+.demo{min-height:100vh;background:linear-gradient(180deg,var(--bg),var(--bg2))}
 
-/* Header */
-.hdr{background:rgba(8,14,28,.5);backdrop-filter:blur(10px);border-bottom:1px solid rgba(255,255,255,.06)}
-.hdr__in{max-width:1200px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}
-.left{display:flex;align-items:center;gap:14px}
-.right{display:flex;align-items:center;gap:10px}
+/* Bölüm başlığı */
+.liveWrap{max-width:1200px;margin:12px auto 0;padding:0 16px}
+.liveHead{display:flex;align-items:center;gap:10px;color:#dfe8ff;margin:6px 0 8px}
+.liveHead .led{width:8px;height:8px;border-radius:999px;background:#00ffa6;box-shadow:0 0 12px rgba(0,255,166,.9)}
+.liveHead .title{font-weight:900;letter-spacing:.6px;font-size:13px}
+.liveHead .sub{color:#9fb1cc;font-size:12px}
 
-/* Logo — biraz küçültüldü */
-.logo{height:36px;display:block;filter:drop-shadow(0 0 10px rgba(0,229,255,.26))}
-@media (max-width:720px){ .logo{height:32px} }
-
-/* LIVE strip (logo sağı) */
-.liveWrap{display:flex;flex-direction:column;align-items:flex-start;gap:4px}
-.liveRow{display:flex;align-items:center;gap:10px}
-.liveWord{
-  display:inline-flex;align-items:center;gap:6px;
-  font-family:var(--digital); font-weight:800; letter-spacing:.8px;
-  color:var(--red); font-size:18px; line-height:1;
+/* Kayan hat */
+.rail{position:relative;overflow:hidden;border-top:1px solid rgba(255,255,255,.06);border-bottom:1px solid rgba(255,255,255,.06)}
+.track{
+  display:inline-flex; gap:12px; padding:10px 6px;
+  animation:marq 28s linear infinite;
 }
-.dot{width:8px;height:8px;border-radius:999px;background:var(--red);box-shadow:0 0 10px rgba(255,42,42,.85);animation:blink 1s infinite}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+.rail:hover .track{animation-play-state:paused}
+@keyframes marq{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
 
-.roller{
-  display:inline-flex;align-items:center;gap:4px;
-  font-family:var(--digital); font-weight:800; font-size:18px; color:#fff;
+/* Kart */
+.card{
+  display:flex; flex-direction:column; gap:8px;
+  min-width:320px; max-width:320px; padding:10px 12px;
+  text-decoration:none; color:#eaf2ff;
+  background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.03));
+  border:1px solid rgba(255,255,255,.08); border-radius:16px;
+  box-shadow:0 10px 22px rgba(0,0,0,.25), inset 0 0 0 1px rgba(255,255,255,.04);
 }
-.sep{opacity:.7;margin:0 1px}
+.card:hover{filter:brightness(1.05)}
 
-/* Digit roller — kompakt */
-.grp{display:inline-flex;gap:1px}
-.digit{display:inline-block;width:14px;height:18px;overflow:hidden}
-.col{display:flex;flex-direction:column;transition:transform .6s cubic-bezier(.2,.7,.2,1)}
-.cell{height:18px;line-height:18px;text-align:center}
+/* Lig satırı */
+.league{display:flex;align-items:center;gap:8px}
+.lg{color:#cfe0ff;font-size:12px}
 
-/* Kayan neon alt şerit (daha ince) */
-.liveUnderline{
-  width:100%; height:2px; border-radius:2px;
-  background:linear-gradient(90deg, rgba(255,42,42,0), rgba(255,42,42,1), rgba(255,42,42,0));
-  background-size:180% 100%;
-  animation:slidebar 2.8s linear infinite;
-  box-shadow:0 0 10px rgba(255,42,42,.55);
-}
-@keyframes slidebar{
-  0%{background-position:0% 0}
-  100%{background-position:180% 0}
-}
+/* Takımlar ve skor */
+.teams{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center}
+.side{display:flex;align-items:center;gap:8px;min-width:0}
+.side.right{justify-content:flex-end}
+.name{color:#dfe8ff;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.score{display:flex;align-items:center;gap:8px;font-weight:900;font-size:18px}
+.score .h{color:#aef4ff}
+.score .a{color:#ffdede}
+.score .sep{opacity:.7}
 
-/* Hızlı Bonus */
-.btn{display:inline-flex;align-items:center;gap:8px;cursor:pointer;border:1px solid transparent;background:transparent;color:var(--text);padding:8px 12px;border-radius:12px;transition:.15s}
-.btn:hover{filter:brightness(1.06);transform:translateY(-1px)}
-.btn.bonus{color:#fff;border-color:rgba(255,255,255,.18)}
-.btn.bonus .notif{display:inline-block;width:9px;height:9px;border-radius:999px;background:#ff4d6d;box-shadow:0 0 0 8px rgba(255,77,109,.18);animation:pulse 1.8s infinite}
-@keyframes pulse{0%{transform:scale(.9)}50%{transform:scale(1.15)}100%{transform:scale(.9)}}
+/* Alt meta */
+.meta{display:flex;align-items:center;justify-content:space-between}
+.min{display:inline-flex;align-items:center;gap:6px;color:#9ccaf7;font-size:12px}
+.min .dot{width:6px;height:6px;border-radius:999px;background:var(--red);box-shadow:0 0 10px rgba(255,42,42,.9);animation:blink 1s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
+.cta{font-size:12px;color:#b9fffb;background:rgba(0,229,255,.08);padding:4px 8px;border-radius:8px;border:1px solid rgba(0,229,255,.25)}
 
-/* Giriş CTA */
-.btn.cta{
-  color:#001018;background:linear-gradient(90deg,var(--aqua),#4aa7ff);
-  border-color:#0f6d8c;box-shadow:0 4px 16px rgba(0,229,255,.22),inset 0 0 0 1px rgba(255,255,255,.18);
-  font-weight:900;letter-spacing:.3px;position:relative;overflow:hidden
+/* Avatar (logo yerine) */
+.ava{
+  display:inline-grid; place-items:center;
+  width:26px; height:26px; border-radius:999px;
+  font-size:12px; font-weight:900; color:#001018;
+  box-shadow:0 0 0 1px rgba(255,255,255,.15), 0 8px 18px rgba(0,0,0,.25);
 }
-.btn.cta.clicked::after{
-  content:"";position:absolute;inset:0;background:radial-gradient(120px 120px at 50% 50%,rgba(255,255,255,.45),transparent 60%);animation:clickflash .45s ease-out forwards
-}
-@keyframes clickflash{0%{opacity:.9;transform:scale(.9)}100%{opacity:0;transform:scale(1.2)}}
-.mouse{color:#001018}
+.ava.sm{width:18px;height:18px;font-size:9px}
+@media(max-width:420px){ .card{min-width:280px;max-width:280px} }
 `;
