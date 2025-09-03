@@ -21,13 +21,6 @@ def _api_key() -> str:
     return key
 
 
-def _to_int(v) -> int:
-    try:
-        return int(v) if v is not None else 0
-    except (TypeError, ValueError):
-        return 0
-
-
 async def _fetch_json(url: str, headers: Dict[str, str], params: Dict[str, str | int]) -> Dict:
     async with httpx.AsyncClient(timeout=12.0) as client:
         try:
@@ -43,49 +36,64 @@ def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
-# ---------------- upcoming matches ----------------
+# ---------------- upcoming matches (reliable) ----------------
 @router.get("/upcoming")
 async def list_upcoming_matches(
     db: Annotated[Session, Depends(get_db)],
-    days: int = Query(7, ge=1, le=30, description="Kaç gün sonrasına bakılsın"),
-    limit: int = Query(100, ge=1, le=500, description="Maksimum maç sayısı"),
+    days: int = Query(7, ge=1, le=30, description="Önümüzdeki X gün (varsayılan 7)"),
+    limit: int = Query(200, ge=1, le=500, description="Döndürülecek maksimum maç sayısı"),
+    league: Optional[int] = Query(None, description="Opsiyonel lig ID (örn: 206 Türkiye Kupası)"),
 ) -> List[Dict]:
     """
-    Önümüzdeki X gün içindeki maçları getirir (canlı değil, program).
+    Önümüzdeki X gün içindeki maçlar (CANLI DEĞİL, program):
+    API-Football 'from/to' bazı durumlarda boş döndüğü için
+    'next=500' alınır ve 7 güne KENDİMİZ filtreleriz.
     """
     headers = {"x-apisports-key": _api_key()}
 
     now = _now_utc()
-    from_date = now.strftime("%Y-%m-%d")
-    to_date = (now + timedelta(days=days)).strftime("%Y-%m-%d")
+    until_ts = int((now + timedelta(days=days)).timestamp())
 
-    js = await _fetch_json(
-        f"{API_BASE}/fixtures",
-        headers,
-        {"from": from_date, "to": to_date},
-    )
+    # 1) Geniş pencere: sıradaki 500 fikstür (opsiyonel lig filtresi)
+    params: Dict[str, str | int] = {"next": 500}
+    if league:
+        params["league"] = league
 
+    js = await _fetch_json(f"{API_BASE}/fixtures", headers, params)
     items = js.get("response", []) or []
-    out: List[Dict] = []
 
+    # 2) 7 gün penceresi içinde kalanları al + alanları sadeleştir
+    out: List[Dict] = []
     for it in items:
         fixture = it.get("fixture") or {}
-        league = it.get("league") or {}
-        teams = it.get("teams") or {}
+        lg = it.get("league") or {}
+        tms = it.get("teams") or {}
+
+        iso = fixture.get("date") or ""
+        try:
+            kick = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+            kick_ts = int(kick.timestamp())
+        except Exception:
+            continue
+
+        # sadece şimdi → +days
+        if not (int(now.timestamp()) <= kick_ts <= until_ts):
+            continue
 
         out.append(
             {
                 "id": str(fixture.get("id") or ""),
-                "kickoff": fixture.get("date") or "",
-                "league": league.get("name") or "",
-                "leagueLogo": league.get("logo") or "",
-                "leagueFlag": league.get("flag") or "",
-                "home": {"name": teams.get("home", {}).get("name"), "logo": teams.get("home", {}).get("logo")},
-                "away": {"name": teams.get("away", {}).get("name"), "logo": teams.get("away", {}).get("logo")},
+                "kickoff": iso,
+                "league": lg.get("name") or "",
+                "leagueLogo": lg.get("logo") or "",
+                "leagueFlag": lg.get("flag") or "",
+                "home": {"name": (tms.get("home") or {}).get("name"), "logo": (tms.get("home") or {}).get("logo")},
+                "away": {"name": (tms.get("away") or {}).get("name"), "logo": (tms.get("away") or {}).get("logo")},
             }
         )
-
         if len(out) >= limit:
             break
 
+    # 3) Başlama zamanına göre artan sırala
+    out.sort(key=lambda x: x.get("kickoff") or "")
     return out
