@@ -17,7 +17,7 @@ from app.db.models import Base, Prize, Code
 
 
 def _normalize_origins(val: Union[str, List[str]]) -> List[str]:
-    """Railway/Render gibi ortamlarda CORS allow_origins bazen string gelir; güvenle listeye çevir."""
+    """CORS allow_origins değerini güvenle listeye çevirir."""
     if isinstance(val, list):
         return [s.strip() for s in val if s and s.strip()]
     if not val:
@@ -43,7 +43,7 @@ app.add_middleware(
     allow_origins=origins,
     allow_methods=["*"],
     allow_headers=["*"],
-    allow_credentials=True,  # Cookie/session senaryoları için
+    allow_credentials=True,
 )
 
 # -----------------------------
@@ -61,13 +61,12 @@ app.include_router(health_router)
 app.include_router(spin_router, prefix="/api")  # /api/spin/...
 
 # -----------------------------
-# Startup: tablo oluştur + mini migration + seed
+# Startup: tablo oluştur + idempotent mini migration + seed
 # -----------------------------
 @app.on_event("startup")
 def on_startup() -> None:
     Base.metadata.create_all(engine)
 
-    # Mini migration'lar (idempotent - sadece gerekli olanlar)
     if engine.dialect.name.lower() in ("postgresql", "postgres"):
         with engine.begin() as conn:
             # admin_users.token_hash -> password_hash (varsa)
@@ -82,15 +81,36 @@ def on_startup() -> None:
                 END IF;
             END $$;
             """))
+
             # admin_users.password_hash kolonu yoksa ekle
             conn.execute(text("""
-                ALTER TABLE IF EXISTS admin_users
-                ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name='admin_users' AND column_name='password_hash'
+                ) THEN
+                    EXECUTE 'ALTER TABLE admin_users ADD COLUMN password_hash VARCHAR(255)';
+                END IF;
+            END $$;
             """))
-            # prizes.image_url kolonu yoksa ekle
+
+            # prizes.image_url kolonu yoksa ekle (TABLO/kolon varlığı kontrolü ile)
             conn.execute(text("""
-                ALTER TABLE IF NOT EXISTS prizes
-                ADD COLUMN IF NOT EXISTS image_url VARCHAR(512)
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.tables
+                    WHERE table_name='prizes'
+                ) THEN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name='prizes' AND column_name='image_url'
+                    ) THEN
+                        EXECUTE 'ALTER TABLE prizes ADD COLUMN image_url VARCHAR(512)';
+                    END IF;
+                END IF;
+            END $$;
             """))
 
     # Seed (spin için temel veriler)
