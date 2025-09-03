@@ -4,10 +4,14 @@ import Header from "../components/Header";
 
 /**
  * DEMO • Popüler Maçlar (Canlı & Yakında) – xG + Oranlar + Geri Sayım
- * İyileştirmeler:
- * - Lig ve takım logoları daha büyük
- * - xG / Oranlar veri yoksa HİÇ görünmez (— yok)
- * - Skor daha vurucu; gol olursa 2 sn yeşil yanıp söner
+ * Revizyon:
+ *  - Kartlar daha büyük (min 320px)
+ *  - Lig ve takım logoları daha büyük
+ *  - Takım adları 2 satıra KELİME KELİME kayar (ellipsis yok)
+ *  - xG / Oranlar yoksa hiç çizilmez
+ *  - Skor daha vurucu; gol olduğunda 2sn yeşil yanıp söner
+ *  - Kart arka planında lig logosu “bayrak efekti” (blur + düşük opak)
+ *  - Dakika rozeti daha dikkat çekici (pulsing kırmızı)
  */
 
 const API = import.meta.env.VITE_API_BASE_URL;
@@ -16,13 +20,13 @@ type Team = { name: string; logo?: string };
 type Match = {
   id: string;
   league: string;
-  leagueLogo?: string;
+  leagueLogo?: string;   // arka plan için kullanıyoruz
   home: Team;
   away: Team;
-  minute: number; // 0 => başlamamış
+  minute: number;        // 0 => başlamamış
   scoreH: number;
   scoreA: number;
-  kickoff?: string; // ISO (upcoming)
+  kickoff?: string;      // ISO (upcoming)
 };
 
 type Odds = { H?: number; D?: number; A?: number };
@@ -82,7 +86,7 @@ function FeaturedStrips() {
         <CarouselSection title="CANLI POPÜLER MAÇLAR" subtitle="anlık akış" items={live} trackSpeed="45s" />
       )}
       {hasUpcoming && (
-        <CarouselSection title="YAKINDA POPÜLER MAÇLAR" subtitle="15 gün içinde" items={upcoming} trackSpeed="50s" />
+        <CarouselSection title="YAKINDA POPÜLER MAÇLAR" subtitle="15 gün içinde" items={upcoming} trackSpeed="55s" />
       )}
       {!hasLive && !hasUpcoming && SectionHead("POPÜLER MAÇLAR", "şu an listelenecek maç yok")}
     </>
@@ -152,6 +156,7 @@ function MatchCard({ m }: { m: Enriched }) {
     if (m.scoreH > prev.h || m.scoreA > prev.a) {
       setFlash(true);
       const t = setTimeout(() => setFlash(false), 2000);
+      prevRef.current = { h: m.scoreH, a: m.scoreA };
       return () => clearTimeout(t);
     }
     prevRef.current = { h: m.scoreH, a: m.scoreA };
@@ -161,7 +166,16 @@ function MatchCard({ m }: { m: Enriched }) {
   const hasOdds = !!(m.odds?.H || m.odds?.D || m.odds?.A);
 
   return (
-    <a className={`card ${isLive ? "live" : "prematch"}`} href="#" onClick={(e) => e.preventDefault()}>
+    <a
+      className={`card ${isLive ? "live" : "prematch"} ${flash ? "goal" : ""}`}
+      href="#"
+      onClick={(e) => e.preventDefault()}
+      style={
+        m.leagueLogo
+          ? ({ ["--bgimg" as any]: `url('${m.leagueLogo}')` } as any)
+          : undefined
+      }
+    >
       {/* üst satır */}
       <div className="top">
         <div className="league">
@@ -170,12 +184,12 @@ function MatchCard({ m }: { m: Enriched }) {
         </div>
         <div className="min">
           {isLive ? (
-            <>
-              <span className="dot" />
+            <span className="minBadge live">
+              <span className="ping" />
               {m.minute}'
-            </>
+            </span>
           ) : m.kickoff ? (
-            <Countdown iso={m.kickoff} />
+            <span className="minBadge pre"><Countdown iso={m.kickoff} /></span>
           ) : (
             <span className="badge">MAÇ ÖNÜ</span>
           )}
@@ -185,18 +199,18 @@ function MatchCard({ m }: { m: Enriched }) {
       {/* takımlar + skor */}
       <div className="teams">
         <div className="side">
-          <TeamLogo name={m.home.name} logo={m.home.logo} size={30} />
+          <TeamLogo name={m.home.name} logo={m.home.logo} size={36} />
           <span className="name">{m.home.name}</span>
         </div>
 
-        <div className={`score ${flash ? "goal" : ""}`}>
+        <div className="score">
           <span className="h">{m.scoreH}</span>
           <span className="sep">-</span>
           <span className="a">{m.scoreA}</span>
         </div>
 
         <div className="side right">
-          <TeamLogo name={m.away.name} logo={m.away.logo} size={30} />
+          <TeamLogo name={m.away.name} logo={m.away.logo} size={36} />
           <span className="name">{m.away.name}</span>
         </div>
       </div>
@@ -246,11 +260,11 @@ function Countdown({ iso }: { iso: string }) {
   const m = Math.floor((s % 3600) / 60);
   const sec = s % 60;
   const label = s === 0 ? "BAŞLIYOR" : `T- ${pad2(h)}:${pad2(m)}:${pad2(sec)}`;
-  return <span className="badge cnt">{label}</span>;
+  return <>{label}</>;
 }
 
 /* Logo varsa göster, kırık/boşsa avatar fallback (boyut ayarlı) */
-function TeamLogo({ name, logo, size = 28 }: { name: string; logo?: string; size?: number }) {
+function TeamLogo({ name, logo, size = 32 }: { name: string; logo?: string; size?: number }) {
   const [imgOk, setImgOk] = useState<boolean>(!!logo);
   const initials = useMemo(() => {
     const parts = name.split(" ").filter(Boolean);
@@ -301,12 +315,10 @@ async function enrichMany(list: Match[]): Promise<Enriched[]> {
     const batch = list.slice(i, i + batchSize);
     const results = await Promise.all(
       batch.map(async (m) => {
-        // xG – SADECE CANLI maçta iste
         const xg =
           m.minute > 0
             ? await fetchJSON<{ xgH: number; xgA: number }>(`${API}/api/live/stats?fixture=${m.id}`)
             : null;
-        // Odds – akıllı endpoint
         const odds = await fetchJSON<Odds>(`${API}/api/live/odds?fixture=${m.id}&market=1&minute=${m.minute}`);
         return { ...m, xgH: xg?.xgH ?? 0, xgA: xg?.xgA ?? 0, odds } as Enriched;
       })
@@ -356,46 +368,67 @@ const css = `
 @keyframes marq{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
 
 .card{
-  display:flex;flex-direction:column;gap:8px;
-  min-width:270px;max-width:270px;padding:12px;
+  position:relative;
+  display:flex;flex-direction:column;gap:10px;
+  min-width:320px;max-width:320px;padding:14px;
   text-decoration:none;color:#eaf2ff;
-  background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.03));
-  border:1px solid rgba(255,255,255,.08);border-radius:16px;
-  box-shadow:0 6px 16px rgba(0,0,0,.25),inset 0 0 0 1px rgba(255,255,255,.04)
+  background:
+    radial-gradient(120px 70px at 100% -20%, rgba(255,255,255,.08), transparent 60%),
+    linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+  border:1px solid rgba(255,255,255,.10);border-radius:18px;
+  box-shadow:0 10px 18px rgba(0,0,0,.28), inset 0 0 0 1px rgba(255,255,255,.05);
+  overflow:hidden;
+}
+.card::before{
+  content:""; position:absolute; inset:-20px -20px auto auto; width:60%; height:120%;
+  background-image:var(--bgimg); background-repeat:no-repeat; background-position:center; background-size:contain;
+  filter:blur(12px) opacity(.15);
+  pointer-events:none;
 }
 .card:hover{filter:brightness(1.05)}
 
 .top{display:flex;align-items:center;justify-content:space-between;font-size:12px}
-.league{display:flex;align-items:center;gap:8px}
-.lg{color:#cfe0ff}
-.lgLogo{width:18px;height:18px;border-radius:4px;object-fit:contain;border:1px solid rgba(255,255,255,.15)}
-.lgLogo.big{width:20px;height:20px}
+.league{display:flex;align-items:center;gap:10px}
+.lg{color:#cfe0ff;font-weight:700}
+.lgLogo{width:22px;height:22px;border-radius:6px;object-fit:contain;border:1px solid rgba(255,255,255,.18)}
+.lgLogo.big{width:24px;height:24px}
 
-.min{display:inline-flex;align-items:center;gap:6px;color:#9ccaf7;font-size:12px}
-.min .dot{width:6px;height:6px;border-radius:999px;background:var(--red);box-shadow:0 0 10px rgba(255,42,42,.9);animation:blink 1s infinite}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
-.badge{display:inline-block;padding:2px 6px;border-radius:8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:#e8efff;font-size:11px}
+.min{display:flex;align-items:center}
+.minBadge{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:6px 10px;border-radius:999px;font-weight:900;
+  border:1px solid rgba(255,255,255,.16);
+}
+.minBadge.live{
+  background:rgba(255, 42, 42, .10); color:#ffd1d1; position:relative;
+}
+.minBadge.live .ping{
+  position:absolute; inset:-2px; border:2px solid rgba(255,42,42,.45); border-radius:999px;
+  animation:ping 1.4s infinite;
+}
+@keyframes ping{0%{transform:scale(.9);opacity:.9}70%{transform:scale(1.2);opacity:.15}100%{transform:scale(1.2);opacity:0}}
+.badge{display:inline-block;padding:4px 8px;border-radius:8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:#e8efff;font-size:11px}
 .badge.cnt{background:rgba(0,229,255,.08);border-color:rgba(0,229,255,.25);color:#ccfaff}
 
-.teams{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center}
-.side{display:flex;align-items:center;gap:8px;min-width:0}
+.teams{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center}
+.side{display:flex;align-items:center;gap:10px;min-width:0}
 .side.right{justify-content:flex-end}
-.name{color:#dfe8ff;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.name{
+  color:#e8f0ff;font-size:14px;font-weight:700;
+  white-space:normal; word-break:break-word; overflow-wrap:anywhere; line-height:1.2;
+  max-height:2.4em; /* en fazla 2 satır */
+}
 
 .score{
-  display:flex;align-items:center;gap:8px;
-  font-weight:900;font-size:20px; padding:2px 10px;border-radius:999px;
-  background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12);
+  display:flex;align-items:center;gap:10px;
+  font-weight:900;font-size:24px; padding:4px 14px;border-radius:999px;
+  background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.18);
 }
-.score.goal{
+.card.goal .score{
   animation:goalflash .25s ease-in-out 0s 8 alternate;
-  border-color: rgba(24,255,116,.6);
-  box-shadow:0 0 14px rgba(24,255,116,.35);
+  border-color: rgba(24,255,116,.6); box-shadow:0 0 16px rgba(24,255,116,.35);
 }
-@keyframes goalflash{
-  from{background:rgba(24,255,116,.2)}
-  to{background:rgba(24,255,116,.05)}
-}
+@keyframes goalflash{from{background:rgba(24,255,116,.22)} to{background:rgba(24,255,116,.06)}}
 .score .sep{opacity:.7}
 .score .h{color:#aef4ff}
 .score .a{color:#ffdede}
@@ -403,26 +436,27 @@ const css = `
 .xg{
   display:flex;align-items:center;gap:6px;font-weight:900;color:#ffe3e3;
   background:rgba(255,42,42,.12);border:1px solid rgba(255,42,42,.25);
-  padding:4px 8px;border-radius:10px;width:max-content
+  padding:6px 10px;border-radius:12px;width:max-content
 }
 .xgLabel{font-size:11px;letter-spacing:.4px;opacity:.9}
-.xgVal{font-size:13px}
+.xgVal{font-size:14px}
 .xgSep{opacity:.7}
 
-.odds{display:flex;gap:8px;margin-top:2px}
+.odds{display:flex;gap:10px;margin-top:2px}
 .odd{
-  display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;
-  background:rgba(0,229,255,.08); border:1px solid rgba(0,229,255,.25); color:#ccfaff; font-size:12px
+  display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;
+  background:rgba(0,229,255,.10); border:1px solid rgba(0,229,255,.28); color:#ccfaff; font-size:12px
 }
 .ol{font-weight:900}
-.ov{font-weight:700}
+.ov{font-weight:800}
 
 .ava{
   display:inline-grid;place-items:center;border-radius:999px;
-  font-size:12px;font-weight:900;color:#001018;
-  box-shadow:0 0 0 1px rgba(255,255,255,.15),0 6px 14px rgba(0,0,0,.25)
+  font-size:14px;font-weight:900;color:#001018;
+  box-shadow:0 0 0 1px rgba(255,255,255,.15),0 6px 14px rgba(0,0,0,.25);
+  background:#0c1224;
 }
-.ava.img{background:#0c1224;object-fit:cover}
+.ava.img{object-fit:cover}
 
-@media(max-width:420px){ .card{min-width:240px;max-width:240px} }
+@media(max-width:420px){ .card{min-width:280px;max-width:280px} }
 `;
