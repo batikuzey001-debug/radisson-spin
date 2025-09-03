@@ -3,21 +3,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Header from "../components/Header";
 
 /**
- * DEMO • Header + Popüler Maçlar (Canlı & Yakında) – xG + Oranlar
+ * DEMO • Header + Popüler Maçlar (Canlı & Yakında) – xG + Oranlar + Geri Sayım
  * Kaynaklar:
- *  - /api/live/featured?limit=12  -> { live: Match[], upcoming: Match[] }
+ *  - /api/live/featured?limit=12  -> { live: Match[], upcoming: Match[] } (kickoff ISO içerir)
  *  - /api/live/stats?fixture=ID   -> { xgH, xgA }
  *  - /api/live/odds?fixture=ID&market=1[&minute=N] -> { H, D, A } (akıllı: canlı/prematch + fallback)
  *
  * Kart düzeni:
- *  [Üst satır] Lig + dakika (sağ üst)
+ *  [Üst satır] Lig + sağ üstte dakika (canlı) / GERİ SAYIM (maç önü)
  *  [Orta]      Ev Takım  SKOR  Dep Takım
  *  [Alt-1]     xG: 1.23 : 0.78   (yoksa 0.00)
  *  [Alt-2]     1X2 oran çipleri (— yoksa)
- *
- * Bölümler:
- *  - CANLI POPÜLER MAÇLAR (varsa)
- *  - YAKINDA POPÜLER MAÇLAR (canlı yoksa / eksikse)
  */
 
 const API = import.meta.env.VITE_API_BASE_URL;
@@ -29,9 +25,10 @@ type Match = {
   leagueLogo?: string;
   home: Team;
   away: Team;
-  minute: number;   // 0 => başlamamış
+  minute: number;           // 0 => başlamamış
   scoreH: number;
   scoreA: number;
+  kickoff?: string;         // ISO (upcoming için)
 };
 
 type Odds = { H?: number; D?: number; A?: number };
@@ -64,7 +61,6 @@ function FeaturedStrips() {
         const topLive: Match[] = L.slice(0, 8);
         const topUp: Match[] = U.slice(0, 8);
 
-        // İlk etap: canlı listede varsa onu zenginleştir, yoksa upcoming
         const liveEnriched = await enrichMany(topLive);
         const upcomingEnriched = await enrichMany(topUp);
 
@@ -77,14 +73,11 @@ function FeaturedStrips() {
     }
 
     load();
-    // Canlı data için 30sn polling (istatistik/odds rate limitini zorlamadan)
-    timer = window.setInterval(load, 30000);
+    timer = window.setInterval(load, 30000); // 30 sn
     return () => timer && window.clearInterval(timer);
   }, []);
 
-  if (err) {
-    return SectionHead("POPÜLER MAÇLAR", `hata: ${err}`);
-  }
+  if (err) return SectionHead("POPÜLER MAÇLAR", `hata: ${err}`);
 
   const hasLive = live.length > 0;
   const hasUpcoming = upcoming.length > 0;
@@ -92,23 +85,16 @@ function FeaturedStrips() {
   return (
     <>
       {hasLive && (
-        <CarouselSection
-          title="CANLI POPÜLER MAÇLAR"
-          subtitle="anlık akış"
-          items={live}
-          trackSpeed="45s"
-        />
+        <CarouselSection title="CANLI POPÜLER MAÇLAR" subtitle="anlık akış" items={live} trackSpeed="45s" />
       )}
-
       {hasUpcoming && (
         <CarouselSection
           title="YAKINDA POPÜLER MAÇLAR"
-          subtitle="maç önü"
+          subtitle="15 gün içinde"
           items={upcoming}
           trackSpeed="50s"
         />
       )}
-
       {!hasLive && !hasUpcoming && SectionHead("POPÜLER MAÇLAR", "şu an listelenecek maç yok")}
     </>
   );
@@ -135,9 +121,8 @@ function CarouselSection({
   title: string;
   subtitle: string;
   items: Enriched[];
-  trackSpeed: string; // CSS anim süre
+  trackSpeed: string;
 }) {
-  // Akış: en az 6 kart görünümü ve sonsuz kaydırma
   const normalized = useMemo(() => {
     if (!items.length) return [];
     const out = [...items];
@@ -183,12 +168,14 @@ function MatchCard({ m }: { m: Enriched }) {
           {m.leagueLogo ? <img className="lgLogo" src={m.leagueLogo} alt="" /> : null}
           <span className="lg">{m.league}</span>
         </div>
-        <div className={`min ${isLive ? "" : "up"}`}>
+        <div className="min">
           {isLive ? (
             <>
               <span className="dot" />
               {m.minute}'
             </>
+          ) : m.kickoff ? (
+            <Countdown iso={m.kickoff} />
           ) : (
             <span className="badge">MAÇ ÖNÜ</span>
           )}
@@ -242,17 +229,32 @@ function OddChip({ label, value }: { label: string; value?: number }) {
   );
 }
 
+/* Geri sayım chip (T- HH:MM:SS, 0 veya geçmişse “BAŞLIYOR”) */
+function Countdown({ iso }: { iso: string }) {
+  const [now, setNow] = useState<number>(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const target = new Date(iso).getTime();
+  const diff = Math.max(0, target - now);
+  const s = Math.floor(diff / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const label = s === 0 ? "BAŞLIYOR" : `T- ${pad2(h)}:${pad2(m)}:${pad2(sec)}`;
+  return <span className="badge cnt">{label}</span>;
+}
+
 /* Logo varsa göster, kırık/boşsa avatar fallback */
 function TeamLogo({ name, logo }: { name: string; logo?: string }) {
   const [imgOk, setImgOk] = useState<boolean>(!!logo);
-
   const initials = useMemo(() => {
     const parts = name.split(" ").filter(Boolean);
     const first = parts[0]?.[0] ?? "?";
     const second = parts.length > 1 ? parts[1][0] : "";
     return (first + second).toUpperCase();
   }, [name]);
-
   const hue = useMemo(() => {
     let h = 0;
     for (let i = 0; i < name.length; i++) h = (h + name.charCodeAt(i) * 7) % 360;
@@ -284,7 +286,6 @@ function TeamLogo({ name, logo }: { name: string; logo?: string }) {
 
 /* -------------------- Enrichment -------------------- */
 async function enrichMany(list: Match[]): Promise<Enriched[]> {
-  // Eşzamanlı istek sayısını sınırlayalım (rate-limit): 4'erli batch
   const out: Enriched[] = [];
   const batchSize = 4;
 
@@ -293,12 +294,7 @@ async function enrichMany(list: Match[]): Promise<Enriched[]> {
     const results = await Promise.all(
       batch.map(async (m) => {
         const [xg, odds] = await Promise.all([fetchXG(m.id), fetchOdds(m.id, m.minute)]);
-        return {
-          ...m,
-          xgH: xg?.xgH ?? 0,
-          xgA: xg?.xgA ?? 0,
-          odds,
-        } as Enriched;
+        return { ...m, xgH: xg?.xgH ?? 0, xgA: xg?.xgA ?? 0, odds } as Enriched;
       })
     );
     out.push(...results);
@@ -317,11 +313,9 @@ async function fetchXG(fixtureId: string) {
 }
 async function fetchOdds(fixtureId: string, minute: number) {
   try {
-    // minute paramı ile akıllı odds (canlı/prematch + fallback)
     const r = await fetch(`${API}/api/live/odds?fixture=${fixtureId}&market=1&minute=${minute}`);
     if (!r.ok) return undefined;
     const js = (await r.json()) as Odds;
-    // Boşların yerine undefined, frontend "—" gösterir
     return {
       H: isFiniteNum(js?.H) ? js.H : undefined,
       D: isFiniteNum(js?.D) ? js.D : undefined,
@@ -339,6 +333,9 @@ function isFiniteNum(n: any): n is number {
 function formatXG(n: number | undefined) {
   const v = typeof n === "number" && Number.isFinite(n) ? n : 0;
   return v.toFixed(2);
+}
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
 }
 
 /* -------------------- CSS -------------------- */
@@ -358,8 +355,7 @@ const css = `
 
 .rail{position:relative;overflow:hidden;border-top:1px solid rgba(255,255,255,.06);border-bottom:1px solid rgba(255,255,255,.06)}
 .track{
-  display:inline-flex;gap:12px;padding:10px 6px;
-  animation:marq var(--dur, 45s) linear infinite;
+  display:inline-flex;gap:12px;padding:10px 6px;animation:marq var(--dur, 45s) linear infinite;
 }
 .rail:hover .track{animation-play-state:paused}
 @keyframes marq{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
@@ -372,24 +368,18 @@ const css = `
   border:1px solid rgba(255,255,255,.08);border-radius:14px;
   box-shadow:0 6px 16px rgba(0,0,0,.25),inset 0 0 0 1px rgba(255,255,255,.04)
 }
-.card.live .min .dot{animation:blink 1s infinite}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
-.card.prematch .min.up .badge{
-  display:inline-block; padding:2px 6px; border-radius:8px;
-  background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12); color:#e8efff; font-size:11px;
-}
 .card:hover{filter:brightness(1.05)}
 
-/* üst satır */
 .top{display:flex;align-items:center;justify-content:space-between;font-size:12px}
 .league{display:flex;align-items:center;gap:6px}
 .lg{color:#cfe0ff}
 .lgLogo{width:14px;height:14px;border-radius:3px;object-fit:contain;border:1px solid rgba(255,255,255,.15)}
 
-.min{display:inline-flex;align-items:center;gap:4px;color:#9ccaf7;font-size:12px}
+.min{display:inline-flex;align-items:center;gap:6px;color:#9ccaf7;font-size:12px}
 .min .dot{width:6px;height:6px;border-radius:999px;background:var(--red);box-shadow:0 0 10px rgba(255,42,42,.9)}
+.badge{display:inline-block;padding:2px 6px;border-radius:8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:#e8efff;font-size:11px}
+.badge.cnt{background:rgba(0,229,255,.08);border-color:rgba(0,229,255,.25);color:#ccfaff}
 
-/* takımlar + skor */
 .teams{display:grid;grid-template-columns:1fr auto 1fr;gap:6px;align-items:center}
 .side{display:flex;align-items:center;gap:6px;min-width:0}
 .side.right{justify-content:flex-end}
@@ -399,10 +389,9 @@ const css = `
 .score .a{color:#ffdede}
 .score .sep{opacity:.7}
 
-/* xG satırı (skorun altında) */
+/* xG satırı */
 .xg{
-  display:flex;align-items:center;gap:6px;
-  font-weight:900;color:#ffe3e3;
+  display:flex;align-items:center;gap:6px;font-weight:900;color:#ffe3e3;
   background:rgba(255,42,42,.12);border:1px solid rgba(255,42,42,.25);
   padding:4px 8px;border-radius:10px;width:max-content
 }
@@ -413,10 +402,8 @@ const css = `
 /* odds row */
 .odds{display:flex;gap:6px;margin-top:2px}
 .odd{
-  display:inline-flex;align-items:center;gap:6px;
-  padding:4px 8px;border-radius:999px;
-  background:rgba(0,229,255,.08); border:1px solid rgba(0,229,255,.25);
-  color:#ccfaff; font-size:12px
+  display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;
+  background:rgba(0,229,255,.08); border:1px solid rgba(0,229,255,.25); color:#ccfaff; font-size:12px
 }
 .odd.muted{opacity:.55}
 .ol{font-weight:900}
@@ -424,8 +411,7 @@ const css = `
 
 /* avatar / logo */
 .ava{
-  display:inline-grid;place-items:center;
-  width:22px;height:22px;border-radius:999px;
+  display:inline-grid;place-items:center;width:22px;height:22px;border-radius:999px;
   font-size:10px;font-weight:900;color:#001018;
   box-shadow:0 0 0 1px rgba(255,255,255,.15),0 6px 14px rgba(0,0,0,.25)
 }
