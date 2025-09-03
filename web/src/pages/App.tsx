@@ -26,9 +26,13 @@ export default function App() {
 }
 
 const css = `
+/* -------- GLOBAL RESET (beyaz kenar çizgilerini engeller) -------- */
+*{box-sizing:border-box}
+html, body, #root{height:100%; margin:0; background:#0b1224}
+
 /* Sayfa zemin */
 .app{
-  min-height:100vh;
+  min-height:100%;
   background:linear-gradient(180deg,#0b1224,#0e1a33);
   font-family:sans-serif;
 }
@@ -40,14 +44,10 @@ const css = `
   padding:16px;
 }
 
-/* --- BOŞLUK DÜZELTMELERİ (üst boşluklar) --- */
-/* 1) Konteynerin ilk elemanındaki margin-top'u sıfırla (margin-collapsing'i önler) */
+/* İlk çocukların üst marjını sıfırla (h1 margin-collapse) */
 .page > *:first-child{ margin-top:0; }
-
-/* 2) Başlıkların varsayılan üst marjını sıfırla (özellikle Çark/Turnuvalar için) */
 .page h1, .page h2{ margin-top:0; }
 
-/* 3) Küçük ekranlarda ek sıkılaştırma */
 @media (max-width:600px){
   .page{ padding:12px; }
 }
