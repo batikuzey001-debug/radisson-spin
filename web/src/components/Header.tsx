@@ -1,13 +1,13 @@
 // web/src/components/Header.tsx
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { getHeaderConfig, type HeaderConfig } from "../api/site";
 
 /**
- * Global Header
- * - LOGO: tıklanınca her koşulda anasayfaya ("/") götürür (Link + navigate yedeği)
- * - LIVE sayaç
- * - Sağda Hızlı Bonus ve Giriş CTA
+ * Header (fix)
+ * - Sticky, tek satır, taşma yok
+ * - Logo tıklayınca anasayfa
+ * - Küçük ekranda LIVE sayaç gizlenir (sıkışmayı önler)
  */
 
 type HeaderConfigExt = HeaderConfig & {
@@ -20,7 +20,6 @@ export default function Header() {
   const [online, setOnline] = useState<number>(0);
   const [dir, setDir] = useState<1 | -1>(1);
   const [clicked, setClicked] = useState(false);
-  const navigate = useNavigate();
 
   useEffect(() => {
     getHeaderConfig()
@@ -59,18 +58,7 @@ export default function Header() {
       <div className="hdr__in">
         <div className="left">
           {cfg?.logo_url ? (
-            // Link + navigate backup (bazı ortamlarda event yakalanırsa yine gider)
-            <Link
-              className="logoWrap"
-              to="/"
-              onClick={(e) => {
-                // Bazı buildlerde dış kapsayıcı tıklamayı iptal edebiliyor, güvence olsun
-                try {
-                  e.stopPropagation();
-                } catch {}
-                navigate("/");
-              }}
-            >
+            <Link className="logoWrap" to="/" aria-label="Anasayfa">
               <img className="logo" src={cfg.logo_url} alt="Logo" />
             </Link>
           ) : null}
@@ -105,7 +93,7 @@ export default function Header() {
   );
 }
 
-/* ----------------- LIVE (kırmızı) + dijital sayı + kayan neon alt şerit ----------------- */
+/* ----------------- LIVE sayaç ----------------- */
 function LiveStrip({ value }: { value: number }) {
   const parts = useMemo(() => splitThousands(value), [value]);
   return (
@@ -118,9 +106,7 @@ function LiveStrip({ value }: { value: number }) {
         <span className="roller">
           {parts.map((p, i) =>
             p.kind === "sep" ? (
-              <span key={`sep-${i}`} className="sep">
-                .
-              </span>
+              <span key={`sep-${i}`} className="sep">.</span>
             ) : (
               <DigitGroup key={`grp-${i}`} digits={p.value} />
             )
@@ -131,7 +117,6 @@ function LiveStrip({ value }: { value: number }) {
     </div>
   );
 }
-
 function DigitGroup({ digits }: { digits: string }) {
   return (
     <span className="grp">
@@ -141,16 +126,13 @@ function DigitGroup({ digits }: { digits: string }) {
     </span>
   );
 }
-
 function Digit({ target }: { target: string }) {
   const t = Math.max(0, Math.min(9, parseInt(target, 10)));
   return (
     <span className="digit">
       <span className="col" style={{ transform: `translateY(-${t * 10}%)` }}>
         {Array.from({ length: 10 }).map((_, n) => (
-          <span key={n} className="cell">
-            {n}
-          </span>
+          <span key={n} className="cell">{n}</span>
         ))}
       </span>
     </span>
@@ -162,20 +144,12 @@ function calcBandRange(cfg?: HeaderConfigExt | null): { low: number; high: numbe
   const min = toNum(cfg?.online_min, 4800);
   const max = toNum(cfg?.online_max, 6800);
   const span = Math.max(0, max - min);
-
   const hour = new Date().getHours();
-  if (hour >= 3 && hour < 6) {
-    return { low: min, high: min + Math.max(10, Math.round(span * 0.15)) };
-  }
-  if (hour >= 6 && hour < 15) {
-    return { low: min + Math.round(span * 0.2), high: min + Math.round(span * 0.55) };
-  }
-  if (hour >= 15 && hour < 22) {
-    return { low: min + Math.round(span * 0.7), high: max - Math.round(span * 0.1) };
-  }
+  if (hour >= 3 && hour < 6) return { low: min, high: min + Math.max(10, Math.round(span * 0.15)) };
+  if (hour >= 6 && hour < 15) return { low: min + Math.round(span * 0.2), high: min + Math.round(span * 0.55) };
+  if (hour >= 15 && hour < 22) return { low: min + Math.round(span * 0.7), high: max - Math.round(span * 0.1) };
   return { low: max - Math.round(span * 0.15), high: max };
 }
-
 function toNum(v: unknown, def: number): number {
   if (v === null || v === undefined) return def;
   const n = typeof v === "string" ? parseInt(v, 10) : (v as number);
@@ -239,61 +213,47 @@ const css = `
 }
 *{box-sizing:border-box}
 
-/* SOLID arka plan */
+/* Sticky header: tek satır, taşma yok */
 .hdr{
+  position: sticky; top: 0; z-index: 60;
   background: linear-gradient(180deg, var(--bg), var(--bg2));
   border-bottom: 1px solid rgba(255,255,255,.06);
-  position: relative;
-  width: 100%;
 }
-.hdr__in{max-width:1200px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}
-.left,.right{display:flex;align-items:center;gap:12px}
+.hdr__in{
+  max-width:1200px; margin:0 auto;
+  padding:10px 16px;
+  display:flex; align-items:center; justify-content:space-between;
+  gap:12px; min-height:56px;
+}
+.left, .right{ display:flex; align-items:center; gap:12px; flex-wrap:nowrap }
 
-/* Logo (Link) */
+/* Logo */
 .logo{height:36px;display:block;filter:drop-shadow(0 0 10px rgba(0,229,255,.26)); cursor:pointer}
 @media (max-width:720px){ .logo{height:32px} }
 
-/* LIVE strip */
-.liveWrap{display:flex;flex-direction:column;align-items:flex-start;gap:4px}
-.liveRow{display:flex;align-items:center;gap:10px}
-.liveWord{
-  display:inline-flex;align-items:center;gap:6px;
-  font-family:var(--digital); font-weight:800; letter-spacing:.8px;
-  color:var(--red); font-size:18px; line-height:1;
-}
-.dot{width:8px;height:8px;border-radius:999px;background:var(--red);box-shadow:0 0 10px rgba(255,42,42,.85);animation:blink 1s infinite}
+/* LIVE – küçük ekranda gizle */
+.liveWrap{display:flex;flex-direction:column;align-items:flex-start;gap:2px}
+@media (max-width:780px){ .liveWrap{ display:none } }
+.liveRow{display:flex;align-items:center;gap:8px}
+.liveWord{ display:inline-flex;align-items:center;gap:6px; font-family:var(--digital); font-weight:800; letter-spacing:.6px; color:var(--red); font-size:16px; line-height:1; }
+.dot{ width:8px;height:8px;border-radius:999px;background:var(--red);box-shadow:0 0 10px rgba(255,42,42,.85); animation:blink 1s infinite }
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
-.roller{display:inline-flex;align-items:center;gap:4px;font-family:var(--digital); font-weight:800; font-size:18px; color:#fff;}
+.roller{ display:inline-flex;align-items:center;gap:3px; font-family:var(--digital); font-weight:800; font-size:16px; color:#fff; }
 .sep{opacity:.7;margin:0 1px}
 .grp{display:inline-flex;gap:1px}
-.digit{display:inline-block;width:14px;height:18px;overflow:hidden}
+.digit{display:inline-block;width:12px;height:16px;overflow:hidden}
 .col{display:flex;flex-direction:column;transition:transform .6s cubic-bezier(.2,.7,.2,1)}
-.cell{height:18px;line-height:18px;text-align:center}
-
-/* Kayan neon alt şerit */
-.liveUnderline{
-  width:100%; height:2px; border-radius:2px;
-  background:linear-gradient(90deg, rgba(255,42,42,0), rgba(255,42,42,1), rgba(255,42,42,0));
-  background-size:180% 100%;
-  animation:slidebar 2.8s linear infinite;
-  box-shadow:0 0 10px rgba(255,42,42,.55);
-}
+.cell{height:16px;line-height:16px;text-align:center}
+.liveUnderline{ width:100%; height:2px; border-radius:2px; background:linear-gradient(90deg, rgba(255,42,42,0), rgba(255,42,42,1), rgba(255,42,42,0)); background-size:180% 100%; animation:slidebar 2.8s linear infinite; box-shadow:0 0 10px rgba(255,42,42,.55); }
 @keyframes slidebar{ 0%{background-position:0% 0} 100%{background-position:180% 0} }
 
-/* Buttons */
-.btn{display:inline-flex;align-items:center;gap:8px;cursor:pointer;border:1px solid transparent;background:transparent;color:var(--text);padding:8px 12px;border-radius:12px;transition:.15s}
-.btn:hover{filter:brightness(1.06);transform:translateY(-1px)}
-.btn.bonus{color:#fff;border-color:rgba(255,255,255,.18)}
+/* Buttons sağ blok */
+.btn{display:inline-flex;align-items:center;gap:8px;cursor:pointer;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text);padding:8px 12px;border-radius:12px;transition:.15s}
+.btn:hover{filter:brightness(1.07);transform:translateY(-1px)}
 .btn.bonus .notif{display:inline-block;width:9px;height:9px;border-radius:999px;background:#ff4d6d;box-shadow:0 0 0 8px rgba(255,77,109,.18);animation:pulse 1.8s infinite}
 @keyframes pulse{0%{transform:scale(.9)}50%{transform:scale(1.15)}100%{transform:scale(.9)}}
-.btn.cta{
-  color:#001018;background:linear-gradient(90deg,var(--aqua),#4aa7ff);
-  border-color:#0f6d8c;box-shadow:0 4px 16px rgba(0,229,255,.22),inset 0 0 0 1px rgba(255,255,255,.18);
-  font-weight:900;letter-spacing:.3px;position:relative;overflow:hidden
-}
-.btn.cta.clicked::after{
-  content:"";position:absolute;inset:0;background:radial-gradient(120px 120px at 50% 50%,rgba(255,255,255,.45),transparent 60%);animation:clickflash .45s ease-out forwards
-}
+.btn.cta{ color:#001018;background:linear-gradient(90deg,var(--aqua),#4aa7ff); border-color:#0f6d8c; box-shadow:0 4px 16px rgba(0,229,255,.22),inset 0 0 0 1px rgba(255,255,255,.18); font-weight:900; letter-spacing:.3px }
+.btn.cta.clicked::after{ content:""; position:absolute; inset:0; background:radial-gradient(120px 120px at 50% 50%,rgba(255,255,255,.45),transparent 60%); animation:clickflash .45s ease-out forwards }
 @keyframes clickflash{0%{opacity:.9;transform:scale(.9)}100%{opacity:0;transform:scale(1.2)}}
 .mouse{color:#001018}
 `;
