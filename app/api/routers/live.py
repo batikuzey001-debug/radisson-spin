@@ -115,6 +115,7 @@ async def list_live_matches(
                 "id": str(fixture.get("id") or ""),
                 "league": league_name,
                 "leagueLogo": league_obj.get("logo") or "",
+                "leagueFlag": league_obj.get("flag") or "",  # <-- ÜLKE BAYRAĞI
                 "home": {"name": home.get("name") or "Home", "logo": home.get("logo") or ""},
                 "away": {"name": away.get("name") or "Away", "logo": away.get("logo") or ""},
                 "minute": minute,
@@ -186,14 +187,12 @@ async def _fetch_odds_market(
     headers: Dict[str, str], fixture: int, market: int, bookmaker: Optional[int]
 ) -> Dict[str, Optional[float]]:
     params = {"fixture": str(fixture), "market": str(market)}
-    # önce canlı endpointi dene; boşsa prematch'e, prematch'te de boşsa live'a bakacağız
-    urls = [f"{API_BASE}/odds/live", f"{API_BASE}/odds"]
+    urls = [f"{API_BASE}/odds/live", f"{API_BASE}/odds"]  # önce live sonra prematch dene
     for url in urls:
         js = await _fetch_json(url, headers, params if not bookmaker else {**params, "bookmaker": str(bookmaker)})
         parsed = _parse_odds_response(js, market)
         if any(v is not None for v in parsed.values()):
             return parsed
-    # bookmaker belirtilmediyse ve hiç veri yoksa: herhangi ilk bookmaker'a fallback (bookmaker paramı yok hali zaten bunu yapar)
     return {"H": None, "D": None, "A": None}
 
 
@@ -202,7 +201,6 @@ def _parse_odds_response(js: Dict, market: int) -> Dict[str, Optional[float]]:
     items = js.get("response", []) or []
     if not items:
         return result
-    # ilk bookmaker/bet: market id eşleşirse parse
     for bm in items[0].get("bookmakers", []) or []:
         for bet in bm.get("bets", []) or []:
             try:
@@ -282,59 +280,23 @@ def _popular_weights(
     """
     DEFAULT_LIST: Dict[int, float] = {
         # Big 5
-        39: 1.00,  # Premier League (ENG)
-        140: 1.00, # La Liga (ESP)
-        135: 1.00, # Serie A (ITA)
-        78: 0.95,  # Bundesliga (GER)
-        61: 0.90,  # Ligue 1 (FRA)
-
+        39: 1.00, 140: 1.00, 135: 1.00, 78: 0.95, 61: 0.90,
         # Üst seviye ligler
-        88: 0.90,  # Eredivisie (NED)
-        94: 0.90,  # Primeira Liga (POR)
-        144: 0.85, # Jupiler Pro League (BEL)
-        179: 0.85, # Premiership (SCO)
-        253: 0.85, # MLS (USA)
-
+        88: 0.90, 94: 0.90, 144: 0.85, 179: 0.85, 253: 0.85,
         # Türkiye
-        203: 1.00, # Süper Lig
-        204: 0.80, # 1. Lig
-        206: 0.95, # Türkiye Kupası
-        551: 0.70, # Türkiye Süper Kupa
-
+        203: 1.00, 204: 0.80, 206: 0.95, 551: 0.70,
         # İngiltere kupaları
-        45: 0.95,  # FA Cup
-        48: 0.90,  # League Cup (EFL)
-
+        45: 0.95, 48: 0.90,
         # Almanya kupası
-        81: 0.90,  # DFB Pokal
-
+        81: 0.90,
         # İtalya / İspanya / Portekiz / Hollanda kupaları
-        137: 0.90, # Coppa Italia
-        143: 0.90, # Copa del Rey
-        96:  0.80, # Taça de Portugal
-        90:  0.80, # KNVB Beker
-
+        137: 0.90, 143: 0.90, 96: 0.80, 90: 0.80,
         # UEFA kulüp turnuvaları
-        2:   1.20, # Champions League
-        3:   1.05, # Europa League
-        848: 0.95, # Europa Conference League
-        531: 0.90, # UEFA Super Cup
-
+        2: 1.20, 3: 1.05, 848: 0.95, 531: 0.90,
         # Dünya & Kıta milli turnuvaları (final turnuvaları)
-        1:  1.30,  # World Cup
-        4:  1.10,  # EURO
-        6:  1.10,  # AFCON
-        9:  1.10,  # Copa America
-        22: 1.00,  # Gold Cup
-        7:  1.00,  # Asian Cup
-
+        1: 1.30, 4: 1.10, 6: 1.10, 9: 1.10, 22: 1.00, 7: 1.00,
         # Dünya Kupası ELEME’LERİ (kıtalar)
-        32: 1.20,  # Europe Qual
-        29: 1.10,  # Africa Qual
-        34: 1.10,  # South America Qual
-        31: 1.00,  # CONCACAF Qual
-        30: 1.00,  # Asia Qual
-        33: 0.90,  # Oceania Qual
+        32: 1.20, 29: 1.10, 34: 1.10, 31: 1.00, 30: 1.00, 33: 0.90,
     }
 
     # CMS override (varsa)
@@ -415,6 +377,7 @@ async def _fetch_live(
                 "id": str(fixture.get("id") or ""),
                 "league": lname,
                 "leagueLogo": league.get("logo") or "",
+                "leagueFlag": league.get("flag") or "",  # <-- ÜLKE BAYRAĞI
                 "home": {"name": h.get("name") or "Home", "logo": h.get("logo") or ""},
                 "away": {"name": a.get("name") or "Away", "logo": a.get("logo") or ""},
                 "minute": minute,
@@ -473,6 +436,7 @@ async def _fetch_upcoming(
                 "id": str(fixture.get("id") or ""),
                 "league": lname,
                 "leagueLogo": league.get("logo") or "",
+                "leagueFlag": league.get("flag") or "",  # <-- ÜLKE BAYRAĞI
                 "home": {"name": h.get("name") or "Home", "logo": h.get("logo") or ""},
                 "away": {"name": a.get("name") or "Away", "logo": a.get("logo") or ""},
                 "minute": 0,
