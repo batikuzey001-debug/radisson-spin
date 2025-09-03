@@ -142,3 +142,15 @@ class Event(Base):
     variant      = Column(String(24))
     created_at = Column(DateTime(timezone=True), default=_utcnow)
     updated_at = Column(DateTime(timezone=True), default=_utcnow)
+
+# --- ANA SAYFA SLIDER (Admin sadece görsel/metin girer) ---
+class HomeBanner(Base):
+    __tablename__ = "home_banners"
+    id         = Column(Integer, primary_key=True)
+    title      = Column(String(200))                 # 1. metin (opsiyonel)
+    subtitle   = Column(String(300))                 # 2. metin (opsiyonel)
+    image_url  = Column(String(512), nullable=False) # görsel url (zorunlu)
+    order      = Column(Integer, default=1)          # 1,2,3...
+    is_active  = Column(Boolean, default=True)       # yayında mı
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow)
