@@ -3,17 +3,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Header from "../components/Header";
 
 /**
- * DEMO • Header + Popüler Maçlar (Canlı & Yakında) – xG + Oranlar + Geri Sayım
- * Kaynaklar:
- *  - /api/live/featured?limit=12  -> { live: Match[], upcoming: Match[] } (kickoff ISO içerir)
- *  - /api/live/stats?fixture=ID   -> { xgH, xgA }
- *  - /api/live/odds?fixture=ID&market=1[&minute=N] -> { H, D, A } (akıllı: canlı/prematch + fallback)
- *
- * Kart düzeni:
- *  [Üst satır] Lig + sağ üstte dakika (canlı) / GERİ SAYIM (maç önü)
- *  [Orta]      Ev Takım  SKOR  Dep Takım
- *  [Alt-1]     xG: 1.23 : 0.78   (yoksa 0.00)
- *  [Alt-2]     1X2 oran çipleri (— yoksa)
+ * DEMO • Popüler Maçlar (Canlı & Yakında) – xG + Oranlar + Geri Sayım
+ * İyileştirmeler:
+ * - Lig ve takım logoları daha büyük
+ * - xG / Oranlar veri yoksa HİÇ görünmez (— yok)
+ * - Skor daha vurucu; gol olursa 2 sn yeşil yanıp söner
  */
 
 const API = import.meta.env.VITE_API_BASE_URL;
@@ -25,10 +19,10 @@ type Match = {
   leagueLogo?: string;
   home: Team;
   away: Team;
-  minute: number;           // 0 => başlamamış
+  minute: number; // 0 => başlamamış
   scoreH: number;
   scoreA: number;
-  kickoff?: string;         // ISO (upcoming için)
+  kickoff?: string; // ISO (upcoming)
 };
 
 type Odds = { H?: number; D?: number; A?: number };
@@ -73,7 +67,7 @@ function FeaturedStrips() {
     }
 
     load();
-    timer = window.setInterval(load, 30000); // 30 sn
+    timer = window.setInterval(load, 30000);
     return () => timer && window.clearInterval(timer);
   }, []);
 
@@ -88,12 +82,7 @@ function FeaturedStrips() {
         <CarouselSection title="CANLI POPÜLER MAÇLAR" subtitle="anlık akış" items={live} trackSpeed="45s" />
       )}
       {hasUpcoming && (
-        <CarouselSection
-          title="YAKINDA POPÜLER MAÇLAR"
-          subtitle="15 gün içinde"
-          items={upcoming}
-          trackSpeed="50s"
-        />
+        <CarouselSection title="YAKINDA POPÜLER MAÇLAR" subtitle="15 gün içinde" items={upcoming} trackSpeed="50s" />
       )}
       {!hasLive && !hasUpcoming && SectionHead("POPÜLER MAÇLAR", "şu an listelenecek maç yok")}
     </>
@@ -155,17 +144,28 @@ function CarouselSection({
 function MatchCard({ m }: { m: Enriched }) {
   const isLive = m.minute > 0;
 
+  // Gol flash (lokal)
+  const prevRef = useRef<{ h: number; a: number }>({ h: m.scoreH, a: m.scoreA });
+  const [flash, setFlash] = useState(false);
+  useEffect(() => {
+    const prev = prevRef.current;
+    if (m.scoreH > prev.h || m.scoreA > prev.a) {
+      setFlash(true);
+      const t = setTimeout(() => setFlash(false), 2000);
+      return () => clearTimeout(t);
+    }
+    prevRef.current = { h: m.scoreH, a: m.scoreA };
+  }, [m.scoreH, m.scoreA]);
+
+  const hasXG = (m.xgH ?? 0) > 0 || (m.xgA ?? 0) > 0;
+  const hasOdds = !!(m.odds?.H || m.odds?.D || m.odds?.A);
+
   return (
-    <a
-      className={`card ${isLive ? "live" : "prematch"}`}
-      href="#"
-      onClick={(e) => e.preventDefault()}
-      title={`${m.league} • ${m.home.name} vs ${m.away.name}`}
-    >
+    <a className={`card ${isLive ? "live" : "prematch"}`} href="#" onClick={(e) => e.preventDefault()}>
       {/* üst satır */}
       <div className="top">
         <div className="league">
-          {m.leagueLogo ? <img className="lgLogo" src={m.leagueLogo} alt="" /> : null}
+          {m.leagueLogo ? <img className="lgLogo big" src={m.leagueLogo} alt="" /> : null}
           <span className="lg">{m.league}</span>
         </div>
         <div className="min">
@@ -185,51 +185,54 @@ function MatchCard({ m }: { m: Enriched }) {
       {/* takımlar + skor */}
       <div className="teams">
         <div className="side">
-          <TeamLogo name={m.home.name} logo={m.home.logo} />
+          <TeamLogo name={m.home.name} logo={m.home.logo} size={30} />
           <span className="name">{m.home.name}</span>
         </div>
 
-        <div className="score">
+        <div className={`score ${flash ? "goal" : ""}`}>
           <span className="h">{m.scoreH}</span>
           <span className="sep">-</span>
           <span className="a">{m.scoreA}</span>
         </div>
 
         <div className="side right">
-          <TeamLogo name={m.away.name} logo={m.away.logo} />
+          <TeamLogo name={m.away.name} logo={m.away.logo} size={30} />
           <span className="name">{m.away.name}</span>
         </div>
       </div>
 
-      {/* xG skorun ALTINDA */}
-      <div className="xg">
-        <span className="xgLabel">xG</span>
-        <span className="xgVal">{formatXG(m.xgH)}</span>
-        <span className="xgSep">:</span>
-        <span className="xgVal">{formatXG(m.xgA)}</span>
-      </div>
+      {/* xG – sadece veri varsa */}
+      {hasXG && (
+        <div className="xg">
+          <span className="xgLabel">xG</span>
+          <span className="xgVal">{formatXG(m.xgH)}</span>
+          <span className="xgSep">:</span>
+          <span className="xgVal">{formatXG(m.xgA)}</span>
+        </div>
+      )}
 
-      {/* Oran çipleri (1X2) – yoksa "-" */}
-      <div className="odds">
-        <OddChip label="1" value={m.odds?.H} />
-        <OddChip label="X" value={m.odds?.D} />
-        <OddChip label="2" value={m.odds?.A} />
-      </div>
+      {/* Oran çipleri – sadece veri varsa */}
+      {hasOdds && (
+        <div className="odds">
+          {m.odds?.H ? <OddChip label="1" value={m.odds.H} /> : null}
+          {m.odds?.D ? <OddChip label="X" value={m.odds.D} /> : null}
+          {m.odds?.A ? <OddChip label="2" value={m.odds.A} /> : null}
+        </div>
+      )}
     </a>
   );
 }
 
-function OddChip({ label, value }: { label: string; value?: number }) {
-  const has = typeof value === "number" && !Number.isNaN(value);
+function OddChip({ label, value }: { label: string; value: number }) {
   return (
-    <span className={`odd ${has ? "" : "muted"}`}>
+    <span className="odd">
       <span className="ol">{label}</span>
-      <span className="ov">{has ? value.toFixed(2) : "—"}</span>
+      <span className="ov">{value.toFixed(2)}</span>
     </span>
   );
 }
 
-/* Geri sayım chip (T- HH:MM:SS, 0 veya geçmişse “BAŞLIYOR”) */
+/* Geri sayım chip (T- HH:MM:SS) */
 function Countdown({ iso }: { iso: string }) {
   const [now, setNow] = useState<number>(Date.now());
   useEffect(() => {
@@ -246,8 +249,8 @@ function Countdown({ iso }: { iso: string }) {
   return <span className="badge cnt">{label}</span>;
 }
 
-/* Logo varsa göster, kırık/boşsa avatar fallback */
-function TeamLogo({ name, logo }: { name: string; logo?: string }) {
+/* Logo varsa göster, kırık/boşsa avatar fallback (boyut ayarlı) */
+function TeamLogo({ name, logo, size = 28 }: { name: string; logo?: string; size?: number }) {
   const [imgOk, setImgOk] = useState<boolean>(!!logo);
   const initials = useMemo(() => {
     const parts = name.split(" ").filter(Boolean);
@@ -267,8 +270,11 @@ function TeamLogo({ name, logo }: { name: string; logo?: string }) {
         className="ava img"
         src={logo}
         alt=""
+        width={size}
+        height={size}
         referrerPolicy="no-referrer"
         onError={() => setImgOk(false)}
+        style={{ width: size, height: size }}
       />
     );
   }
@@ -276,6 +282,8 @@ function TeamLogo({ name, logo }: { name: string; logo?: string }) {
     <span
       className="ava"
       style={{
+        width: size,
+        height: size,
         background: `linear-gradient(160deg, hsl(${hue} 80% 55%), hsl(${(hue + 40) % 360} 80% 45%))`,
       }}
     >
@@ -293,7 +301,13 @@ async function enrichMany(list: Match[]): Promise<Enriched[]> {
     const batch = list.slice(i, i + batchSize);
     const results = await Promise.all(
       batch.map(async (m) => {
-        const [xg, odds] = await Promise.all([fetchXG(m.id), fetchOdds(m.id, m.minute)]);
+        // xG – SADECE CANLI maçta iste
+        const xg =
+          m.minute > 0
+            ? await fetchJSON<{ xgH: number; xgA: number }>(`${API}/api/live/stats?fixture=${m.id}`)
+            : null;
+        // Odds – akıllı endpoint
+        const odds = await fetchJSON<Odds>(`${API}/api/live/odds?fixture=${m.id}&market=1&minute=${m.minute}`);
         return { ...m, xgH: xg?.xgH ?? 0, xgA: xg?.xgA ?? 0, odds } as Enriched;
       })
     );
@@ -302,31 +316,14 @@ async function enrichMany(list: Match[]): Promise<Enriched[]> {
   return out;
 }
 
-async function fetchXG(fixtureId: string) {
+async function fetchJSON<T = any>(url: string): Promise<T | null> {
   try {
-    const r = await fetch(`${API}/api/live/stats?fixture=${fixtureId}`);
+    const r = await fetch(url);
     if (!r.ok) return null;
-    return (await r.json()) as { xgH: number; xgA: number };
+    return (await r.json()) as T;
   } catch {
     return null;
   }
-}
-async function fetchOdds(fixtureId: string, minute: number) {
-  try {
-    const r = await fetch(`${API}/api/live/odds?fixture=${fixtureId}&market=1&minute=${minute}`);
-    if (!r.ok) return undefined;
-    const js = (await r.json()) as Odds;
-    return {
-      H: isFiniteNum(js?.H) ? js.H : undefined,
-      D: isFiniteNum(js?.D) ? js.D : undefined,
-      A: isFiniteNum(js?.A) ? js.A : undefined,
-    };
-  } catch {
-    return undefined;
-  }
-}
-function isFiniteNum(n: any): n is number {
-  return typeof n === "number" && Number.isFinite(n);
 }
 
 /* -------------------- Helpers -------------------- */
@@ -342,7 +339,7 @@ function pad2(n: number) {
 const css = `
 :root{
   --bg:#0b1224; --bg2:#0e1a33; --text:#eaf2ff; --muted:#b0c0d8;
-  --chip:#141b33; --line:#1d2747; --aqua:#00e5ff; --red:#ff2a2a;
+  --chip:#141b33; --line:#1d2747; --aqua:#00e5ff; --red:#ff2a2a; --goal:#18ff74;
 }
 *{box-sizing:border-box}
 .demo{min-height:100vh;background:linear-gradient(180deg,var(--bg),var(--bg2))}
@@ -354,42 +351,55 @@ const css = `
 .liveHead .sub{color:#9fb1cc;font-size:12px}
 
 .rail{position:relative;overflow:hidden;border-top:1px solid rgba(255,255,255,.06);border-bottom:1px solid rgba(255,255,255,.06)}
-.track{
-  display:inline-flex;gap:12px;padding:10px 6px;animation:marq var(--dur, 45s) linear infinite;
-}
+.track{display:inline-flex;gap:12px;padding:10px 6px;animation:marq var(--dur, 45s) linear infinite}
 .rail:hover .track{animation-play-state:paused}
 @keyframes marq{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
 
 .card{
   display:flex;flex-direction:column;gap:8px;
-  min-width:260px;max-width:260px;padding:10px;
+  min-width:270px;max-width:270px;padding:12px;
   text-decoration:none;color:#eaf2ff;
   background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.03));
-  border:1px solid rgba(255,255,255,.08);border-radius:14px;
+  border:1px solid rgba(255,255,255,.08);border-radius:16px;
   box-shadow:0 6px 16px rgba(0,0,0,.25),inset 0 0 0 1px rgba(255,255,255,.04)
 }
 .card:hover{filter:brightness(1.05)}
 
 .top{display:flex;align-items:center;justify-content:space-between;font-size:12px}
-.league{display:flex;align-items:center;gap:6px}
+.league{display:flex;align-items:center;gap:8px}
 .lg{color:#cfe0ff}
-.lgLogo{width:14px;height:14px;border-radius:3px;object-fit:contain;border:1px solid rgba(255,255,255,.15)}
+.lgLogo{width:18px;height:18px;border-radius:4px;object-fit:contain;border:1px solid rgba(255,255,255,.15)}
+.lgLogo.big{width:20px;height:20px}
 
 .min{display:inline-flex;align-items:center;gap:6px;color:#9ccaf7;font-size:12px}
-.min .dot{width:6px;height:6px;border-radius:999px;background:var(--red);box-shadow:0 0 10px rgba(255,42,42,.9)}
+.min .dot{width:6px;height:6px;border-radius:999px;background:var(--red);box-shadow:0 0 10px rgba(255,42,42,.9);animation:blink 1s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
 .badge{display:inline-block;padding:2px 6px;border-radius:8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:#e8efff;font-size:11px}
 .badge.cnt{background:rgba(0,229,255,.08);border-color:rgba(0,229,255,.25);color:#ccfaff}
 
-.teams{display:grid;grid-template-columns:1fr auto 1fr;gap:6px;align-items:center}
-.side{display:flex;align-items:center;gap:6px;min-width:0}
+.teams{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center}
+.side{display:flex;align-items:center;gap:8px;min-width:0}
 .side.right{justify-content:flex-end}
 .name{color:#dfe8ff;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.score{display:flex;align-items:center;gap:6px;font-weight:900;font-size:16px}
+
+.score{
+  display:flex;align-items:center;gap:8px;
+  font-weight:900;font-size:20px; padding:2px 10px;border-radius:999px;
+  background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12);
+}
+.score.goal{
+  animation:goalflash .25s ease-in-out 0s 8 alternate;
+  border-color: rgba(24,255,116,.6);
+  box-shadow:0 0 14px rgba(24,255,116,.35);
+}
+@keyframes goalflash{
+  from{background:rgba(24,255,116,.2)}
+  to{background:rgba(24,255,116,.05)}
+}
+.score .sep{opacity:.7}
 .score .h{color:#aef4ff}
 .score .a{color:#ffdede}
-.score .sep{opacity:.7}
 
-/* xG satırı */
 .xg{
   display:flex;align-items:center;gap:6px;font-weight:900;color:#ffe3e3;
   background:rgba(255,42,42,.12);border:1px solid rgba(255,42,42,.25);
@@ -399,25 +409,20 @@ const css = `
 .xgVal{font-size:13px}
 .xgSep{opacity:.7}
 
-/* odds row */
-.odds{display:flex;gap:6px;margin-top:2px}
+.odds{display:flex;gap:8px;margin-top:2px}
 .odd{
-  display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;
+  display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;
   background:rgba(0,229,255,.08); border:1px solid rgba(0,229,255,.25); color:#ccfaff; font-size:12px
 }
-.odd.muted{opacity:.55}
 .ol{font-weight:900}
 .ov{font-weight:700}
 
-/* avatar / logo */
 .ava{
-  display:inline-grid;place-items:center;width:22px;height:22px;border-radius:999px;
-  font-size:10px;font-weight:900;color:#001018;
+  display:inline-grid;place-items:center;border-radius:999px;
+  font-size:12px;font-weight:900;color:#001018;
   box-shadow:0 0 0 1px rgba(255,255,255,.15),0 6px 14px rgba(0,0,0,.25)
 }
 .ava.img{background:#0c1224;object-fit:cover}
 
-@media(max-width:420px){
-  .card{min-width:220px;max-width:220px}
-}
+@media(max-width:420px){ .card{min-width:240px;max-width:240px} }
 `;
