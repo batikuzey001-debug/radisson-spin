@@ -2,9 +2,11 @@
 from typing import Annotated, Dict, List, Optional, Tuple
 import os, json
 from datetime import datetime, timedelta, timezone
+
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+
 from app.db.session import get_db
 from app.db.models import SiteConfig
 
@@ -15,7 +17,8 @@ BOOKMAKER_DEFAULT = 8     # Bet365
 MARKET_PREMATCH_1X2 = 1   # 1X2
 MARKET_LIVE_FTR    = 59   # Fulltime Result (live)
 
-# ---------------- helpers ----------------
+
+# ------------ helpers ------------
 def _api_key() -> str:
     key = os.getenv("API_FOOTBALL_KEY", "").strip()
     if not key:
@@ -37,9 +40,12 @@ def _now_utc() -> datetime: return datetime.now(timezone.utc)
 
 async def _fetch_json(url: str, headers: Dict[str, str], params: Dict[str, str | int]) -> Dict:
     async with httpx.AsyncClient(timeout=12.0) as client:
-        try: resp = await client.get(url, headers=headers, params=params)
-        except httpx.RequestError as e: raise HTTPException(status_code=502, detail=f"Upstream request failed: {e}") from e
-    if resp.status_code != 200: raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        try:
+            resp = await client.get(url, headers=headers, params=params)
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=502, detail=f"Upstream request failed: {e}") from e
+    if resp.status_code != 200:
+        raise HTTPException(status_code=resp.status_code, detail=resp.text)
     return resp.json() or {}
 
 def _excluded_league_name(name: str) -> bool:
@@ -47,7 +53,8 @@ def _excluded_league_name(name: str) -> bool:
     bad = ("u17","u18","u19","u20","u21","u23","women","kadın","youth","reserve","friendly youth")
     return any(b in n for b in bad)
 
-# ---------------- live matches ----------------
+
+# ------------ live matches ------------
 @router.get("/matches")
 async def list_live_matches(
     db: Annotated[Session, Depends(get_db)],
@@ -65,7 +72,8 @@ async def list_live_matches(
         goals = it.get("goals") or {}
         minute = _to_int((fixture.get("status") or {}).get("elapsed"))
         league_name = league_obj.get("name") or ""
-        if league and league_name != league: continue
+        if league and league_name != league:
+            continue
         home = teams.get("home") or {}; away = teams.get("away") or {}
         out.append({
             "id": str(fixture.get("id") or ""),
@@ -79,38 +87,47 @@ async def list_live_matches(
             "scoreA": _to_int(goals.get("away")),
             "kickoff": fixture.get("date") or "",
         })
-        if len(out) >= limit: break
+        if len(out) >= limit:
+            break
     return out
 
-# ---------------- xG ----------------
+
+# ------------ xG ------------
 @router.get("/stats")
 async def fixture_stats(fixture: int = Query(...)) -> Dict[str, float]:
     headers = {"x-apisports-key": _api_key()}
     js = await _fetch_json(f"{API_BASE}/fixtures/statistics", headers, {"fixture": str(fixture)})
     rows = js.get("response", []) or []
+
     def _find_xg(stats_list: List[Dict]) -> float:
         for s in stats_list or []:
             t = (s.get("type") or "").strip().lower().replace(" ", "_")
-            if t in ("expected_goals","xg","expected_goal"): return _to_float(s.get("value"))
+            if t in ("expected_goals","xg","expected_goal"):
+                return _to_float(s.get("value"))
         return 0.0
+
     xg_home = _find_xg((rows[0] or {}).get("statistics") or []) if len(rows) >= 1 else 0.0
     xg_away = _find_xg((rows[1] or {}).get("statistics") or []) if len(rows) >= 2 else 0.0
     return {"fixture": fixture, "xgH": round(xg_home, 2), "xgA": round(xg_away, 2)}
 
-# ---------------- odds ----------------
+
+# ------------ odds ------------
 @router.get("/odds")
 async def fixture_odds(fixture: int = Query(...)) -> Dict[str, Optional[float]]:
     headers = {"x-apisports-key": _api_key()}
     f_js = await _fetch_json(f"{API_BASE}/fixtures", headers, {"id": str(fixture)})
     f_rows = f_js.get("response", []) or []
     minute = _to_int(((f_rows[0] or {}).get("fixture") or {}).get("status", {}).get("elapsed"))
+
     primary_market = MARKET_LIVE_FTR if minute > 0 else MARKET_PREMATCH_1X2
     secondary_market = MARKET_PREMATCH_1X2 if minute > 0 else MARKET_LIVE_FTR
+
     parsed = await _fetch_odds_market(headers, fixture, primary_market, BOOKMAKER_DEFAULT)
     if not any(v is not None for v in parsed.values()):
         parsed = await _fetch_odds_market(headers, fixture, primary_market, None)
     if any(v is not None for v in parsed.values()):
         return parsed
+
     parsed = await _fetch_odds_market(headers, fixture, secondary_market, BOOKMAKER_DEFAULT)
     if not any(v is not None for v in parsed.values()):
         parsed = await _fetch_odds_market(headers, fixture, secondary_market, None)
@@ -122,18 +139,21 @@ async def _fetch_odds_market(headers: Dict[str,str], fixture:int, market:int, bo
         q = params if bookmaker is None else {**params, "bookmaker": str(bookmaker)}
         js = await _fetch_json(url, headers, q)
         parsed = _parse_odds_response(js, market)
-        if any(v is not None for v in parsed.values()): return parsed
+        if any(v is not None for v in parsed.values()):
+            return parsed
     return {"H": None, "D": None, "A": None}
 
 def _parse_odds_response(js: Dict, market: int) -> Dict[str, Optional[float]]:
     result: Dict[str, Optional[float]] = {"H": None, "D": None, "A": None}
     items = js.get("response", []) or []
-    if not items: return result
+    if not items:
+        return result
     for bm in items[0].get("bookmakers", []) or []:
         for bet in bm.get("bets", []) or []:
             try: bet_id = int(bet.get("id"))
             except Exception: bet_id = None
-            if bet_id != market: continue
+            if bet_id != market:
+                continue
             for v in bet.get("values", []) or []:
                 label = (v.get("value") or "").strip().lower()
                 odd = _to_float(v.get("odd"))
@@ -143,7 +163,8 @@ def _parse_odds_response(js: Dict, market: int) -> Dict[str, Optional[float]]:
             return result
     return result
 
-# ---------------- featured (live + upcoming always) ----------------
+
+# ------------ featured (live + upcoming 7 gün) ------------
 @router.get("/featured")
 async def featured_matches(
     db: Annotated[Session, Depends(get_db)],
@@ -156,19 +177,17 @@ async def featured_matches(
     headers = {"x-apisports-key": _api_key()}
     weights = _popular_weights(db, include_leagues, show_all)
 
-    # Canlı (önce whitelist)
+    # CANLI (whitelist; boş kalırsa show_all fallback)
     live_cards, dbg_live = await _fetch_live(headers, weights, show_all=bool(show_all))
     if not live_cards and dbg_live.get("raw",0)>0 and dbg_live.get("filtered",0)==0:
-        # whitelist hepsini elediyse fallback
         live_cards, dbg_live = await _fetch_live(headers, weights, show_all=True)
     live_scored = sorted(live_cards, key=lambda x: x["_score"], reverse=True)
     live_out = [strip_score(x) for x in live_scored[:limit]]
 
-    # Upcoming (HER ZAMAN göster – canlı olsa da)
-    up_cards, dbg_up = await _fetch_upcoming_range(headers, weights, days=days, show_all=bool(show_all))
+    # YAKINDA (her zaman döndür – güvenilir olmak için next=500 + 7 gün filtre)
+    up_cards, dbg_up = await _fetch_upcoming_next_filter(headers, weights, days=days, show_all=bool(show_all))
     if not up_cards:
-        # whitelist hepsini elediyse fallback
-        up_cards, dbg_up = await _fetch_upcoming_range(headers, weights, days=days, show_all=True)
+        up_cards, dbg_up = await _fetch_upcoming_next_filter(headers, weights, days=days, show_all=True)
     up_sorted = sorted(up_cards, key=lambda x: (x.get("_kick_ts", 0), -x.get("_score", 0.0)))
     upcoming_out = [strip_score(x) for x in up_sorted[:limit]]
 
@@ -184,6 +203,7 @@ async def featured_matches(
         }
     return resp
 
+
 # ---- internal funcs ----
 def strip_score(item: Dict) -> Dict:
     item.pop("_score", None); item.pop("_kick_ts", None)
@@ -191,14 +211,14 @@ def strip_score(item: Dict) -> Dict:
 
 def _popular_weights(db: Session, include_leagues: Optional[str], show_all: bool) -> Dict[int, float]:
     DEFAULT_LIST: Dict[int, float] = {
-        39:1.00,140:1.00,135:1.00,78:0.95,61:0.90,  # Big 5
-        88:0.90,94:0.90,144:0.85,179:0.85,253:0.85, # Üst ligler
-        203:1.00,204:0.80,206:0.95,551:0.70,        # TR
-        45:0.95,48:0.90,81:0.90,                    # FA Cup, EFL Cup, DFB
-        137:0.90,143:0.90,96:0.80,90:0.80,          # Coppa, Copa del Rey, Taça, KNVB
-        2:1.20,3:1.05,848:0.95,531:0.90,            # UEFA CL/EL/ECL/Super Cup
-        1:1.30,4:1.10,6:1.10,9:1.10,22:1.00,7:1.00, # Dünya/Euro/AFCON/Copa/Gold/Asian
-        32:1.20,29:1.10,34:1.10,31:1.00,30:1.00,33:0.90, # WC Qual
+        39:1.00,140:1.00,135:1.00,78:0.95,61:0.90,      # Big 5
+        88:0.90,94:0.90,144:0.85,179:0.85,253:0.85,     # Üst ligler
+        203:1.00,204:0.80,206:0.95,551:0.70,            # TR
+        45:0.95,48:0.90,81:0.90,                        # FA Cup, EFL Cup, DFB
+        137:0.90,143:0.90,96:0.80,90:0.80,              # Coppa, Copa del Rey, Taça, KNVB
+        2:1.20,3:1.05,848:0.95,531:0.90,                # UEFA CL/EL/ECL/Super Cup
+        1:1.30,4:1.10,6:1.10,9:1.10,22:1.00,7:1.00,     # Dünya/Euro/AFCON/Copa/Gold/Asian
+        32:1.20,29:1.10,34:1.10,31:1.00,30:1.00,33:0.90 # WC Qual
     }
     try:
         row = db.get(SiteConfig, "popular_leagues")
@@ -207,13 +227,15 @@ def _popular_weights(db: Session, include_leagues: Optional[str], show_all: bool
             for it in arr:
                 lid = int(it.get("id")); w = float(it.get("w", 1.0))
                 DEFAULT_LIST[lid] = w
-    except Exception: pass
+    except Exception:
+        pass
     if include_leagues:
         try:
             for s in include_leagues.split(","):
-                lid = int(s.strip()); 
+                lid = int(s.strip())
                 if lid: DEFAULT_LIST.setdefault(lid, 0.8)
-        except Exception: pass
+        except Exception:
+            pass
     return DEFAULT_LIST
 
 def _live_score(lig_w: float, minute: int, diff: int, total: int) -> float:
@@ -222,7 +244,7 @@ def _live_score(lig_w: float, minute: int, diff: int, total: int) -> float:
     elif 45 <= minute <= 60: s += 0.20
     elif 1 <= minute <= 15: s += 0.10
     if diff == 0: s += 0.30
-    elif 1 == diff: s += 0.15
+    elif diff == 1: s += 0.15
     if total >= 3: s += 0.10
     return s
 
@@ -253,14 +275,16 @@ async def _fetch_live(headers: Dict[str,str], weights: Dict[int,float], show_all
         }); kept += 1
     return out, {"raw": raw, "filtered": kept}
 
-async def _fetch_upcoming_range(headers: Dict[str,str], weights: Dict[int,float], days:int=7, show_all:bool=False) -> Tuple[List[Dict], Dict[str,int]]:
-    now = _now_utc()
-    js = await _fetch_json(
-        f"{API_BASE}/fixtures", headers,
-        {"from": now.strftime("%Y-%m-%d"), "to": (now+timedelta(days=days)).strftime("%Y-%m-%d")}
-    )
+async def _fetch_upcoming_next_filter(headers: Dict[str,str], weights: Dict[int,float], days:int=7, show_all:bool=False) -> Tuple[List[Dict], Dict[str,int]]:
+    """
+    Why: Sağlayıcı 'from/to' bazı durumlarda boş döndüğü için daha güvenilir.
+    next=500 ile geniş pencere alıp, 7 güne kendimiz filtreliyoruz.
+    """
+    now = _now_utc(); until_ts = int((now + timedelta(days=days)).timestamp())
+    js = await _fetch_json(f"{API_BASE}/fixtures", headers, {"next": 500})
     rows = js.get("response", []) or []
     out: List[Dict] = []; raw=len(rows); kept=0
+
     for it in rows:
         fixture = it.get("fixture") or {}; league = it.get("league") or {}; teams = it.get("teams") or {}
         lid = _to_int(league.get("id")); lname = league.get("name") or ""
@@ -268,13 +292,22 @@ async def _fetch_upcoming_range(headers: Dict[str,str], weights: Dict[int,float]
             if lid not in weights or _excluded_league_name(lname): continue
         else:
             if _excluded_league_name(lname): continue
+
         dt_str = fixture.get("date")
         try:
-            kick = datetime.fromisoformat((dt_str or "").replace("Z","+00:00")); kick_ts = int(kick.timestamp())
-        except Exception: continue
-        hours_to_kick = max(0.0, (kick-now).total_seconds()/3600.0)
+            kick = datetime.fromisoformat((dt_str or "").replace("Z","+00:00"))
+            kick_ts = int(kick.timestamp())
+        except Exception:
+            continue
+
+        # 7 gün penceresi
+        if not (now.timestamp() <= kick_ts <= until_ts):
+            continue
+
+        hours_to_kick = max(0.0, (kick - now).total_seconds()/3600.0)
         time_score = max(0.0, 24.0 - hours_to_kick) / 24.0
         h = teams.get("home") or {}; a = teams.get("away") or {}
+
         out.append({
             "id": str(fixture.get("id") or ""),
             "league": lname,
@@ -287,4 +320,5 @@ async def _fetch_upcoming_range(headers: Dict[str,str], weights: Dict[int,float]
             "_score": weights.get(lid, 0.5) + time_score,
             "_kick_ts": kick_ts,
         }); kept += 1
+
     return out, {"raw": raw, "filtered": kept}
