@@ -13,6 +13,7 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.api.routers.health import router as health_router
 from app.api.routers.spin import router as spin_router
+from app.api.routers.admin_mod import admin_router
 from app.db.session import SessionLocal, engine
 from app.db.models import Base, Prize, Code
 
@@ -56,17 +57,17 @@ STATIC_DIR = PROJECT_ROOT / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # -----------------------------
-# Routers (çekirdek)
+# Routers
 # -----------------------------
 app.include_router(health_router)                 # /health
 app.include_router(spin_router, prefix="/api")    # /api/spin/...
+app.include_router(admin_router)                  # /admin/...
 
 # -----------------------------
 # Root & Status
 # -----------------------------
 @app.get("/", include_in_schema=False)
 def root():
-    # Neden: köke gelen istekleri Swagger'a yönlendirelim
     return RedirectResponse(url="/docs", status_code=302)
 
 @app.get("/status")
@@ -108,7 +109,7 @@ def on_startup() -> None:
             END $$;
             """))
 
-            # prizes.image_url kolonu yoksa ekle (TABLO/kolon varlığı kontrolü ile)
+            # prizes.image_url kolonu yoksa ekle
             conn.execute(text("""
             DO $$
             BEGIN
