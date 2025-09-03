@@ -3,10 +3,11 @@ import { useEffect, useMemo, useState } from "react";
 
 /**
  * HEADER DEMO (only header)
- * İsteklere göre revize:
- * - Logo büyük, yanında: LIVE PLAYERS + sayı (aynı font, kırmızı LIVE, çerçevesiz)
- * - Sağ tarafta: önce Hızlı Bonus (dikkat çekici bildirim), sonra Radissonbet Giriş (cursor-click animasyonu)
- * - Kutu hissi yok; koyu lacivert + aqua vurgu
+ * Revize: LIVE PLAYERS bloğu daha uyumlu ve tek etiket gibi görünecek.
+ * - Logo büyük
+ * - Sol: Hızlı Bonus (bildirim)
+ * - Orta: LIVE PLAYERS (tek şerit etiket) + animasyonlu sayı (aynı font)
+ * - Sağ: Radissonbet Giriş (cursor-click efekti)
  */
 
 const LOGO =
@@ -52,11 +53,7 @@ function Header() {
 
         {/* Sağ: önce Hızlı Bonus, sonra Giriş CTA */}
         <div className="right">
-          <button
-            className="btn bonus"
-            onClick={(e) => e.preventDefault()}
-            title="Hızlı Bonus (demo)"
-          >
+          <button className="btn bonus" onClick={(e) => e.preventDefault()} title="Hızlı Bonus (demo)">
             <BellIcon />
             <span>Hızlı Bonus</span>
             <span className="notif" aria-hidden />
@@ -67,7 +64,6 @@ function Header() {
             onClick={() => {
               setClicked(true);
               setTimeout(() => setClicked(false), 600);
-              // DEMO yönlendirme – entegrasyonda gerçek link
               window.location.assign("/");
             }}
             title="Radissonbet Giriş"
@@ -81,16 +77,16 @@ function Header() {
   );
 }
 
-/* -------------- CENTER: LIVE + PLAYERS + DIGIT ROLLER -------------- */
+/* -------------- CENTER: LIVE PLAYERS (tek etiket) + DIGIT ROLLER -------------- */
 function LivePlayers({ value }: { value: number }) {
   const parts = useMemo(() => splitThousands(value), [value]);
   return (
     <div className="livebar" aria-label="live-players">
-      <span className="liveTxt">
+      <span className="liveLabel">
+        <span className="liveWord">LIVE</span>
         <span className="dot" />
-        LIVE
+        <span className="playersWord">PLAYERS</span>
       </span>
-      <span className="players">PLAYERS</span>
 
       <span className="roller">
         {parts.map((p, i) =>
@@ -189,34 +185,55 @@ body{margin:0}
 .left{display:flex;align-items:center;gap:14px}
 .right{display:flex;align-items:center;gap:10px}
 
-/* Logo daha büyük ve önde */
+/* Logo */
 .logoWrap{display:inline-block}
 .logo{height:40px;display:block;filter:drop-shadow(0 0 12px rgba(0,229,255,.28))}
 @media (max-width:720px){ .logo{height:34px} }
 
-/* Hızlı Bonus (solda, dikkat çekici bildirim) */
+/* Hızlı Bonus */
 .btn{display:inline-flex;align-items:center;gap:8px;cursor:pointer;border:1px solid transparent;background:transparent;color:var(--text);padding:8px 12px;border-radius:12px;transition:filter .15s, transform .15s}
 .btn:hover{filter:brightness(1.06);transform:translateY(-1px)}
 .btn.bonus{color:#dff6ff;border-color:rgba(255,255,255,.18)}
 .btn.bonus .notif{display:inline-block;width:9px;height:9px;border-radius:999px;background:#ff4d6d;box-shadow:0 0 0 8px rgba(255,77,109,.18);animation:pulse 1.8s infinite}
 @keyframes pulse{0%{transform:scale(.9)}50%{transform:scale(1.15)}100%{transform:scale(.9)}}
 
-/* Orta: LIVE + PLAYERS + sayı (aynı font ailesi) */
-.livebar{display:flex;align-items:baseline;gap:10px;margin:0 8px;font-variant-numeric:tabular-nums;font-family:var(--live-font)}
-.liveTxt{display:inline-flex;align-items:center;gap:6px;color:var(--red);font-weight:900;letter-spacing:.6px}
-.liveTxt .dot{width:8px;height:8px;border-radius:999px;background:var(--red);box-shadow:0 0 10px rgba(255,42,42,.9);animation:blink 1s infinite}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
-.players{color:#c9dbf4;letter-spacing:.4px;font-weight:800}
-.roller{display:inline-flex;align-items:center;gap:6px;color:#fff}
-.sep{opacity:.6;margin:0 2px}
+/* LIVE PLAYERS (tek etiket) + sayı */
+.livebar{
+  display:flex; align-items:center; gap:12px;
+  font-variant-numeric:tabular-nums;
+  font-family:var(--live-font);
+}
+.liveLabel{
+  position:relative; display:flex; align-items:center; gap:10px;
+  letter-spacing:.6px; font-weight:900;
+}
+.liveLabel::after{
+  content:""; position:absolute; left:0; right:0; bottom:-2px; height:2px;
+  background:linear-gradient(90deg,transparent,var(--red),transparent);
+  opacity:.55;
+}
+.liveWord{color:var(--red)}
+.dot{
+  width:6px; height:6px; border-radius:999px; background:var(--red);
+  box-shadow:0 0 10px rgba(255,42,42,.9); animation:blink 1s infinite;
+}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+.playersWord{color:#e9f1ff; opacity:.92}
+.roller{display:inline-flex; align-items:center; gap:6px; color:#fff; margin-left:2px}
+.sep{opacity:.6; margin:0 1px}
 
-/* Digit roller (aynı font, kompakt) */
-.grp{display:inline-flex;gap:2px}
-.digit{display:inline-block;width:16px;height:20px;overflow:hidden}
-.col{display:flex;flex-direction:column;transition:transform .6s cubic-bezier(.2,.7,.2,1)}
-.cell{height:20px;line-height:20px;text-align:center;font-weight:900;letter-spacing:.1px;color:#e8f4ff;text-shadow:0 0 10px rgba(0,229,255,.15);font-family:var(--live-font)}
+/* Digit roller */
+.grp{display:inline-flex; gap:2px}
+.digit{display:inline-block; width:16px; height:20px; overflow:hidden}
+.col{display:flex; flex-direction:column; transition:transform .6s cubic-bezier(.2,.7,.2,1)}
+.cell{
+  height:20px; line-height:20px; text-align:center;
+  font-weight:900; letter-spacing:.1px; color:#e8f4ff;
+  text-shadow:0 0 10px rgba(0,229,255,.15);
+  font-family:var(--live-font);
+}
 
-/* Sağ: Giriş CTA (cursor click efekti) */
+/* Giriş CTA */
 .btn.cta{
   color:#001018;
   background:linear-gradient(90deg,var(--aqua),#4aa7ff);
@@ -230,6 +247,7 @@ body{margin:0}
   animation:clickflash .45s ease-out forwards;
 }
 @keyframes clickflash{0%{opacity:.9;transform:scale(.9)}100%{opacity:0;transform:scale(1.2)}}
+.mouse{color:#001018}
 
-@media (max-width:880px){ .players{display:none} }
+@media (max-width:880px){ .playersWord{display:none} }
 `;
