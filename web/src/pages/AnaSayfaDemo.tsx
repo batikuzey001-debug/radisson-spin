@@ -4,12 +4,10 @@ import Header from "../components/Header";
 
 /**
  * DEMO • Header + Kayan Canlı Maç Kartları (API bağlı)
- * - Header üstte kalır
- * - Kartlar daha küçük (280px)
- * - Sağ üstte dakika
- * - Detay CTA yok
- * - Veri: /api/live/matches (API-FOOTBALL üzerinden backend)
- *   * logo/ligLogo varsa gösterilir, yoksa baş harf avatarı
+ * İyileştirmeler:
+ * - Akış daha YAVAŞ ve AKICI (genişliğe göre süre hesaplanır)
+ * - Hover'da durur
+ * - Logo yoksa/broken ise otomatik avatar fallback
  */
 
 const API = import.meta.env.VITE_API_BASE_URL;
@@ -40,6 +38,8 @@ export default function AnaSayfaDemo() {
 function LiveMatchCarousel() {
   const [list, setList] = useState<Match[]>([]);
   const [err, setErr] = useState<string>("");
+  const railRef = useRef<HTMLDivElement | null>(null);
+  const trackRef = useRef<HTMLDivElement | null>(null);
 
   // İlk yükleme + 12sn polling
   useEffect(() => {
@@ -50,12 +50,13 @@ function LiveMatchCarousel() {
         const res = await fetch(`${API}/api/live/matches`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data: Match[] = await res.json();
-        setList(data ?? []);
         setErr("");
+        setList(data ?? []);
       } catch (e: any) {
         setErr(e?.message ?? "Bağlantı hatası");
       }
     }
+
     load();
     timer = window.setInterval(load, 12000);
 
@@ -64,42 +65,43 @@ function LiveMatchCarousel() {
     };
   }, []);
 
-  // Akış: sonsuz görünmesi için list + list (hover’da durur)
-  const flow = useMemo(() => (list.length ? list.concat(list) : []), [list]);
+  // En az 6 kart görünümü için doldur
+  const normalized = useMemo(() => {
+    if (!list.length) return [];
+    const out = [...list];
+    while (out.length < 6) out.push(...list);
+    return out.slice(0, Math.max(out.length, 6));
+  }, [list]);
 
-  if (err) {
-    return (
-      <section className="liveWrap">
-        <div className="liveHead">
-          <span className="led" />
-          <span className="title">CANLI MAÇLAR</span>
-          <span className="sub">hata: {err}</span>
-        </div>
-      </section>
-    );
-  }
-  if (!list.length) {
-    return (
-      <section className="liveWrap">
-        <div className="liveHead">
-          <span className="led" />
-          <span className="title">CANLI MAÇLAR</span>
-          <span className="sub">şu an canlı maç yok</span>
-        </div>
-      </section>
-    );
-  }
+  // Sonsuz görünmesi için 2 kez tekrarla
+  const flow = useMemo(() => (normalized.length ? normalized.concat(normalized) : []), [normalized]);
+
+  // Hız: içerik genişliğine göre süre ayarla (yavaş akış)
+  useEffect(() => {
+    const rail = railRef.current;
+    const track = trackRef.current;
+    if (!rail || !track) return;
+
+    // Akması gereken mesafe (tek set kadar)
+    const distance = track.scrollWidth / 2; // çünkü flow = normalized*2
+    const pxPerSec = 60; // daha yavaş (px/sn)
+    const durationSec = Math.max(20, Math.round(distance / pxPerSec));
+
+    rail.style.setProperty("--dur", `${durationSec}s`);
+  }, [flow]);
 
   return (
     <section className="liveWrap">
       <div className="liveHead">
         <span className="led" />
         <span className="title">CANLI MAÇLAR</span>
-        <span className="sub">anlık akış</span>
+        <span className="sub">
+          {err ? `hata: ${err}` : list.length ? "anlık akış" : "şu an canlı maç yok"}
+        </span>
       </div>
 
-      <div className="rail">
-        <div className="track">
+      <div className="rail" ref={railRef}>
+        <div className="track" ref={trackRef}>
           {flow.map((m, i) => (
             <MatchCard key={`${m.id}-${i}`} m={m} />
           ))}
@@ -149,8 +151,9 @@ function MatchCard({ m }: { m: Match }) {
   );
 }
 
-/* Logo varsa göster, yoksa renkli baş harf avatarı */
+/* Logo varsa göster, kırık/boşsa avatar fallback */
 function TeamLogo({ name, logo }: { name: string; logo?: string }) {
+  const [imgOk, setImgOk] = useState<boolean>(!!logo);
   const initials = useMemo(() => {
     const parts = name.split(" ").filter(Boolean);
     const first = parts[0]?.[0] ?? "?";
@@ -164,8 +167,16 @@ function TeamLogo({ name, logo }: { name: string; logo?: string }) {
     return h;
   }, [name]);
 
-  if (logo) {
-    return <img className="ava img" src={logo} alt="" />;
+  if (logo && imgOk) {
+    return (
+      <img
+        className="ava img"
+        src={logo}
+        alt=""
+        referrerPolicy="no-referrer"
+        onError={() => setImgOk(false)}
+      />
+    );
   }
   return (
     <span
@@ -195,13 +206,16 @@ const css = `
 .liveHead .sub{color:#9fb1cc;font-size:12px}
 
 .rail{position:relative;overflow:hidden;border-top:1px solid rgba(255,255,255,.06);border-bottom:1px solid rgba(255,255,255,.06)}
-.track{display:inline-flex;gap:12px;padding:10px 6px;animation:marq 28s linear infinite}
+.track{
+  display:inline-flex;gap:12px;padding:10px 6px;
+  animation:marq var(--dur, 40s) linear infinite;
+}
 .rail:hover .track{animation-play-state:paused}
 @keyframes marq{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
 
 .card{
   display:flex;flex-direction:column;gap:8px;
-  min-width:280px;max-width:280px;padding:10px;
+  min-width:260px;max-width:260px;padding:10px;
   text-decoration:none;color:#eaf2ff;
   background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.03));
   border:1px solid rgba(255,255,255,.08);border-radius:14px;
@@ -234,5 +248,5 @@ const css = `
   box-shadow:0 0 0 1px rgba(255,255,255,.15),0 6px 14px rgba(0,0,0,.25)
 }
 .ava.img{background:#0c1224;object-fit:cover}
-@media(max-width:420px){.card{min-width:240px;max-width:240px}}
+@media(max-width:420px){.card{min-width:220px;max-width:220px}}
 `;
