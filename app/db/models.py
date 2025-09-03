@@ -154,3 +154,15 @@ class HomeBanner(Base):
     is_active  = Column(Boolean, default=True)       # yayında mı
     created_at = Column(DateTime(timezone=True), default=_utcnow)
     updated_at = Column(DateTime(timezone=True), default=_utcnow)
+
+# --- SITE CONFIG (CMS: logo, login CTA vb.) ---
+class SiteConfig(Base):
+    """
+    Why: Logo ve giriş butonu gibi basit ayarları admin CMS üzerinden yönetmek için.
+    Not: key benzersizdir (ör: 'logo_url', 'login_cta_text', 'login_cta_url').
+    """
+    __tablename__ = "site_config"
+    key        = Column(String(100), primary_key=True)   # benzersiz anahtar
+    value_text = Column(Text, nullable=True)             # değer (metin/url)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow)
