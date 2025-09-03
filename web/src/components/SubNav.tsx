@@ -5,20 +5,11 @@ export default function SubNav() {
   return (
     <div className="subnav-wrap">
       <nav className="subnav">
-        <NavLink to="/" className={({ isActive }) => (isActive ? "item active" : "item")}>
-          Ana Sayfa
+        <NavLink to="/cark" className={({ isActive }) => (isActive ? "item active" : "item")}>
+          Radi Çark
         </NavLink>
-        <NavLink to="/canli" className={({ isActive }) => (isActive ? "item active" : "item")}>
-          Canlı
-        </NavLink>
-        <NavLink to="/yakinda" className={({ isActive }) => (isActive ? "item active" : "item")}>
-          Yakında
-        </NavLink>
-        <NavLink to="/promolar" className={({ isActive }) => (isActive ? "item active" : "item")}>
-          Promolar
-        </NavLink>
-        <NavLink to="/yardim" className={({ isActive }) => (isActive ? "item active" : "item")}>
-          Yardım
+        <NavLink to="/turnuvalar" className={({ isActive }) => (isActive ? "item active" : "item")}>
+          Turnuvalar
         </NavLink>
       </nav>
       <style>{css}</style>
