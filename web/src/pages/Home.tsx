@@ -5,7 +5,6 @@ export default function Home() {
   return (
     <main className="home">
       <Hero />
-
       <style>{css}</style>
     </main>
   );
