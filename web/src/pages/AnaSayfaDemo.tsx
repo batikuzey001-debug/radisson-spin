@@ -3,30 +3,28 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Header from "../components/Header";
 
 /**
- * DEMO • Header + Kayan Canlı Maç Kartları
- * - Mock veriler
- * - Kartlar biraz daha küçük (280px)
- * - Sağ üstte dakika gösterimi
- * - Detay CTA kaldırıldı
+ * DEMO • Header + Kayan Canlı Maç Kartları (API bağlı)
+ * - Header üstte kalır
+ * - Kartlar daha küçük (280px)
+ * - Sağ üstte dakika
+ * - Detay CTA yok
+ * - Veri: /api/live/matches (API-FOOTBALL üzerinden backend)
+ *   * logo/ligLogo varsa gösterilir, yoksa baş harf avatarı
  */
 
+const API = import.meta.env.VITE_API_BASE_URL;
+
+type Team = { name: string; logo?: string };
 type Match = {
   id: string;
   league: string;
-  home: { name: string };
-  away: { name: string };
+  leagueLogo?: string;
+  home: Team;
+  away: Team;
   minute: number;
   scoreH: number;
   scoreA: number;
 };
-
-const MOCK_MATCHES: Match[] = [
-  { id: "m1", league: "Süper Lig", home: { name: "Galatasaray" }, away: { name: "Fenerbahçe" }, minute: 62, scoreH: 2, scoreA: 0 },
-  { id: "m2", league: "Premier League", home: { name: "Man. City" }, away: { name: "Arsenal" }, minute: 74, scoreH: 1, scoreA: 1 },
-  { id: "m3", league: "La Liga", home: { name: "Barcelona" }, away: { name: "Real Madrid" }, minute: 18, scoreH: 0, scoreA: 1 },
-  { id: "m4", league: "UCL", home: { name: "Bayern" }, away: { name: "PSG" }, minute: 55, scoreH: 2, scoreA: 2 },
-  { id: "m5", league: "Serie A", home: { name: "Inter" }, away: { name: "Milan" }, minute: 33, scoreH: 1, scoreA: 0 },
-];
 
 export default function AnaSayfaDemo() {
   return (
@@ -40,30 +38,67 @@ export default function AnaSayfaDemo() {
 
 /* -------------------- Kayan Maç Kartları -------------------- */
 function LiveMatchCarousel() {
-  const [list, setList] = useState<Match[]>(MOCK_MATCHES);
-  const trackRef = useRef<HTMLDivElement | null>(null);
+  const [list, setList] = useState<Match[]>([]);
+  const [err, setErr] = useState<string>("");
 
+  // İlk yükleme + 12sn polling
   useEffect(() => {
-    const t = setInterval(() => {
-      setList((prev) => {
-        const [f, ...rest] = prev;
-        return [...rest, f];
-      });
-    }, 6000);
-    return () => clearInterval(t);
+    let timer: number | null = null;
+
+    async function load() {
+      try {
+        const res = await fetch(`${API}/api/live/matches`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data: Match[] = await res.json();
+        setList(data ?? []);
+        setErr("");
+      } catch (e: any) {
+        setErr(e?.message ?? "Bağlantı hatası");
+      }
+    }
+    load();
+    timer = window.setInterval(load, 12000);
+
+    return () => {
+      if (timer) window.clearInterval(timer);
+    };
   }, []);
 
-  const flow = useMemo(() => list.concat(list), [list]);
+  // Akış: sonsuz görünmesi için list + list (hover’da durur)
+  const flow = useMemo(() => (list.length ? list.concat(list) : []), [list]);
+
+  if (err) {
+    return (
+      <section className="liveWrap">
+        <div className="liveHead">
+          <span className="led" />
+          <span className="title">CANLI MAÇLAR</span>
+          <span className="sub">hata: {err}</span>
+        </div>
+      </section>
+    );
+  }
+  if (!list.length) {
+    return (
+      <section className="liveWrap">
+        <div className="liveHead">
+          <span className="led" />
+          <span className="title">CANLI MAÇLAR</span>
+          <span className="sub">şu an canlı maç yok</span>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="liveWrap">
       <div className="liveHead">
         <span className="led" />
         <span className="title">CANLI MAÇLAR</span>
-        <span className="sub">demo akış</span>
+        <span className="sub">anlık akış</span>
       </div>
 
-      <div className="rail" ref={trackRef}>
+      <div className="rail">
         <div className="track">
           {flow.map((m, i) => (
             <MatchCard key={`${m.id}-${i}`} m={m} />
@@ -76,9 +111,17 @@ function LiveMatchCarousel() {
 
 function MatchCard({ m }: { m: Match }) {
   return (
-    <a className="card" href="#" onClick={(e) => e.preventDefault()} title={`${m.league} • ${m.home.name} vs ${m.away.name}`}>
+    <a
+      className="card"
+      href="#"
+      onClick={(e) => e.preventDefault()}
+      title={`${m.league} • ${m.home.name} vs ${m.away.name}`}
+    >
       <div className="top">
-        <div className="league">{m.league}</div>
+        <div className="league">
+          {m.leagueLogo ? <img className="lgLogo" src={m.leagueLogo} alt="" /> : null}
+          <span className="lg">{m.league}</span>
+        </div>
         <div className="min">
           <span className="dot" />
           {m.minute}'
@@ -87,7 +130,7 @@ function MatchCard({ m }: { m: Match }) {
 
       <div className="teams">
         <div className="side">
-          <LogoAvatar label={m.home.name} />
+          <TeamLogo name={m.home.name} logo={m.home.logo} />
           <span className="name">{m.home.name}</span>
         </div>
 
@@ -98,7 +141,7 @@ function MatchCard({ m }: { m: Match }) {
         </div>
 
         <div className="side right">
-          <LogoAvatar label={m.away.name} />
+          <TeamLogo name={m.away.name} logo={m.away.logo} />
           <span className="name">{m.away.name}</span>
         </div>
       </div>
@@ -106,20 +149,24 @@ function MatchCard({ m }: { m: Match }) {
   );
 }
 
-function LogoAvatar({ label }: { label: string }) {
+/* Logo varsa göster, yoksa renkli baş harf avatarı */
+function TeamLogo({ name, logo }: { name: string; logo?: string }) {
   const initials = useMemo(() => {
-    const parts = label.split(" ").filter(Boolean);
+    const parts = name.split(" ").filter(Boolean);
     const first = parts[0]?.[0] ?? "?";
     const second = parts.length > 1 ? parts[1][0] : "";
     return (first + second).toUpperCase();
-  }, [label]);
+  }, [name]);
 
   const hue = useMemo(() => {
     let h = 0;
-    for (let i = 0; i < label.length; i++) h = (h + label.charCodeAt(i) * 7) % 360;
+    for (let i = 0; i < name.length; i++) h = (h + name.charCodeAt(i) * 7) % 360;
     return h;
-  }, [label]);
+  }, [name]);
 
+  if (logo) {
+    return <img className="ava img" src={logo} alt="" />;
+  }
   return (
     <span
       className="ava"
@@ -163,7 +210,10 @@ const css = `
 .card:hover{filter:brightness(1.05)}
 
 .top{display:flex;align-items:center;justify-content:space-between;font-size:12px}
-.league{color:#cfe0ff}
+.league{display:flex;align-items:center;gap:6px}
+.lg{color:#cfe0ff}
+.lgLogo{width:14px;height:14px;border-radius:3px;object-fit:contain;border:1px solid rgba(255,255,255,.15)}
+
 .min{display:inline-flex;align-items:center;gap:4px;color:#9ccaf7;font-size:12px}
 .min .dot{width:6px;height:6px;border-radius:999px;background:var(--red);box-shadow:0 0 10px rgba(255,42,42,.9);animation:blink 1s infinite}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
@@ -183,5 +233,6 @@ const css = `
   font-size:10px;font-weight:900;color:#001018;
   box-shadow:0 0 0 1px rgba(255,255,255,.15),0 6px 14px rgba(0,0,0,.25)
 }
+.ava.img{background:#0c1224;object-fit:cover}
 @media(max-width:420px){.card{min-width:240px;max-width:240px}}
 `;
