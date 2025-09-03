@@ -16,7 +16,8 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.api.routers.health import router as health_router
 from app.api.routers.spin import router as spin_router
-from app.api.routers.home import router as home_router  # <-- eklendi
+from app.api.routers.home import router as home_router
+from app.api.routers.site import router as site_router  # <--- eklendi
 from app.api.routers.admin_mod import admin_router
 from app.db.session import SessionLocal, engine
 from app.db.models import Base, Prize, Code
@@ -77,7 +78,8 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 # -----------------------------
 app.include_router(health_router, prefix="/api")  # /api/health
 app.include_router(spin_router, prefix="/api")    # /api/spin/...
-app.include_router(home_router, prefix="/api")    # /api/home/...  <-- eklendi
+app.include_router(home_router, prefix="/api")    # /api/home/...
+app.include_router(site_router, prefix="/api")    # /api/site/...   <--- eklendi
 app.include_router(admin_router)                  # /admin/...
 
 # -----------------------------
