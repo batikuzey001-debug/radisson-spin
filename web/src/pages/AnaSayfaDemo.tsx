@@ -3,13 +3,21 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Header from "../components/Header";
 
 /**
- * DEMO • Header + Kayan Canlı Maç Kartları (xG + Oranlar)
- * - Veri: /api/live/matches  (maç listesi)
- *         /api/live/stats?fixture={id}  (xG)
- *         /api/live/odds?fixture={id}&market=1  (1X2 oranları)
- * - xG üstte gösterilir; yoksa 0 yazılır.
- * - Oranlar kartın altında 1X2 chipleri olarak gösterilir.
- * - Bu dosya DEMO amaçlıdır; backend uçları hazır olunca gerçek veriyle dolar.
+ * DEMO • Header + Popüler Maçlar (Canlı & Yakında) – xG + Oranlar
+ * Kaynaklar:
+ *  - /api/live/featured?limit=12  -> { live: Match[], upcoming: Match[] }
+ *  - /api/live/stats?fixture=ID   -> { xgH, xgA }
+ *  - /api/live/odds?fixture=ID&market=1[&minute=N] -> { H, D, A } (akıllı: canlı/prematch + fallback)
+ *
+ * Kart düzeni:
+ *  [Üst satır] Lig + dakika (sağ üst)
+ *  [Orta]      Ev Takım  SKOR  Dep Takım
+ *  [Alt-1]     xG: 1.23 : 0.78   (yoksa 0.00)
+ *  [Alt-2]     1X2 oran çipleri (— yoksa)
+ *
+ * Bölümler:
+ *  - CANLI POPÜLER MAÇLAR (varsa)
+ *  - YAKINDA POPÜLER MAÇLAR (canlı yoksa / eksikse)
  */
 
 const API = import.meta.env.VITE_API_BASE_URL;
@@ -21,88 +29,47 @@ type Match = {
   leagueLogo?: string;
   home: Team;
   away: Team;
-  minute: number;
+  minute: number;   // 0 => başlamamış
   scoreH: number;
   scoreA: number;
 };
 
-type MatchExtra = {
-  xgH: number;
-  xgA: number;
-  odds?: { H?: number; D?: number; A?: number };
-};
-
-type Enriched = Match & MatchExtra;
+type Odds = { H?: number; D?: number; A?: number };
+type Enriched = Match & { xgH: number; xgA: number; odds?: Odds };
 
 export default function AnaSayfaDemo() {
   return (
     <div className="demo">
       <Header />
-      <LiveMatchCarousel />
+      <FeaturedStrips />
       <style>{css}</style>
     </div>
   );
 }
 
-/* -------------------- Kayan Maç Kartları -------------------- */
-function LiveMatchCarousel() {
-  const [list, setList] = useState<Enriched[]>([]);
+/* -------------------- Bölümler -------------------- */
+function FeaturedStrips() {
+  const [live, setLive] = useState<Enriched[]>([]);
+  const [upcoming, setUpcoming] = useState<Enriched[]>([]);
   const [err, setErr] = useState<string>("");
 
-  // İlk yükleme + 12sn polling
   useEffect(() => {
     let timer: number | null = null;
 
     async function load() {
       try {
-        // 1) canlı maçlar
-        const res = await fetch(`${API}/api/live/matches`);
+        const res = await fetch(`${API}/api/live/featured?limit=12`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const base: Match[] = (await res.json()) ?? [];
+        const { live: L = [], upcoming: U = [] } = (await res.json()) ?? {};
+        const topLive: Match[] = L.slice(0, 8);
+        const topUp: Match[] = U.slice(0, 8);
 
-        // çok istek atmayalım: ilk 8 maçı zenginleştir
-        const top = base.slice(0, 8);
+        // İlk etap: canlı listede varsa onu zenginleştir, yoksa upcoming
+        const liveEnriched = await enrichMany(topLive);
+        const upcomingEnriched = await enrichMany(topUp);
 
-        // 2) her maç için xG ve 1X2 oranlarını paralel çek
-        const enriched = await Promise.all(
-          top.map(async (m) => {
-            // xG
-            let xgH = 0,
-              xgA = 0;
-            try {
-              const s = await fetch(`${API}/api/live/stats?fixture=${m.id}`);
-              if (s.ok) {
-                const js = await s.json();
-                xgH = Number(js?.xgH ?? 0) || 0;
-                xgA = Number(js?.xgA ?? 0) || 0;
-              }
-            } catch {
-              /* ignore */
-            }
-
-            // 1X2 (Match Winner) odds
-            let odds: MatchExtra["odds"] = undefined;
-            try {
-              const o = await fetch(`${API}/api/live/odds?fixture=${m.id}&market=1`);
-              if (o.ok) {
-                const oj = await o.json();
-                // beklenen şekil: { H: "1.85", D: "3.40", A: "4.20" }
-                odds = {
-                  H: oj?.H ? Number(oj.H) : undefined,
-                  D: oj?.D ? Number(oj.D) : undefined,
-                  A: oj?.A ? Number(oj.A) : undefined,
-                };
-              }
-            } catch {
-              /* ignore */
-            }
-
-            const extra: MatchExtra = { xgH, xgA, odds };
-            return { ...m, ...extra };
-          })
-        );
-
-        setList(enriched);
+        setLive(liveEnriched);
+        setUpcoming(upcomingEnriched);
         setErr("");
       } catch (e: any) {
         setErr(e?.message ?? "Bağlantı hatası");
@@ -110,46 +77,40 @@ function LiveMatchCarousel() {
     }
 
     load();
-    timer = window.setInterval(load, 12000);
-    return () => {
-      if (timer) window.clearInterval(timer);
-    };
+    // Canlı data için 30sn polling (istatistik/odds rate limitini zorlamadan)
+    timer = window.setInterval(load, 30000);
+    return () => timer && window.clearInterval(timer);
   }, []);
 
-  // en az 6 kart görünümü için doldur
-  const normalized = useMemo(() => {
-    if (!list.length) return [];
-    const out = [...list];
-    while (out.length < 6) out.push(...list);
-    return out.slice(0, Math.max(out.length, 6));
-  }, [list]);
-
-  // akış: sonsuz görünmesi için 2x tekrarla
-  const flow = useMemo(() => (normalized.length ? normalized.concat(normalized) : []), [normalized]);
-
   if (err) {
-    return SectionHead("CANLI MAÇLAR", `hata: ${err}`);
+    return SectionHead("POPÜLER MAÇLAR", `hata: ${err}`);
   }
-  if (!list.length) {
-    return SectionHead("CANLI MAÇLAR", "şu an canlı maç yok");
-  }
+
+  const hasLive = live.length > 0;
+  const hasUpcoming = upcoming.length > 0;
 
   return (
-    <section className="liveWrap">
-      <div className="liveHead">
-        <span className="led" />
-        <span className="title">CANLI MAÇLAR</span>
-        <span className="sub">anlık akış</span>
-      </div>
+    <>
+      {hasLive && (
+        <CarouselSection
+          title="CANLI POPÜLER MAÇLAR"
+          subtitle="anlık akış"
+          items={live}
+          trackSpeed="45s"
+        />
+      )}
 
-      <div className="rail">
-        <div className="track">
-          {flow.map((m, i) => (
-            <MatchCard key={`${m.id}-${i}`} m={m} />
-          ))}
-        </div>
-      </div>
-    </section>
+      {hasUpcoming && (
+        <CarouselSection
+          title="YAKINDA POPÜLER MAÇLAR"
+          subtitle="maç önü"
+          items={upcoming}
+          trackSpeed="50s"
+        />
+      )}
+
+      {!hasLive && !hasUpcoming && SectionHead("POPÜLER MAÇLAR", "şu an listelenecek maç yok")}
+    </>
   );
 }
 
@@ -165,31 +126,72 @@ function SectionHead(title: string, sub: string) {
   );
 }
 
+function CarouselSection({
+  title,
+  subtitle,
+  items,
+  trackSpeed,
+}: {
+  title: string;
+  subtitle: string;
+  items: Enriched[];
+  trackSpeed: string; // CSS anim süre
+}) {
+  // Akış: en az 6 kart görünümü ve sonsuz kaydırma
+  const normalized = useMemo(() => {
+    if (!items.length) return [];
+    const out = [...items];
+    while (out.length < 6) out.push(...items);
+    return out.slice(0, Math.max(out.length, 6));
+  }, [items]);
+
+  const flow = useMemo(() => (normalized.length ? normalized.concat(normalized) : []), [normalized]);
+
+  return (
+    <section className="liveWrap">
+      <div className="liveHead">
+        <span className="led" />
+        <span className="title">{title}</span>
+        <span className="sub">{subtitle}</span>
+      </div>
+
+      <div className="rail" style={{ ["--dur" as any]: trackSpeed }}>
+        <div className="track">
+          {flow.map((m, i) => (
+            <MatchCard key={`${m.id}-${i}`} m={m} />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* -------------------- Kart -------------------- */
 function MatchCard({ m }: { m: Enriched }) {
+  const isLive = m.minute > 0;
+
   return (
     <a
-      className="card"
+      className={`card ${isLive ? "live" : "prematch"}`}
       href="#"
       onClick={(e) => e.preventDefault()}
       title={`${m.league} • ${m.home.name} vs ${m.away.name}`}
     >
-      {/* xG üst şerit */}
-      <div className="xg">
-        <span className="xgLabel">xG</span>
-        <span className="xgVal">{formatXG(m.xgH)}</span>
-        <span className="xgSep">:</span>
-        <span className="xgVal">{formatXG(m.xgA)}</span>
-      </div>
-
       {/* üst satır */}
       <div className="top">
         <div className="league">
           {m.leagueLogo ? <img className="lgLogo" src={m.leagueLogo} alt="" /> : null}
           <span className="lg">{m.league}</span>
         </div>
-        <div className="min">
-          <span className="dot" />
-          {m.minute}'
+        <div className={`min ${isLive ? "" : "up"}`}>
+          {isLive ? (
+            <>
+              <span className="dot" />
+              {m.minute}'
+            </>
+          ) : (
+            <span className="badge">MAÇ ÖNÜ</span>
+          )}
         </div>
       </div>
 
@@ -212,7 +214,15 @@ function MatchCard({ m }: { m: Enriched }) {
         </div>
       </div>
 
-      {/* Oran çipleri (1X2) */}
+      {/* xG skorun ALTINDA */}
+      <div className="xg">
+        <span className="xgLabel">xG</span>
+        <span className="xgVal">{formatXG(m.xgH)}</span>
+        <span className="xgSep">:</span>
+        <span className="xgVal">{formatXG(m.xgA)}</span>
+      </div>
+
+      {/* Oran çipleri (1X2) – yoksa "-" */}
       <div className="odds">
         <OddChip label="1" value={m.odds?.H} />
         <OddChip label="X" value={m.odds?.D} />
@@ -227,7 +237,7 @@ function OddChip({ label, value }: { label: string; value?: number }) {
   return (
     <span className={`odd ${has ? "" : "muted"}`}>
       <span className="ol">{label}</span>
-      <span className="ov">{has ? value.toFixed(2) : "-"}</span>
+      <span className="ov">{has ? value.toFixed(2) : "—"}</span>
     </span>
   );
 }
@@ -235,6 +245,7 @@ function OddChip({ label, value }: { label: string; value?: number }) {
 /* Logo varsa göster, kırık/boşsa avatar fallback */
 function TeamLogo({ name, logo }: { name: string; logo?: string }) {
   const [imgOk, setImgOk] = useState<boolean>(!!logo);
+
   const initials = useMemo(() => {
     const parts = name.split(" ").filter(Boolean);
     const first = parts[0]?.[0] ?? "?";
@@ -271,6 +282,59 @@ function TeamLogo({ name, logo }: { name: string; logo?: string }) {
   );
 }
 
+/* -------------------- Enrichment -------------------- */
+async function enrichMany(list: Match[]): Promise<Enriched[]> {
+  // Eşzamanlı istek sayısını sınırlayalım (rate-limit): 4'erli batch
+  const out: Enriched[] = [];
+  const batchSize = 4;
+
+  for (let i = 0; i < list.length; i += batchSize) {
+    const batch = list.slice(i, i + batchSize);
+    const results = await Promise.all(
+      batch.map(async (m) => {
+        const [xg, odds] = await Promise.all([fetchXG(m.id), fetchOdds(m.id, m.minute)]);
+        return {
+          ...m,
+          xgH: xg?.xgH ?? 0,
+          xgA: xg?.xgA ?? 0,
+          odds,
+        } as Enriched;
+      })
+    );
+    out.push(...results);
+  }
+  return out;
+}
+
+async function fetchXG(fixtureId: string) {
+  try {
+    const r = await fetch(`${API}/api/live/stats?fixture=${fixtureId}`);
+    if (!r.ok) return null;
+    return (await r.json()) as { xgH: number; xgA: number };
+  } catch {
+    return null;
+  }
+}
+async function fetchOdds(fixtureId: string, minute: number) {
+  try {
+    // minute paramı ile akıllı odds (canlı/prematch + fallback)
+    const r = await fetch(`${API}/api/live/odds?fixture=${fixtureId}&market=1&minute=${minute}`);
+    if (!r.ok) return undefined;
+    const js = (await r.json()) as Odds;
+    // Boşların yerine undefined, frontend "—" gösterir
+    return {
+      H: isFiniteNum(js?.H) ? js.H : undefined,
+      D: isFiniteNum(js?.D) ? js.D : undefined,
+      A: isFiniteNum(js?.A) ? js.A : undefined,
+    };
+  } catch {
+    return undefined;
+  }
+}
+function isFiniteNum(n: any): n is number {
+  return typeof n === "number" && Number.isFinite(n);
+}
+
 /* -------------------- Helpers -------------------- */
 function formatXG(n: number | undefined) {
   const v = typeof n === "number" && Number.isFinite(n) ? n : 0;
@@ -295,7 +359,7 @@ const css = `
 .rail{position:relative;overflow:hidden;border-top:1px solid rgba(255,255,255,.06);border-bottom:1px solid rgba(255,255,255,.06)}
 .track{
   display:inline-flex;gap:12px;padding:10px 6px;
-  animation:marq 40s linear infinite; /* daha yavaş */
+  animation:marq var(--dur, 45s) linear infinite;
 }
 .rail:hover .track{animation-play-state:paused}
 @keyframes marq{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
@@ -308,19 +372,13 @@ const css = `
   border:1px solid rgba(255,255,255,.08);border-radius:14px;
   box-shadow:0 6px 16px rgba(0,0,0,.25),inset 0 0 0 1px rgba(255,255,255,.04)
 }
-.card:hover{filter:brightness(1.05)}
-
-/* xG üst şerit */
-.xg{
-  display:flex;align-items:center;gap:6px;
-  font-weight:900;color:#ffe3e3;
-  background:rgba(255,42,42,.12);border:1px solid rgba(255,42,42,.25);
-  padding:4px 8px;border-radius:10px;
-  width:max-content
+.card.live .min .dot{animation:blink 1s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
+.card.prematch .min.up .badge{
+  display:inline-block; padding:2px 6px; border-radius:8px;
+  background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12); color:#e8efff; font-size:11px;
 }
-.xgLabel{font-size:11px;letter-spacing:.4px;opacity:.9}
-.xgVal{font-size:13px}
-.xgSep{opacity:.7}
+.card:hover{filter:brightness(1.05)}
 
 /* üst satır */
 .top{display:flex;align-items:center;justify-content:space-between;font-size:12px}
@@ -329,8 +387,7 @@ const css = `
 .lgLogo{width:14px;height:14px;border-radius:3px;object-fit:contain;border:1px solid rgba(255,255,255,.15)}
 
 .min{display:inline-flex;align-items:center;gap:4px;color:#9ccaf7;font-size:12px}
-.min .dot{width:6px;height:6px;border-radius:999px;background:var(--red);box-shadow:0 0 10px rgba(255,42,42,.9);animation:blink 1s infinite}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
+.min .dot{width:6px;height:6px;border-radius:999px;background:var(--red);box-shadow:0 0 10px rgba(255,42,42,.9)}
 
 /* takımlar + skor */
 .teams{display:grid;grid-template-columns:1fr auto 1fr;gap:6px;align-items:center}
@@ -341,6 +398,17 @@ const css = `
 .score .h{color:#aef4ff}
 .score .a{color:#ffdede}
 .score .sep{opacity:.7}
+
+/* xG satırı (skorun altında) */
+.xg{
+  display:flex;align-items:center;gap:6px;
+  font-weight:900;color:#ffe3e3;
+  background:rgba(255,42,42,.12);border:1px solid rgba(255,42,42,.25);
+  padding:4px 8px;border-radius:10px;width:max-content
+}
+.xgLabel{font-size:11px;letter-spacing:.4px;opacity:.9}
+.xgVal{font-size:13px}
+.xgSep{opacity:.7}
 
 /* odds row */
 .odds{display:flex;gap:6px;margin-top:2px}
@@ -362,5 +430,8 @@ const css = `
   box-shadow:0 0 0 1px rgba(255,255,255,.15),0 6px 14px rgba(0,0,0,.25)
 }
 .ava.img{background:#0c1224;object-fit:cover}
-@media(max-width:420px){.card{min-width:220px;max-width:220px}}
+
+@media(max-width:420px){
+  .card{min-width:220px;max-width:220px}
+}
 `;
