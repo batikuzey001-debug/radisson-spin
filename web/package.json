@@ -1,4 +1,3 @@
-// web/package.json
 {
   "name": "frontend-web",
   "private": true,
@@ -7,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0 --port $PORT"
+    "preview": "vite preview --host 0.0.0.0 --port $PORT",
+    "start": "vite preview --host 0.0.0.0 --port $PORT"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -21,5 +21,8 @@
     "@types/react-dom": "^18.3.0",
     "vite": "^5.4.3",
     "@vitejs/plugin-react": "^4.3.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
