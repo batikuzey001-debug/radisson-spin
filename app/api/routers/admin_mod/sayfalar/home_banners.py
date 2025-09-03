@@ -48,6 +48,8 @@ def page(
     )
     login_text = _get_conf(db, "login_cta_text", "Radissonbet Giriş")
     login_url = _get_conf(db, "login_cta_url", "/")
+    online_min = _get_conf(db, "online_min", "")  # örn: 4800
+    online_max = _get_conf(db, "online_max", "")  # örn: 6800
 
     # --- Banner listesi ---
     rows = db.query(HomeBanner).order_by(HomeBanner.order.asc(), HomeBanner.id.desc()).all()
@@ -73,11 +75,19 @@ def page(
               <img src='{_e(logo_url)}' alt='Logo Önizleme' />
             </div>
           </div>
+
           <label class='field'><span>Giriş Butonu Metni</span>
-            <input name='login_cta_text' value='{_e(login_text)}' placeholder='Radissonbet Giriş'>
+            <input name='login_cta_text' value='{_e(login_text)}' placeholder='Giriş'>
           </label>
           <label class='field'><span>Giriş Butonu Linki</span>
             <input name='login_cta_url' value='{_e(login_url)}' placeholder='/' >
+          </label>
+
+          <label class='field'><span>Online Min</span>
+            <input name='online_min' type='number' inputmode='numeric' min='0' value='{_e(online_min)}' placeholder='örn: 4800'>
+          </label>
+          <label class='field'><span>Online Max</span>
+            <input name='online_max' type='number' inputmode='numeric' min='0' value='{_e(online_max)}' placeholder='örn: 6800'>
           </label>
         </div>
         <div class='form-actions'>
@@ -182,10 +192,14 @@ async def save_site_config(
     logo_url = _norm(form.get("logo_url"))
     login_text = _norm(form.get("login_cta_text"))
     login_url = _norm(form.get("login_cta_url"))
+    online_min = _norm(form.get("online_min"))
+    online_max = _norm(form.get("online_max"))
 
     _set_conf(db, "logo_url", logo_url or "")
-    _set_conf(db, "login_cta_text", login_text or "Radissonbet Giriş")
-    _set_conf(db, "login_cta_url", login_url or "/")
+    _set_conf(db, "login_cta_text", login_text or "Giriş")
+    _set_conf(db, "login_cta_url", login_url or "")
+    _set_conf(db, "online_min", online_min or "")
+    _set_conf(db, "online_max", online_max or "")
 
     db.commit()
     flash(request, "Site ayarları kaydedildi.", "success")
