@@ -7,6 +7,7 @@ from typing import List, Union
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy import text
 
 from app.core.config import settings
@@ -57,8 +58,20 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 # -----------------------------
 # Routers (çekirdek)
 # -----------------------------
-app.include_router(health_router)
-app.include_router(spin_router, prefix="/api")  # /api/spin/...
+app.include_router(health_router)                 # /health
+app.include_router(spin_router, prefix="/api")    # /api/spin/...
+
+# -----------------------------
+# Root & Status
+# -----------------------------
+@app.get("/", include_in_schema=False)
+def root():
+    # Neden: köke gelen istekleri Swagger'a yönlendirelim
+    return RedirectResponse(url="/docs", status_code=302)
+
+@app.get("/status")
+def status():
+    return JSONResponse({"ok": True, "service": "radisson-spin-backend"})
 
 # -----------------------------
 # Startup: tablo oluştur + idempotent mini migration + seed
