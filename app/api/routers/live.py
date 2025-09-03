@@ -21,10 +21,10 @@ Uçlar:
   - GET /api/live/odds?fixture={id}&market=1[&bookmaker=...][&minute=...]
       (akıllı: minute>0 canlı; değilse prematch; boşsa fallback)
   - GET /api/live/featured?limit=12[&include_leagues=32,29][&show_all=1][&debug=1]
-      * Popüler lig whitelist + önem puanı
+      * Kod içi popüler whitelist + önem puanı
       * Canlı yoksa 15 güne kadar (next=300) popüler maçlarla tamamlar
       * include_leagues: anlık whitelist’e ek (virgülle ayır)
-      * show_all=1: whitelist’i kapat (U17/Women/Youth/Reserve yine hariç)
+      * show_all=1: whitelist’i kapat (yalnız U17/Women/Youth/Reserve yine hariç)
       * debug=1: istatistik döndürür
 """
 
@@ -77,7 +77,7 @@ async def _fetch_json(url: str, headers: Dict[str, str], params: Dict[str, str |
 
 def _excluded_league_name(name: str) -> bool:
     """
-    U17/U19/U21/U23/Women/Youth/Reserve gibi alt yaş/rezerv/ kadın ligleri hariç.
+    U17/U19/U21/U23/Women/Youth/Reserve gibi alt yaş/rezerv/kadın ligleri hariç.
     """
     n = (name or "").lower()
     bad = ("u17", "u18", "u19", "u20", "u21", "u23", "women", "kadın", "youth", "reserve", "friendly youth")
@@ -157,9 +157,11 @@ async def fixture_stats(
 @router.get("/odds")
 async def fixture_odds(
     fixture: int = Query(..., description="Fixture (maç) ID"),
-    market: int = Query(1, description="Market ID (1 = 1X2 / Match Winner)"),
-    bookmaker: Optional[int] = Query(None, description="Bookmaker ID (opsiyonel)"),
+    market: int = Query(1, description="Prematch 1X2 = 1, Live Fulltime Result = 59"),
+    bookmaker: Optional[int] = Query(None, description="Bookmaker ID (opsiyonel; yoksa ilk mevcut)"),
     minute: Optional[int] = Query(None, description="Dakika (opsiyonel) — verilmezse fixture'tan alınır"),
+    market_live: int = Query(59, description="Canlı market (varsayılan 59: Fulltime Result)"),
+    market_prematch: int = Query(1, description="Prematch market (varsayılan 1: 1X2)"),
 ) -> Dict[str, Optional[float]]:
     headers = {"x-apisports-key": _api_key()}
 
@@ -168,16 +170,30 @@ async def fixture_odds(
         f_rows = f_js.get("response", []) or []
         minute = _to_int(((f_rows[0] or {}).get("fixture") or {}).get("status", {}).get("elapsed"))
 
-    paths = [f"{API_BASE}/odds/live", f"{API_BASE}/odds"] if (minute or 0) > 0 else [f"{API_BASE}/odds", f"{API_BASE}/odds/live"]
-    params = {"fixture": str(fixture), "market": str(market)}
-    if bookmaker:
-        params["bookmaker"] = str(bookmaker)
+    # öncelik: canlı/prematch
+    primary_market = market_live if (minute or 0) > 0 else market_prematch
+    secondary_market = market_prematch if (minute or 0) > 0 else market_live
 
-    for url in paths:
-        js = await _fetch_json(url, headers, params)
+    # 1) primary
+    parsed = await _fetch_odds_market(headers, fixture, primary_market, bookmaker)
+    if any(v is not None for v in parsed.values()):
+        return parsed
+    # 2) fallback secondary
+    return await _fetch_odds_market(headers, fixture, secondary_market, bookmaker)
+
+
+async def _fetch_odds_market(
+    headers: Dict[str, str], fixture: int, market: int, bookmaker: Optional[int]
+) -> Dict[str, Optional[float]]:
+    params = {"fixture": str(fixture), "market": str(market)}
+    # önce canlı endpointi dene; boşsa prematch'e, prematch'te de boşsa live'a bakacağız
+    urls = [f"{API_BASE}/odds/live", f"{API_BASE}/odds"]
+    for url in urls:
+        js = await _fetch_json(url, headers, params if not bookmaker else {**params, "bookmaker": str(bookmaker)})
         parsed = _parse_odds_response(js, market)
         if any(v is not None for v in parsed.values()):
             return parsed
+    # bookmaker belirtilmediyse ve hiç veri yoksa: herhangi ilk bookmaker'a fallback (bookmaker paramı yok hali zaten bunu yapar)
     return {"H": None, "D": None, "A": None}
 
 
@@ -186,6 +202,7 @@ def _parse_odds_response(js: Dict, market: int) -> Dict[str, Optional[float]]:
     items = js.get("response", []) or []
     if not items:
         return result
+    # ilk bookmaker/bet: market id eşleşirse parse
     for bm in items[0].get("bookmakers", []) or []:
         for bet in bm.get("bets", []) or []:
             try:
@@ -215,18 +232,16 @@ async def featured_matches(
     db: Annotated[Session, Depends(get_db)],
     limit: int = Query(12, ge=1, le=50, description="Toplam kart sayısı"),
     include_leagues: Optional[str] = Query(None, description="Virgüllü lig ID'leri (ör: 32,29)"),
-    show_all: int = Query(0, ge=0, le=1, description="1=whitelist kapalı (sadece alt yaş/kadın/rezerv hariç)"),
+    show_all: int = Query(0, ge=0, le=1, description="1=whitelist kapalı (U17/Women/Youth/Reserve hariç)"),
     debug: int = Query(0, ge=0, le=1, description="1=debug sayıları döndür"),
 ) -> Dict[str, List[Dict] | Dict]:
     headers = {"x-apisports-key": _api_key()}
     weights = _popular_weights(db, include_leagues, show_all)
 
-    # CANLI
     live_cards, dbg_live = await _fetch_live(headers, weights, show_all=bool(show_all))
     live_scored = sorted(live_cards, key=lambda x: x["_score"], reverse=True)
     live_out = [strip_score(x) for x in live_scored[:limit]]
 
-    # UPCOMING (15 güne kadar, next=300)
     upcoming_out: List[Dict] = []
     dbg_up: Dict[str, int] = {"raw": 0, "filtered": 0}
     if len(live_out) < limit:
@@ -259,21 +274,69 @@ def _popular_weights(
     show_all: bool,
 ) -> Dict[int, float]:
     """
-    Varsayılan popüler lig listesi (koddan, CMS gerekmeden).
-    Türkiye Kupası **206** olarak sabit.
-    include_leagues ile anlık ekleme yapılabilir.
-    show_all=True ise bu whitelist sadece 'weight lookup' için kalır; filtre uygulamayız.
+    KOD İÇİ POPÜLER LİGLER (yalnızca en popülerler):
+      - Big 5, TR lig/kupa
+      - UEFA kulüp turnuvaları
+      - Dünya/Avrupa/kıta milli turnuvaları ve ELEME’LERİ
+      - Bazı üst seviye ligler (Eredivisie, Primeira, Jupiler, MLS, Scotland)
     """
     DEFAULT_LIST: Dict[int, float] = {
-        # Avrupa büyük 5
-        39: 1.00, 140: 1.00, 135: 1.00, 78: 0.95, 61: 0.90,
+        # Big 5
+        39: 1.00,  # Premier League (ENG)
+        140: 1.00, # La Liga (ESP)
+        135: 1.00, # Serie A (ITA)
+        78: 0.95,  # Bundesliga (GER)
+        61: 0.90,  # Ligue 1 (FRA)
+
+        # Üst seviye ligler
+        88: 0.90,  # Eredivisie (NED)
+        94: 0.90,  # Primeira Liga (POR)
+        144: 0.85, # Jupiler Pro League (BEL)
+        179: 0.85, # Premiership (SCO)
+        253: 0.85, # MLS (USA)
+
         # Türkiye
-        203: 1.00, 204: 0.80, 206: 0.95,  # 206 DOĞRU ID (Türkiye Kupası)
-        # Avrupa kupaları
-        2: 1.20, 3: 1.05, 848: 0.95,
-        # Ulusal/elemeler
-        32: 1.20, 29: 1.10, 34: 1.10, 31: 1.00,
+        203: 1.00, # Süper Lig
+        204: 0.80, # 1. Lig
+        206: 0.95, # Türkiye Kupası
+        551: 0.70, # Türkiye Süper Kupa
+
+        # İngiltere kupaları
+        45: 0.95,  # FA Cup
+        48: 0.90,  # League Cup (EFL)
+
+        # Almanya kupası
+        81: 0.90,  # DFB Pokal
+
+        # İtalya / İspanya / Portekiz / Hollanda kupaları
+        137: 0.90, # Coppa Italia
+        143: 0.90, # Copa del Rey
+        96:  0.80, # Taça de Portugal
+        90:  0.80, # KNVB Beker
+
+        # UEFA kulüp turnuvaları
+        2:   1.20, # Champions League
+        3:   1.05, # Europa League
+        848: 0.95, # Europa Conference League
+        531: 0.90, # UEFA Super Cup
+
+        # Dünya & Kıta milli turnuvaları (final turnuvaları)
+        1:  1.30,  # World Cup
+        4:  1.10,  # EURO
+        6:  1.10,  # AFCON
+        9:  1.10,  # Copa America
+        22: 1.00,  # Gold Cup
+        7:  1.00,  # Asian Cup
+
+        # Dünya Kupası ELEME’LERİ (kıtalar)
+        32: 1.20,  # Europe Qual
+        29: 1.10,  # Africa Qual
+        34: 1.10,  # South America Qual
+        31: 1.00,  # CONCACAF Qual
+        30: 1.00,  # Asia Qual
+        33: 0.90,  # Oceania Qual
     }
+
     # CMS override (varsa)
     try:
         row = db.get(SiteConfig, "popular_leagues")
@@ -285,6 +348,7 @@ def _popular_weights(
                 DEFAULT_LIST[lid] = w
     except Exception:
         pass
+
     # URL ile ekleme
     if include_leagues:
         try:
