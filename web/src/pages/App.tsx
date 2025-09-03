@@ -1,24 +1,24 @@
 // web/src/pages/App.tsx
 import { Routes, Route } from "react-router-dom";
 import Header from "../components/Header";
-import SubNav from "../components/SubNav"; // yeni alt menü
+import SubNav from "../components/SubNav";
 import Home from "./Home";
-import AnaSayfaDemo from "./AnaSayfaDemo";
+
+// Yeni sayfalar (placeholder)
+import RadiCark from "./RadiCark";
+import Turnuvalar from "./Turnuvalar";
 
 export default function App() {
   return (
     <div className="app">
-      {/* Global Header */}
       <Header />
-      {/* Header altında alt menü */}
       <SubNav />
 
-      {/* Sayfa içerikleri */}
       <div className="page">
         <Routes>
           <Route path="/" element={<Home />} />
-          <Route path="/demo" element={<AnaSayfaDemo />} />
-          <Route path="/spin" element={<div>Spin sayfası (yakında)</div>} />
+          <Route path="/cark" element={<RadiCark />} />
+          <Route path="/turnuvalar" element={<Turnuvalar />} />
         </Routes>
       </div>
 
