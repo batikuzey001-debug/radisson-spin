@@ -2,7 +2,7 @@
 from fastapi import APIRouter
 
 # Alt sayfalar (zorunlu)
-from .sayfalar import loginpage, panel, kodyonetimi, turnuvabonus
+from .sayfalar import loginpage, panel, kodyonetimi, turnuvabonus, home_banners
 
 # Not:
 # Eğer alt router'larda yollar zaten '/admin/...' ile başlıyorsa,
@@ -22,6 +22,9 @@ admin_router.include_router(kodyonetimi.router)
 
 # Turnuva / Bonus (/admin/turnuvabonus)
 admin_router.include_router(turnuvabonus.router)
+
+# Ana Sayfa Banner Yönetimi (/admin/home-banners)
+admin_router.include_router(home_banners.router)
 
 # Admin kullanıcı yönetimi (/admin/users) — dosya varsa ekle
 try:
