@@ -56,7 +56,6 @@ app.add_middleware(
 # -----------------------------
 # Session (admin için gerekli)
 # -----------------------------
-app.add_mmiddleware = app.add_middleware  # type: ignore[attr-defined]
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.SECRET_KEY,
@@ -86,7 +85,6 @@ app.include_router(admin_router)                  # /admin/...
 def root():
     return RedirectResponse(url="/docs", status_code=302)
 
-
 @app.get("/status")
 def status():
     return JSONResponse({"ok": True, "service": "radisson-spin-backend"})
@@ -98,7 +96,6 @@ def status():
 def admin_root():
     # /admin -> /admin/panel
     return RedirectResponse(url="/admin/panel", status_code=303)
-
 
 @app.exception_handler(StarletteHTTPException)
 async def _admin_auth_redirect(request: Request, exc: StarletteHTTPException):
