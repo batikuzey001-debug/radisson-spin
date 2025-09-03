@@ -18,18 +18,22 @@ ENV: API_FOOTBALL_KEY
 Uçlar:
   - GET /api/live/matches
   - GET /api/live/stats?fixture={id}
-  - GET /api/live/odds?fixture={id}&market=1[&bookmaker=...][&minute=...]
-      (akıllı: minute>0 canlı; değilse prematch; boşsa fallback)
+  - GET /api/live/odds?fixture={id}        (SABİT: bookmaker=8 Bet365, market=1/59 akıllı)
   - GET /api/live/featured?limit=12[&include_leagues=32,29][&show_all=1][&debug=1]
       * Kod içi popüler whitelist + önem puanı
       * Canlı yoksa 15 güne kadar (next=300) popüler maçlarla tamamlar
       * include_leagues: anlık whitelist’e ek (virgülle ayır)
-      * show_all=1: whitelist’i kapat (yalnız U17/Women/Youth/Reserve yine hariç)
+      * show_all=1: whitelist’i kapat (yalnız U17/Women/Youth/Reserve hariç)
       * debug=1: istatistik döndürür
 """
 
 router = APIRouter(prefix="/live", tags=["live"])
 API_BASE = "https://v3.football.api-sports.io"
+
+# SABİTLER (değiştirmeyin)
+BOOKMAKER_DEFAULT = 8     # Bet365
+MARKET_PREMATCH_1X2 = 1   # 1X2
+MARKET_LIVE_FTR    = 59   # Fulltime Result (live)
 
 
 # ------------------------------
@@ -115,7 +119,7 @@ async def list_live_matches(
                 "id": str(fixture.get("id") or ""),
                 "league": league_name,
                 "leagueLogo": league_obj.get("logo") or "",
-                "leagueFlag": league_obj.get("flag") or "",  # <-- ÜLKE BAYRAĞI
+                "leagueFlag": league_obj.get("flag") or "",  # Ülke bayrağı
                 "home": {"name": home.get("name") or "Home", "logo": home.get("logo") or ""},
                 "away": {"name": away.get("name") or "Away", "logo": away.get("logo") or ""},
                 "minute": minute,
@@ -153,43 +157,54 @@ async def fixture_stats(
 
 
 # ------------------------------
-# Odds (smart prematch/live + fallback)
+# Odds (SABİT bookmaker + SABİT market aklı)
 # ------------------------------
 @router.get("/odds")
 async def fixture_odds(
     fixture: int = Query(..., description="Fixture (maç) ID"),
-    market: int = Query(1, description="Prematch 1X2 = 1, Live Fulltime Result = 59"),
-    bookmaker: Optional[int] = Query(None, description="Bookmaker ID (opsiyonel; yoksa ilk mevcut)"),
-    minute: Optional[int] = Query(None, description="Dakika (opsiyonel) — verilmezse fixture'tan alınır"),
-    market_live: int = Query(59, description="Canlı market (varsayılan 59: Fulltime Result)"),
-    market_prematch: int = Query(1, description="Prematch market (varsayılan 1: 1X2)"),
 ) -> Dict[str, Optional[float]]:
+    """
+    Kural:
+      - minute>0 (canlı): market=59 (Fulltime Result), bookmaker=8 (Bet365), yoksa prematch(1)
+      - minute=0 (maç önü): market=1 (1X2), bookmaker=8, yoksa live(59)
+      - Hiçbiri yoksa {H/D/A: None}
+    """
     headers = {"x-apisports-key": _api_key()}
 
-    if minute is None:
-        f_js = await _fetch_json(f"{API_BASE}/fixtures", headers, {"id": str(fixture)})
-        f_rows = f_js.get("response", []) or []
-        minute = _to_int(((f_rows[0] or {}).get("fixture") or {}).get("status", {}).get("elapsed"))
+    # dakika tespiti
+    f_js = await _fetch_json(f"{API_BASE}/fixtures", headers, {"id": str(fixture)})
+    f_rows = f_js.get("response", []) or []
+    minute = _to_int(((f_rows[0] or {}).get("fixture") or {}).get("status", {}).get("elapsed"))
 
-    # öncelik: canlı/prematch
-    primary_market = market_live if (minute or 0) > 0 else market_prematch
-    secondary_market = market_prematch if (minute or 0) > 0 else market_live
+    # canlı mı prematch mi?
+    primary_market = MARKET_LIVE_FTR if minute > 0 else MARKET_PREMATCH_1X2
+    secondary_market = MARKET_PREMATCH_1X2 if minute > 0 else MARKET_LIVE_FTR
 
-    # 1) primary
-    parsed = await _fetch_odds_market(headers, fixture, primary_market, bookmaker)
+    # 1) primary: önce bookmaker=8 (Bet365), sonra herhangi bookmaker
+    parsed = await _fetch_odds_market(headers, fixture, primary_market, BOOKMAKER_DEFAULT)
+    if not any(v is not None for v in parsed.values()):
+        parsed = await _fetch_odds_market(headers, fixture, primary_market, None)
+
     if any(v is not None for v in parsed.values()):
         return parsed
-    # 2) fallback secondary
-    return await _fetch_odds_market(headers, fixture, secondary_market, bookmaker)
+
+    # 2) fallback secondary: yine önce Bet365, sonra herhangi
+    parsed = await _fetch_odds_market(headers, fixture, secondary_market, BOOKMAKER_DEFAULT)
+    if not any(v is not None for v in parsed.values()):
+        parsed = await _fetch_odds_market(headers, fixture, secondary_market, None)
+
+    return parsed
 
 
 async def _fetch_odds_market(
     headers: Dict[str, str], fixture: int, market: int, bookmaker: Optional[int]
 ) -> Dict[str, Optional[float]]:
     params = {"fixture": str(fixture), "market": str(market)}
-    urls = [f"{API_BASE}/odds/live", f"{API_BASE}/odds"]  # önce live sonra prematch dene
+    # canlı → prematch sırayla dene (bazı maçlarda canlı yok)
+    urls = [f"{API_BASE}/odds/live", f"{API_BASE}/odds"]
     for url in urls:
-        js = await _fetch_json(url, headers, params if not bookmaker else {**params, "bookmaker": str(bookmaker)})
+        q = params if bookmaker is None else {**params, "bookmaker": str(bookmaker)}
+        js = await _fetch_json(url, headers, q)
         parsed = _parse_odds_response(js, market)
         if any(v is not None for v in parsed.values()):
             return parsed
@@ -201,6 +216,7 @@ def _parse_odds_response(js: Dict, market: int) -> Dict[str, Optional[float]]:
     items = js.get("response", []) or []
     if not items:
         return result
+    # Tek event (items[0]) → bookmakers → bets (id==market) → values(Home/Draw/Away)
     for bm in items[0].get("bookmakers", []) or []:
         for bet in bm.get("bets", []) or []:
             try:
@@ -272,7 +288,7 @@ def _popular_weights(
     show_all: bool,
 ) -> Dict[int, float]:
     """
-    KOD İÇİ POPÜLER LİGLER (yalnızca en popülerler):
+    KOD İÇİ POPÜLER LİGLER (özet whitelist):
       - Big 5, TR lig/kupa
       - UEFA kulüp turnuvaları
       - Dünya/Avrupa/kıta milli turnuvaları ve ELEME’LERİ
@@ -281,7 +297,7 @@ def _popular_weights(
     DEFAULT_LIST: Dict[int, float] = {
         # Big 5
         39: 1.00, 140: 1.00, 135: 1.00, 78: 0.95, 61: 0.90,
-        # Üst seviye ligler
+        # Üst ligler
         88: 0.90, 94: 0.90, 144: 0.85, 179: 0.85, 253: 0.85,
         # Türkiye
         203: 1.00, 204: 0.80, 206: 0.95, 551: 0.70,
@@ -289,13 +305,13 @@ def _popular_weights(
         45: 0.95, 48: 0.90,
         # Almanya kupası
         81: 0.90,
-        # İtalya / İspanya / Portekiz / Hollanda kupaları
+        # IT/ES/PT/NL kupaları
         137: 0.90, 143: 0.90, 96: 0.80, 90: 0.80,
         # UEFA kulüp turnuvaları
         2: 1.20, 3: 1.05, 848: 0.95, 531: 0.90,
-        # Dünya & Kıta milli turnuvaları (final turnuvaları)
+        # Milli turnuvalar (final)
         1: 1.30, 4: 1.10, 6: 1.10, 9: 1.10, 22: 1.00, 7: 1.00,
-        # Dünya Kupası ELEME’LERİ (kıtalar)
+        # WC ELEME
         32: 1.20, 29: 1.10, 34: 1.10, 31: 1.00, 30: 1.00, 33: 0.90,
     }
 
@@ -377,7 +393,7 @@ async def _fetch_live(
                 "id": str(fixture.get("id") or ""),
                 "league": lname,
                 "leagueLogo": league.get("logo") or "",
-                "leagueFlag": league.get("flag") or "",  # <-- ÜLKE BAYRAĞI
+                "leagueFlag": league.get("flag") or "",
                 "home": {"name": h.get("name") or "Home", "logo": h.get("logo") or ""},
                 "away": {"name": a.get("name") or "Away", "logo": a.get("logo") or ""},
                 "minute": minute,
@@ -436,7 +452,7 @@ async def _fetch_upcoming(
                 "id": str(fixture.get("id") or ""),
                 "league": lname,
                 "leagueLogo": league.get("logo") or "",
-                "leagueFlag": league.get("flag") or "",  # <-- ÜLKE BAYRAĞI
+                "leagueFlag": league.get("flag") or "",
                 "home": {"name": h.get("name") or "Home", "logo": h.get("logo") or ""},
                 "away": {"name": a.get("name") or "Away", "logo": a.get("logo") or ""},
                 "minute": 0,
