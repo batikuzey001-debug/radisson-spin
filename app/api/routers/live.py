@@ -1,5 +1,5 @@
 # app/api/routers/live.py
-from typing import Annotated, Dict, List, Optional
+from typing import Annotated, Dict, List, Optional, Tuple
 import os
 import json
 from datetime import datetime, timezone
@@ -19,6 +19,7 @@ Uçlar:
   - GET /api/live/matches
   - GET /api/live/stats?fixture={id}
   - GET /api/live/odds?fixture={id}&market=1[&bookmaker=...][&minute=...]
+      (akıllı: minute>0 ise canlı, yoksa prematch; boşsa fallback)
   - GET /api/live/featured?limit=12
       * Sadece popüler ligler (major + TR lig/kupalar + Avrupa/ulusal)
       * Canlı maçları önem puanına göre sırala
@@ -28,23 +29,18 @@ Uçlar:
 router = APIRouter(prefix="/live", tags=["live"])
 API_BASE = "https://v3.football.api-sports.io"
 
-
-# ------------------------------
-# Helpers
-# ------------------------------
+# -------------- helpers --------------
 def _api_key() -> str:
     key = os.getenv("API_FOOTBALL_KEY", "").strip()
     if not key:
         raise HTTPException(status_code=500, detail="API_FOOTBALL_KEY missing in environment")
     return key
 
-
 def _to_int(v) -> int:
     try:
         return int(v) if v is not None else 0
     except (TypeError, ValueError):
         return 0
-
 
 def _to_float(v) -> float:
     try:
@@ -56,10 +52,8 @@ def _to_float(v) -> float:
     except (TypeError, ValueError):
         return 0.0
 
-
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
-
 
 async def _fetch_json(url: str, headers: Dict[str, str], params: Dict[str, str | int]) -> Dict:
     async with httpx.AsyncClient(timeout=12.0) as client:
@@ -71,23 +65,16 @@ async def _fetch_json(url: str, headers: Dict[str, str], params: Dict[str, str |
         raise HTTPException(status_code=resp.status_code, detail=resp.text)
     return resp.json() or {}
 
-
-# ------------------------------
-# Matches (live)
-# ------------------------------
+# -------------- matches (live) --------------
 @router.get("/matches")
 async def list_live_matches(
     db: Annotated[Session, Depends(get_db)],
-    league: Optional[str] = Query(None, description="Lig adı filtresi (örn: 'Süper Lig')"),
-    limit: int = Query(50, ge=1, le=200, description="Maksimum maç sayısı"),
+    league: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
 ) -> List[Dict]:
     headers = {"x-apisports-key": _api_key()}
-    url = f"{API_BASE}/fixtures"
-    params = {"live": "all"}
-
-    js = await _fetch_json(url, headers, params)
+    js = await _fetch_json(f"{API_BASE}/fixtures", headers, {"live": "all"})
     items = js.get("response", []) or []
-
     out: List[Dict] = []
     for it in items:
         fixture = it.get("fixture") or {}
@@ -95,13 +82,10 @@ async def list_live_matches(
         teams = it.get("teams") or {}
         goals = it.get("goals") or {}
 
-        status = fixture.get("status") or {}
-        minute = _to_int(status.get("elapsed"))
-
+        minute = _to_int((fixture.get("status") or {}).get("elapsed"))
         league_name = league_obj.get("name") or ""
         if league and league_name != league:
             continue
-
         home = teams.get("home") or {}
         away = teams.get("away") or {}
 
@@ -115,31 +99,19 @@ async def list_live_matches(
                 "minute": minute,
                 "scoreH": _to_int(goals.get("home")),
                 "scoreA": _to_int(goals.get("away")),
-                "kickoff": fixture.get("date") or "",  # ISO
+                "kickoff": fixture.get("date") or "",
             }
         )
         if len(out) >= limit:
             break
-
     return out
 
-
-# ------------------------------
-# Fixture Statistics -> xG
-# ------------------------------
+# -------------- stats (xG) --------------
 @router.get("/stats")
-async def fixture_stats(
-    fixture: int = Query(..., description="Fixture (maç) ID"),
-) -> Dict[str, float]:
+async def fixture_stats(fixture: int = Query(...)) -> Dict[str, float]:
     headers = {"x-apisports-key": _api_key()}
-    url = f"{API_BASE}/fixtures/statistics"
-    params = {"fixture": str(fixture)}
-
-    js = await _fetch_json(url, headers, params)
+    js = await _fetch_json(f"{API_BASE}/fixtures/statistics", headers, {"fixture": str(fixture)})
     rows = js.get("response", []) or []
-
-    xg_home = 0.0
-    xg_away = 0.0
 
     def _find_xg(stats_list: List[Dict]) -> float:
         for s in stats_list or []:
@@ -148,37 +120,23 @@ async def fixture_stats(
                 return _to_float(s.get("value"))
         return 0.0
 
-    if len(rows) >= 1:
-        xg_home = _find_xg(rows[0].get("statistics") or [])
-    if len(rows) >= 2:
-        xg_away = _find_xg(rows[1].get("statistics") or [])
-
+    xg_home = _find_xg((rows[0] or {}).get("statistics") or []) if len(rows) >= 1 else 0.0
+    xg_away = _find_xg((rows[1] or {}).get("statistics") or []) if len(rows) >= 2 else 0.0
     return {"fixture": fixture, "xgH": round(xg_home, 2), "xgA": round(xg_away, 2)}
 
-
-# ------------------------------
-# Odds (akıllı: canlı/prematch + fallback)
-# ------------------------------
+# -------------- odds (smart prematch/live + fallback) --------------
 @router.get("/odds")
 async def fixture_odds(
-    fixture: int = Query(..., description="Fixture (maç) ID"),
-    market: int = Query(1, description="Market ID (1 = 1X2 / Match Winner)"),
-    bookmaker: Optional[int] = Query(None, description="Bookmaker ID (opsiyonel)"),
-    minute: Optional[int] = Query(None, description="Dakika (opsiyonel) — verilmezse fixture'tan alınır"),
+    fixture: int = Query(...),
+    market: int = Query(1),
+    bookmaker: Optional[int] = Query(None),
+    minute: Optional[int] = Query(None),
 ) -> Dict[str, Optional[float]]:
     headers = {"x-apisports-key": _api_key()}
-
     if minute is None:
-        # fixture detayından dakika tespit
         f_js = await _fetch_json(f"{API_BASE}/fixtures", headers, {"id": str(fixture)})
         f_rows = f_js.get("response", []) or []
-        if f_rows:
-            status = (f_rows[0].get("fixture") or {}).get("status") or {}
-            minute = _to_int(status.get("elapsed"))
-        else:
-            minute = 0
-
-    # minute >0 canlı; aksi prematch; boşta fallback
+        minute = _to_int(((f_rows[0] or {}).get("fixture") or {}).get("status", {}).get("elapsed"))
     paths = [f"{API_BASE}/odds/live", f"{API_BASE}/odds"] if (minute or 0) > 0 else [f"{API_BASE}/odds", f"{API_BASE}/odds/live"]
     params = {"fixture": str(fixture), "market": str(market)}
     if bookmaker:
@@ -190,7 +148,6 @@ async def fixture_odds(
         if any(v is not None for v in parsed.values()):
             return parsed
     return {"H": None, "D": None, "A": None}
-
 
 def _parse_odds_response(js: Dict, market: int) -> Dict[str, Optional[float]]:
     result: Dict[str, Optional[float]] = {"H": None, "D": None, "A": None}
@@ -217,14 +174,11 @@ def _parse_odds_response(js: Dict, market: int) -> Dict[str, Optional[float]]:
             return result
     return result
 
-
-# ------------------------------
-# Featured: Popüler maçlar (live / upcoming)
-# ------------------------------
+# -------------- featured (popular live/upcoming) --------------
 @router.get("/featured")
 async def featured_matches(
     db: Annotated[Session, Depends(get_db)],
-    limit: int = Query(12, ge=1, le=50, description="Toplam kart sayısı"),
+    limit: int = Query(12, ge=1, le=50),
 ) -> Dict[str, List[Dict]]:
     headers = {"x-apisports-key": _api_key()}
     weights = _popular_weights(db)
@@ -236,37 +190,44 @@ async def featured_matches(
     upcoming_out: List[Dict] = []
     if len(live_out) < limit:
         need = limit - len(live_out)
-        # 15 güne kadar: next=300
         upcoming_cards = await _fetch_upcoming(headers, weights, next_count=300)
         up_sorted = sorted(upcoming_cards, key=lambda x: x["_score"], reverse=True)
         upcoming_out = [strip_score(x) for x in up_sorted[:need]]
 
     return {"live": live_out, "upcoming": upcoming_out}
 
-
 # ---- internal funcs ----
 def strip_score(item: Dict) -> Dict:
     item.pop("_score", None)
     return item
 
-
 def _popular_weights(db: Session) -> Dict[int, float]:
+    """
+    Varsayılan popüler lig listesi (koddan, CMS gerekmeden).
+    Türkiye Kupası **206** olarak eklendi.
+    """
     DEFAULT_LIST: Dict[int, float] = {
+        # Avrupa büyük 5
         39: 1.00,   # EPL
         140: 1.00,  # La Liga
         135: 1.00,  # Serie A
         78: 0.95,   # Bundesliga
         61: 0.90,   # Ligue 1
-        203: 1.00,  # TR Süper Lig
-        204: 0.80,  # TR 1. Lig
-        286: 0.90,  # Türkiye Kupası
-        2: 1.20,    # UCL
-        3: 1.05,    # UEL
-        848: 0.95,  # UECL (yaygın id)
-        1: 1.30,    # Dünya Kupası
-        4: 1.10,    # EURO
-        5: 0.90,    # UNL
+        # Türkiye
+        203: 1.00,  # Süper Lig
+        204: 0.80,  # 1. Lig
+        206: 0.95,  # Türkiye Kupası (DOĞRU ID)  <-- EKLENDİ
+        # Avrupa kupaları
+        2: 1.20,    # UEFA Champions League
+        3: 1.05,    # UEFA Europa League
+        848: 0.95,  # UEFA Conference League
+        # Ulusal/elemeler (isteğe bağlı popüler)
+        32: 1.20,   # World Cup - Qualification Europe
+        29: 1.10,   # World Cup - Qualification Africa
+        34: 1.10,   # World Cup - Qualification South America
+        31: 1.00,   # World Cup - Qualification CONCACAF
     }
+    # CMS override (varsa kod üzerini ezmez, üstüne yazar)
     try:
         row = db.get(SiteConfig, "popular_leagues")
         if row and row.value_text:
@@ -279,20 +240,15 @@ def _popular_weights(db: Session) -> Dict[int, float]:
         pass
     return DEFAULT_LIST
 
-
 def _excluded_league_name(name: str) -> bool:
     n = (name or "").lower()
     bad = ("u17", "u18", "u19", "u20", "u21", "u23", "women", "kadın", "youth", "reserve", "friendly youth")
     return any(b in n for b in bad)
 
-
 async def _fetch_live(headers: Dict[str, str], weights: Dict[int, float]) -> List[Dict]:
-    url = f"{API_BASE}/fixtures"
-    params = {"live": "all"}
-    out: List[Dict] = []
-
-    js = await _fetch_json(url, headers, params)
+    js = await _fetch_json(f"{API_BASE}/fixtures", headers, {"live": "all"})
     rows = js.get("response", []) or []
+    out: List[Dict] = []
     for it in rows:
         fixture = it.get("fixture") or {}
         league = it.get("league") or {}
@@ -310,8 +266,6 @@ async def _fetch_live(headers: Dict[str, str], weights: Dict[int, float]) -> Lis
         gh = _to_int(goals.get("home"))
         ga = _to_int(goals.get("away"))
 
-        score = _live_score(lig_w=weights.get(lid, 0.5), minute=minute, diff=abs(gh - ga), total=gh + ga)
-
         out.append(
             {
                 "id": str(fixture.get("id") or ""),
@@ -323,12 +277,10 @@ async def _fetch_live(headers: Dict[str, str], weights: Dict[int, float]) -> Lis
                 "scoreH": gh,
                 "scoreA": ga,
                 "kickoff": fixture.get("date") or "",
-                "_score": score + 0.5,
+                "_score": _live_score(weights.get(lid, 0.5), minute, abs(gh - ga), gh + ga) + 0.5,
             }
         )
-
     return out
-
 
 def _live_score(lig_w: float, minute: int, diff: int, total: int) -> float:
     s = lig_w
@@ -346,18 +298,11 @@ def _live_score(lig_w: float, minute: int, diff: int, total: int) -> float:
         s += 0.10
     return s
 
-
 async def _fetch_upcoming(headers: Dict[str, str], weights: Dict[int, float], next_count: int = 300) -> List[Dict]:
-    """
-    Yaklaşan popüler maçlar (15 güne kadar): /fixtures?next=300
-    """
-    url = f"{API_BASE}/fixtures"
-    params = {"next": next_count}
-    out: List[Dict] = []
-
-    js = await _fetch_json(url, headers, params)
+    js = await _fetch_json(f"{API_BASE}/fixtures", headers, {"next": next_count})
     now = _now_utc()
     rows = js.get("response", []) or []
+    out: List[Dict] = []
     for it in rows:
         fixture = it.get("fixture") or {}
         league = it.get("league") or {}
@@ -377,8 +322,6 @@ async def _fetch_upcoming(headers: Dict[str, str], weights: Dict[int, float], ne
         hours_to_kick = max(0.0, (kick - now).total_seconds() / 3600.0)
         time_score = max(0.0, 24.0 - hours_to_kick) / 24.0  # daha yakınsa yüksek
 
-        s = weights.get(lid, 0.5) + time_score
-
         h = teams.get("home") or {}
         a = teams.get("away") or {}
 
@@ -393,8 +336,7 @@ async def _fetch_upcoming(headers: Dict[str, str], weights: Dict[int, float], ne
                 "scoreH": 0,
                 "scoreA": 0,
                 "kickoff": dt_str or "",
-                "_score": s,
+                "_score": weights.get(lid, 0.5) + time_score,
             }
         )
-
     return out
