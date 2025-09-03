@@ -1,15 +1,15 @@
 // web/src/pages/AnaSayfaDemo.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
-import Header from "../components/Header";
 
 /**
  * DEMO • Popüler Maçlar (Canlı & Yakında) – xG + Oranlar + Geri Sayım
- * Revizyon:
- *  - Arka plan: ÜLKE BAYRAĞI (varsa) → yoksa lig logosu
- *  - Dakika: pulsing yok, yalnızca BÜYÜK ve belirgin metin
+ * İsteklere göre:
+ *  - Header YOK (sadece kartlar)
+ *  - Kart arka planı: ÜLKE BAYRAĞI (leagueFlag) → okunabilirlik için koyu cam overlay
+ *  - Yazılar/isimler her zaman okunur (backdrop-blur + gradient)
+ *  - Skor çerçevesiz, büyük, parıltılı (dikkat çekici)
  *  - Takım isimleri kelime kelime alt satıra kayar (harf bölünmez)
- *  - Lig ve takım logoları daha büyük, çerçevesiz (PNG gibi)
- *  - xG / Oranlar veri yoksa hiç gösterilmez
+ *  - xG / Oranlar veri yoksa çizilmez
  */
 
 const API = import.meta.env.VITE_API_BASE_URL;
@@ -19,7 +19,7 @@ type Match = {
   id: string;
   league: string;
   leagueLogo?: string;   // fallback
-  leagueFlag?: string;   // ülke bayrağı (varsa bunu kullan)
+  leagueFlag?: string;   // ülke bayrağı
   home: Team;
   away: Team;
   minute: number;        // 0 => başlamamış
@@ -34,7 +34,6 @@ type Enriched = Match & { xgH: number; xgA: number; odds?: Odds };
 export default function AnaSayfaDemo() {
   return (
     <div className="demo">
-      <Header />
       <FeaturedStrips />
       <style>{css}</style>
     </div>
@@ -154,7 +153,7 @@ function MatchCard({ m }: { m: Enriched }) {
     const prev = prevRef.current;
     if (m.scoreH > prev.h || m.scoreA > prev.a) {
       setFlash(true);
-      const t = setTimeout(() => setFlash(false), 2000);
+      const t = setTimeout(() => setFlash(false), 1800);
       prevRef.current = { h: m.scoreH, a: m.scoreA };
       return () => clearTimeout(t);
     }
@@ -173,61 +172,55 @@ function MatchCard({ m }: { m: Enriched }) {
       style={bgImage ? ({ ["--bgimg" as any]: `url('${bgImage}')` } as any) : undefined}
       title={`${m.league} • ${m.home.name} vs ${m.away.name}`}
     >
-      {/* üst satır */}
+      {/* Üst satır: Lig + Dakika/Geri sayım */}
       <div className="top">
         <div className="league">
-          {/* ön yüzde küçük logo/flag gösterim (çerçevesiz) */}
-          {bgImage ? <img className="lgLogo big" src={bgImage} alt="" /> : null}
+          {bgImage ? <img className="lgLogo" src={bgImage} alt="" /> : null}
           <span className="lg">{m.league}</span>
         </div>
-        <div className="min">
-          {isLive ? (
-            <span className="minText">{m.minute}'</span> // sade ve büyük
-          ) : m.kickoff ? (
-            <span className="minText pre"><Countdown iso={m.kickoff} /></span>
-          ) : (
-            <span className="minText pre">MAÇ ÖNÜ</span>
-          )}
-        </div>
+        <div className="minText">{isLive ? `${m.minute}'` : m.kickoff ? <Countdown iso={m.kickoff} /> : "MAÇ ÖNÜ"}</div>
       </div>
 
-      {/* takımlar + skor */}
-      <div className="teams">
-        <div className="side">
-          <TeamLogo name={m.home.name} logo={m.home.logo} size={42} />
-          <span className="name">{m.home.name}</span>
+      {/* İçeriği taşıyan cam panel (okunabilirlik için) */}
+      <div className="glass">
+        {/* Takımlar + Skor */}
+        <div className="teams">
+          <div className="side">
+            <TeamLogo name={m.home.name} logo={m.home.logo} size={46} />
+            <span className="name">{m.home.name}</span>
+          </div>
+
+          <div className="score">
+            <span className="h">{m.scoreH}</span>
+            <span className="sep">:</span>
+            <span className="a">{m.scoreA}</span>
+          </div>
+
+          <div className="side right">
+            <TeamLogo name={m.away.name} logo={m.away.logo} size={46} />
+            <span className="name">{m.away.name}</span>
+          </div>
         </div>
 
-        <div className="score">
-          <span className="h">{m.scoreH}</span>
-          <span className="sep">-</span>
-          <span className="a">{m.scoreA}</span>
-        </div>
+        {/* xG – sadece veri varsa */}
+        {hasXG && (
+          <div className="xg">
+            <span className="xgLabel">xG</span>
+            <span className="xgVal">{formatXG(m.xgH)}</span>
+            <span className="xgSep">:</span>
+            <span className="xgVal">{formatXG(m.xgA)}</span>
+          </div>
+        )}
 
-        <div className="side right">
-          <TeamLogo name={m.away.name} logo={m.away.logo} size={42} />
-          <span className="name">{m.away.name}</span>
-        </div>
+        {/* Oran çipleri – sadece veri varsa */}
+        {hasOdds && (
+          <div className="odds">
+            {m.odds?.H ? <OddChip label="1" value={m.odds.H} /> : null}
+            {m.odds?.D ? <OddChip label="X" value={m.odds.D} /> : null}
+            {m.odds?.A ? <OddChip label="2" value={m.odds.A} /> : null}
+          </div>
+        )}
       </div>
-
-      {/* xG – sadece veri varsa */}
-      {hasXG && (
-        <div className="xg">
-          <span className="xgLabel">xG</span>
-          <span className="xgVal">{formatXG(m.xgH)}</span>
-          <span className="xgSep">:</span>
-          <span className="xgVal">{formatXG(m.xgA)}</span>
-        </div>
-      )}
-
-      {/* Oran çipleri – sadece veri varsa */}
-      {hasOdds && (
-        <div className="odds">
-          {m.odds?.H ? <OddChip label="1" value={m.odds.H} /> : null}
-          {m.odds?.D ? <OddChip label="X" value={m.odds.D} /> : null}
-          {m.odds?.A ? <OddChip label="2" value={m.odds.A} /> : null}
-        </div>
-      )}
     </a>
   );
 }
@@ -259,7 +252,7 @@ function Countdown({ iso }: { iso: string }) {
 }
 
 /* Logo varsa göster, kırık/boşsa avatar fallback (boyut ayarlı) */
-function TeamLogo({ name, logo, size = 36 }: { name: string; logo?: string; size?: number }) {
+function TeamLogo({ name, logo, size = 42 }: { name: string; logo?: string; size?: number }) {
   const [imgOk, setImgOk] = useState<boolean>(!!logo);
   const initials = useMemo(() => {
     const parts = name.split(" ").filter(Boolean);
@@ -283,15 +276,7 @@ function TeamLogo({ name, logo, size = 36 }: { name: string; logo?: string; size
     );
   }
   return (
-    <span
-      className="ava"
-      style={{
-        width: size,
-        height: size,
-        background:
-          "linear-gradient(160deg, rgba(255,255,255,.15), rgba(255,255,255,.05))",
-      }}
-    >
+    <span className="ava" style={{ width: size, height: size }}>
       {initials}
     </span>
   );
@@ -345,95 +330,116 @@ const css = `
   --chip:#141b33; --line:#1d2747; --aqua:#00e5ff; --red:#ff2a2a; --goal:#18ff74;
 }
 *{box-sizing:border-box}
+body{margin:0}
 .demo{min-height:100vh;background:linear-gradient(180deg,var(--bg),var(--bg2))}
 
-.liveWrap{max-width:1200px;margin:12px auto 0;padding:0 16px}
+/* Bölüm başlıkları */
+.liveWrap{max-width:1200px;margin:16px auto 0;padding:0 16px}
 .liveHead{display:flex;align-items:center;gap:10px;color:#dfe8ff;margin:6px 0 8px}
 .liveHead .led{width:8px;height:8px;border-radius:999px;background:#00ffa6;box-shadow:0 0 12px rgba(0,255,166,.9)}
 .liveHead .title{font-weight:900;letter-spacing:.6px;font-size:13px}
 .liveHead .sub{color:#9fb1cc;font-size:12px}
 
+/* Kayan ray */
 .rail{position:relative;overflow:hidden;border-top:1px solid rgba(255,255,255,.06);border-bottom:1px solid rgba(255,255,255,.06)}
-.track{display:inline-flex;gap:12px;padding:10px 6px;animation:marq var(--dur, 45s) linear infinite}
+.track{display:inline-flex;gap:14px;padding:12px 6px;animation:marq var(--dur, 45s) linear infinite}
 .rail:hover .track{animation-play-state:paused}
 @keyframes marq{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
 
+/* Kart */
 .card{
-  position:relative;
-  display:flex;flex-direction:column;gap:12px;
-  min-width:340px;max-width:340px;padding:16px;
-  text-decoration:none;color:#eaf2ff;
-  background:linear-gradient(180deg, rgba(11,17,34,.9), rgba(10,18,35,.85));
-  border:1px solid rgba(255,255,255,.10);border-radius:18px;
-  box-shadow:0 10px 18px rgba(0,0,0,.28), inset 0 0 0 1px rgba(255,255,255,.05);
-  overflow:hidden;
+  position:relative; display:flex; flex-direction:column; gap:12px;
+  min-width:360px; max-width:360px; padding:18px;
+  color:#eaf2ff; text-decoration:none; overflow:hidden; border-radius:20px;
+  background:linear-gradient(180deg, rgba(6,10,22,.85), rgba(6,12,24,.82));
+  box-shadow:0 12px 20px rgba(0,0,0,.32);
+  border:1px solid rgba(255,255,255,.10);
 }
 .card::before{
-  content:""; position:absolute; inset:-10% -10% auto auto; width:120%; height:120%;
-  background-image:var(--bgimg); background-repeat:no-repeat; background-position:center; background-size:cover;
-  filter:blur(6px) opacity(.35);
-  pointer-events:none;
+  content:""; position:absolute; inset:0;
+  background-image:var(--bgimg); background-size:cover; background-position:center;
+  filter:opacity(.45) saturate(1.1);
 }
-.card:hover{filter:brightness(1.05)}
+.card::after{
+  content:""; position:absolute; inset:0;
+  background:linear-gradient(180deg, rgba(2,6,14,.65) 10%, rgba(4,10,20,.75) 60%, rgba(6,12,24,.85) 100%);
+  backdrop-filter: blur(4px);
+}
+.card > *{position:relative; z-index:1}
+.card.goal{box-shadow:0 0 24px rgba(24,255,116,.25), 0 12px 20px rgba(0,0,0,.35)}
 
+/* Üst satır: lig + dakika */
 .top{display:flex;align-items:center;justify-content:space-between}
 .league{display:flex;align-items:center;gap:12px}
-.lg{color:#cfe0ff;font-weight:800;font-size:14px}
+.lg{color:#e6f1ff;font-weight:800;font-size:15px;text-shadow:0 1px 8px rgba(0,0,0,.45)}
 .lgLogo{width:28px;height:28px;object-fit:contain}
 
-.min .minText{
-  font-weight:900; font-size:18px; color:#ffd1d1;
-  background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.16);
-  padding:4px 10px; border-radius:10px;
+.minText{
+  font-weight:900; font-size:22px; color:#ffd5d5;
+  text-shadow:0 2px 14px rgba(0,0,0,.65);
 }
 
+/* İç cam panel (okunabilirlik için) */
+.glass{
+  display:flex; flex-direction:column; gap:10px;
+  background:linear-gradient(180deg, rgba(10,16,28,.55), rgba(10,16,28,.35));
+  border:1px solid rgba(255,255,255,.10);
+  border-radius:16px; padding:12px; backdrop-filter: blur(6px);
+}
+
+/* Takımlar + skor */
 .teams{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center}
 .side{display:flex;align-items:center;gap:12px;min-width:0}
 .side.right{justify-content:flex-end}
 .name{
-  color:#e8f0ff;font-size:15px;font-weight:800;
+  color:#eef4ff;font-size:16px;font-weight:800;
   white-space:normal; word-break:normal; overflow-wrap:break-word; line-height:1.25;
 }
 
+/* Skor (çerçevesiz, parıltılı) */
 .score{
-  display:flex;align-items:center;gap:12px;
-  font-weight:900;font-size:28px; padding:8px 18px;border-radius:999px;
-  background:rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.18);
+  display:flex;align-items:center;gap:14px;
+  font-weight:1000;font-size:34px; letter-spacing:.5px;
+  color:#fff; text-shadow:
+    0 0 8px rgba(255,255,255,.35),
+    0 0 20px rgba(160,220,255,.25);
 }
-.card.goal .score{
-  animation:goalflash .25s ease-in-out 0s 8 alternate;
-  border-color: rgba(24,255,116,.6); box-shadow:0 0 16px rgba(24,255,116,.35);
-}
-@keyframes goalflash{from{background:rgba(24,255,116,.22)} to{background:rgba(24,255,116,.06)}}
-.score .sep{opacity:.7}
-.score .h{color:#aef4ff}
-.score .a{color:#ffdede}
+.score .sep{opacity:.9}
+.score .h{color:#aee8ff; text-shadow:0 0 18px rgba(120,220,255,.45)}
+.score .a{color:#ffd7d7; text-shadow:0 0 18px rgba(255,120,120,.45)}
 
+/* xG */
 .xg{
-  display:flex;align-items:center;gap:6px;font-weight:900;color:#ffe3e3;
-  background:rgba(255,42,42,.12);border:1px solid rgba(255,42,42,.25);
-  padding:6px 12px;border-radius:12px;width:max-content
+  display:flex;align-items:center;gap:8px;font-weight:900;color:#ffe3e3;
+  background:rgba(255,42,42,.08);border:1px solid rgba(255,42,42,.18);
+  padding:8px 12px;border-radius:12px;width:max-content
 }
 .xgLabel{font-size:12px;letter-spacing:.4px;opacity:.9}
 .xgVal{font-size:15px}
 .xgSep{opacity:.7}
 
-.odds{display:flex;gap:10px;margin-top:2px}
+/* odds */
+.odds{display:flex;gap:10px}
 .odd{
-  display:inline-flex;align-items:center;gap:8px;padding:6px 14px;border-radius:999px;
+  display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;
   background:rgba(0,229,255,.10); border:1px solid rgba(0,229,255,.28); color:#ccfaff; font-size:13px
 }
 .ol{font-weight:900}
 .ov{font-weight:800}
 
+/* Logolar */
 .ava{
   display:inline-grid;place-items:center;border-radius:999px;
-  font-size:16px;font-weight:900;color:#001018;
-  background:transparent;
+  font-size:18px;font-weight:900;color:#001018;
+  background:linear-gradient(180deg, rgba(255,255,255,.15), rgba(255,255,255,.05));
+  box-shadow:0 10px 16px rgba(0,0,0,.25);
 }
-.ava.img{object-fit:cover;border:none;box-shadow:none}
+.ava.img{object-fit:cover;border:none;box-shadow:none;background:transparent}
 
-@media(max-width:420px){
-  .card{min-width:300px;max-width:300px}
+/* Responsive */
+@media(max-width:480px){
+  .card{min-width:320px;max-width:320px}
+  .minText{font-size:20px}
+  .score{font-size:30px}
 }
 `;
