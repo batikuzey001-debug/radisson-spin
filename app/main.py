@@ -22,6 +22,9 @@ from app.db.models import Base, Prize, Code
 
 
 def _normalize_origins(val: Union[str, List[str]]) -> List[str]:
+    """
+    Why: Railway/ENV'de virgüllü string ya da JSON dizi gelebilir; hepsini listeye çevir.
+    """
     if isinstance(val, list):
         return [s.strip() for s in val if s and s.strip()]
     if not val:
@@ -53,11 +56,12 @@ app.add_middleware(
 # -----------------------------
 # Session (admin için gerekli)
 # -----------------------------
+app.add_mmiddleware = app.add_middleware  # type: ignore[attr-defined]
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.SECRET_KEY,
     same_site="lax",
-    https_only=False,  # prod HTTPS'te True yap
+    https_only=False,  # Why: Railway önizleme/HTTP için esnek; prod HTTPS'e geçince True yap.
 )
 
 # -----------------------------
@@ -71,7 +75,7 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 # -----------------------------
 # Routers
 # -----------------------------
-app.include_router(health_router)                 # /health
+app.include_router(health_router, prefix="/api")  # /api/health
 app.include_router(spin_router, prefix="/api")    # /api/spin/...
 app.include_router(admin_router)                  # /admin/...
 
@@ -81,6 +85,7 @@ app.include_router(admin_router)                  # /admin/...
 @app.get("/", include_in_schema=False)
 def root():
     return RedirectResponse(url="/docs", status_code=302)
+
 
 @app.get("/status")
 def status():
@@ -94,9 +99,12 @@ def admin_root():
     # /admin -> /admin/panel
     return RedirectResponse(url="/admin/panel", status_code=303)
 
+
 @app.exception_handler(StarletteHTTPException)
 async def _admin_auth_redirect(request: Request, exc: StarletteHTTPException):
-    # Sadece HTML isteklerinde, /admin altında 401/403'ü login'e yönlendir
+    """
+    Why: HTML isteklerinde /admin altında 401/403'de login sayfasına yönlendirme.
+    """
     path = request.url.path or ""
     is_html = "text/html" in (request.headers.get("accept") or "")
     is_admin = path.startswith("/admin")
@@ -142,7 +150,7 @@ def on_startup() -> None:
             END $$;
             """))
 
-            # prizes.image_url kolonu yoksa ekle (TABLO/kolon varlığı kontrolü ile)
+            # prizes.image_url kolonu yoksa ekle
             conn.execute(text("""
             DO $$
             BEGIN
