@@ -1,22 +1,12 @@
 // web/src/pages/RadiCark.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 
-/**
- * Radi Çark – Çarkıfelek (32 dişli, neon, gerçekçi)
- * - /api/prizes -> ödüller (orijinal sıralı)
- * - /api/verify-spin -> targetIndex (orijinal liste index), spinToken
- * - 32 dilim; orijinal ödüller 32’ye tamamlanıp RASTGELE karıştırılır.
- * - verify dönen index'e uyan dilim(ler) içinden rastgele biri hedeflenir.
- * - Dönüş: ease-in → hızlı → ease-out (~10.8s)
- */
-
 type Prize = {
   id: number;
   label: string;
   wheelIndex: number;
   imageUrl?: string | null;
 };
-
 type VerifyIn = { code: string; username: string };
 type VerifyOut = {
   targetIndex: number;
@@ -47,7 +37,7 @@ export default function RadiCark() {
 
   const [spinning, setSpinning] = useState(false);
   const [result, setResult] = useState<{ label: string; image?: string | null } | null>(null);
-  const [angle, setAngle] = useState(0);          // <-- DOĞRUDAN TRANSFORM İLE KULLANACAĞIZ
+  const [angle, setAngle] = useState(0);
   const lastAngleRef = useRef(0);
 
   useEffect(() => {
@@ -73,9 +63,7 @@ export default function RadiCark() {
         setBasePrizes([]);
       })
       .finally(() => ok && setLoading(false));
-    return () => {
-      ok = false;
-    };
+    return () => { ok = false; };
   }, []);
 
   const slices: Slice[] = useMemo(() => {
@@ -97,8 +85,7 @@ export default function RadiCark() {
   const segAngle = 360 / (slices.length || 1);
 
   const onSpin = async () => {
-    setErr("");
-    setResult(null);
+    setErr(""); setResult(null);
     if (!code.trim() || !username.trim()) return setErr("Kullanıcı adı ve kod gerekli.");
     if (!slices.length) return setErr("Ödül verisi yok.");
     if (spinning) return;
@@ -107,8 +94,7 @@ export default function RadiCark() {
       setSpinning(true);
 
       const vr: VerifyOut = await postJson(`${API}/api/verify-spin`, {
-        code: code.trim(),
-        username: username.trim(),
+        code: code.trim(), username: username.trim(),
       } as VerifyIn);
 
       const matches = slices
@@ -123,15 +109,11 @@ export default function RadiCark() {
       const jitter = (Math.random() - 0.5) * 2; // ±1°
       const absolute = lastAngleRef.current + fullTurns * 360 + (360 - center) + jitter;
 
-      // dönüş – CSS transition transform üzerinde (var() YOK)
-      setAngle(absolute);
-
-      const DURATION = 10800; // ~10.8s
-      await wait(DURATION + 250);
+      setAngle(absolute);                    // TRANSFORM inline
+      await wait(10900 + 200);               // ~11s
 
       await postJson(`${API}/api/commit-spin`, {
-        code: code.trim(),
-        spinToken: vr.spinToken,
+        code: code.trim(), spinToken: vr.spinToken,
       } as CommitIn);
 
       setResult({ label: vr.prizeLabel, image: vr.prizeImage });
@@ -145,31 +127,20 @@ export default function RadiCark() {
 
   return (
     <main className="spin">
-      {/* ÜST BAŞLIK */}
       <header className="hero">
         <div className="title">RADİ ÇARK</div>
         <div className="sub">Şansını dene, ödülünü kap! 🎉</div>
       </header>
 
-      {/* ÇARK */}
       <section className="stage">
-        {/* dış neon ışıklar */}
-        <div className="bulbs">
-          {Array.from({ length: 64 }).map((_, i) => (
-            <span key={i} style={{ transform: `rotate(${(i * 360) / 64}deg) translateY(calc(-50%))` }} className="bulb" />
-          ))}
-        </div>
+        {/* NEON HALKA – dönerken parlaklık artar */}
+        <div className={`neonRing ${spinning ? "alive" : ""}`} aria-hidden />
 
         {/* sabit pointer */}
-        <div className={`pointer ${spinning ? "tick" : ""}`}>
-          <div className="pin" />
-        </div>
+        <div className={`pointer ${spinning ? "tick" : ""}`}><div className="pin" /></div>
 
         {/* çark */}
-        <div
-          className={`wheel ${spinning ? "spin" : ""}`}
-          style={{ transform: `rotate(${angle}deg)` }}  // <-- TRANSFORM DİREKT
-        >
+        <div className={`wheel ${spinning ? "spin" : ""}`} style={{ transform: `rotate(${angle}deg)` }}>
           <div className="rim" />
           <div className="spokes">
             {Array.from({ length: slices.length }).map((_, i) => (
@@ -177,7 +148,6 @@ export default function RadiCark() {
             ))}
           </div>
 
-          {/* dilimler */}
           {slices.map((sl, i) => (
             <Slice
               key={`sl-${i}-${sl.prize.id}`}
@@ -189,12 +159,11 @@ export default function RadiCark() {
             />
           ))}
 
-          {/* merkez plakası */}
           <div className="hub" />
         </div>
       </section>
 
-      {/* FORM – ALTTA ve tıklanabilir */}
+      {/* FORM */}
       <section className="panel below">
         <div className="row">
           <label className="f">
@@ -216,12 +185,8 @@ export default function RadiCark() {
         <Modal onClose={() => setResult(null)}>
           <div className="m-title">Tebrikler 🎉</div>
           {result.image && <img className="m-img" src={result.image} alt="" />}
-          <div className="m-text">
-            Ödülün: <b>{result.label}</b>
-          </div>
-          <button className="btn" onClick={() => setResult(null)}>
-            Kapat
-          </button>
+          <div className="m-text">Ödülün: <b>{result.label}</b></div>
+          <button className="btn" onClick={() => setResult(null)}>Kapat</button>
         </Modal>
       )}
 
@@ -232,55 +197,23 @@ export default function RadiCark() {
 
 /* ---------------- helpers ---------------- */
 async function postJson<T = any>(url: string, body: any): Promise<T> {
-  const r = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!r.ok) {
     let msg = `HTTP ${r.status}`;
-    try {
-      const js = await r.json();
-      if (js?.detail) msg = js.detail;
-    } catch {}
+    try { const js = await r.json(); if (js?.detail) msg = js.detail; } catch {}
     throw new Error(msg);
   }
   return (await r.json()) as T;
 }
-function wait(ms: number) {
-  return new Promise((res) => setTimeout(res, ms));
-}
-function randInt(a: number, b: number) {
-  return Math.floor(a + Math.random() * (b - a + 1));
-}
-function shuffle<T>(arr: T[]): T[] {
-  const a = arr.slice();
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-function hueFromLabel(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
-  return h;
-}
+function wait(ms: number) { return new Promise((res) => setTimeout(res, ms)); }
+function randInt(a: number, b: number) { return Math.floor(a + Math.random() * (b - a + 1)); }
+function shuffle<T>(arr: T[]): T[] { const a = arr.slice(); for (let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; }
+function hueFromLabel(s: string): number { let h = 0; for (let i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i)) % 360; return h; }
 
 /* ---------------- slice ---------------- */
 function Slice({
-  index,
-  segAngle,
-  label,
-  imageUrl,
-  neonHue,
-}: {
-  index: number;
-  segAngle: number;
-  label: string;
-  imageUrl?: string;
-  neonHue: number;
-}) {
+  index, segAngle, label, imageUrl, neonHue,
+}: { index:number; segAngle:number; label:string; imageUrl?:string; neonHue:number }) {
   const rotate = index * segAngle;
   return (
     <div
@@ -295,7 +228,7 @@ function Slice({
     >
       <div className="sector" />
       <div className="neonEdge" />
-      {/* etiket – en UCA taşındı */}
+      {/* etiket – EN UÇTA */}
       <div className="label" title={label}>
         {imageUrl ? <img src={imageUrl} alt="" /> : null}
         <span>{label}</span>
@@ -308,7 +241,7 @@ function Slice({
 function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   return (
     <div className="modalWrap" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal" onClick={(e) => e.stopPropagation())}>
         <button className="close" onClick={onClose}>✕</button>
         {children}
       </div>
@@ -319,65 +252,46 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
 /* ---------------- styles ---------------- */
 const css = `
 :root{
-  --bg1:#0b1224; --bg2:#0e1a33; --text:#eaf2ff; --muted:#9fb1cc;
-  --ring:#091227; --rim:#0c1430; --pointer:#ff3b6b; --glow:#00e5ff;
-  --sliceA:#101a36; --sliceB:#14234d;
+  --text:#eaf2ff; --muted:#9fb1cc;
+  --ring:#091227; --rim:#0c1430; --pointer:#ff3b6b;
+  --sliceA:#0f1a38; --sliceB:#172b5b;
 }
-
-/* üst başlık */
-.hero{display:grid;place-items:center;margin:10px 0 6px}
-.hero .title{
-  font-weight:1000; font-size:clamp(26px,5vw,40px);
-  letter-spacing:2px; color:#def4ff; text-shadow:0 6px 26px rgba(0,229,255,.25);
-}
+.spin{max-width:1200px;margin:0 auto;padding:16px;color:var(--text)}
+.hero{display:grid;place-items:center;margin:10px 0 8px}
+.hero .title{font-weight:1000;font-size:clamp(26px,5vw,40px);letter-spacing:2px;color:#def4ff;text-shadow:0 6px 26px rgba(0,229,255,.25)}
 .hero .sub{color:var(--muted)}
 
-/* sahne – çark tıklama yakalamasın */
-.stage{
-  position:relative;display:grid;place-items:center;margin:12px 0 6px;
-  pointer-events:none; z-index:1;
-}
+.stage{position:relative;display:grid;place-items:center;margin:10px 0 6px;pointer-events:none;z-index:1}
 
-/* neon ampuller (dış halka) */
-.bulbs{
-  position:absolute; width:min(74vw,560px); height:min(74vw,560px);
-  border-radius:999px; display:grid; place-items:center; pointer-events:none; z-index:0;
+/* dış neon HALKA – spin sırasında parlak */
+.neonRing{
+  position:absolute; width:min(76vw,580px); height:min(76vw,580px); border-radius:999px;
+  background:
+    radial-gradient(60% 60% at 50% 50%, rgba(0,229,255,.08), transparent 70%),
+    conic-gradient(from 0deg, rgba(0,229,255,.35) 0 5deg, rgba(0,229,255,0) 5deg 10deg);
+  filter:blur(0.6px); opacity:.65;
+  animation:neonIdle 2.2s ease-in-out infinite alternate;
 }
-.bulb{
-  position:absolute; top:0; left:50%; width:7px; height:7px; border-radius:999px;
-  background:#9ae6ff; box-shadow:0 0 10px rgba(154,230,255,.8), 0 0 16px rgba(0,229,255,.45);
-  animation:blink 1.6s infinite;
-}
-.bulb:nth-child(odd){ background:#ffb3d0; box-shadow:0 0 10px rgba(255,179,208,.8), 0 0 16px rgba(255,80,160,.45); }
-.bulb:nth-child(4n){ animation-delay:.3s } .bulb:nth-child(4n+1){ animation-delay:.6s }
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+.neonRing.alive{ animation:neonRun .9s ease-in-out infinite; opacity:.9 }
+@keyframes neonIdle{ from{opacity:.45} to{opacity:.68} }
+@keyframes neonRun{ 0%{filter:blur(1px)} 50%{filter:blur(2px)} 100%{filter:blur(1px)} }
 
-.pointer{ position:absolute; top:-10px; pointer-events:none; }
-.pointer .pin{
-  position:absolute; top:-8px; left:-3px; width:6px; height:6px; border-radius:50%;
-  background:#ffe0ea; box-shadow:0 0 10px rgba(255,59,107,.8);
-}
-.pointer.tick{animation:ptr 0.08s linear infinite}
+.pointer{position:absolute;top:-10px;pointer-events:none}
+.pointer .pin{position:absolute;top:-8px;left:-3px;width:6px;height:6px;border-radius:50%;background:#ffe0ea;box-shadow:0 0 10px rgba(255,59,107,.8)}
+.pointer.tick{animation:ptr .08s linear infinite}
 @keyframes ptr{0%{transform:translateX(0)}50%{transform:translateX(1px)}100%{transform:translateX(0)}}
 
-/* çark biraz daha küçük */
 .wheel{
-  width:min(74vw,560px); height:min(74vw,560px);
+  width:min(72vw,540px); height:min(72vw,540px);
   border-radius:999px; background:var(--ring); border:1px solid rgba(255,255,255,.15); position:relative;
   box-shadow:inset 0 0 0 10px var(--rim), 0 22px 70px rgba(0,0,0,.5);
-  transition: transform 10.8s cubic-bezier(.17,.85,.08,1);  /* ease-in → hızlı → ease-out */
-  will-change: transform;
-  pointer-events:none;
-  transform: rotate(0deg); /* başlangıç */
+  transition: transform 10.9s cubic-bezier(.17,.85,.08,1);
+  will-change: transform; pointer-events:none; transform:rotate(0deg);
 }
-.rim{position:absolute; inset:2%; border-radius:999px; box-shadow:inset 0 0 0 2px rgba(255,255,255,.08), inset 0 0 50px rgba(0,229,255,.12);}
+.rim{position:absolute; inset:2%; border-radius:999px; box-shadow:inset 0 0 0 2px rgba(255,255,255,.08), inset 0 0 50px rgba(0,229,255,.12)}
 .spokes{position:absolute; inset:0; pointer-events:none}
-.spoke{
-  position:absolute; left:50%; top:50%; width:49%; height:1px; background:rgba(255,255,255,.10);
-  transform-origin:left center;
-}
+.spoke{position:absolute; left:50%; top:50%; width:49%; height:1px; background:rgba(255,255,255,.10); transform-origin:left center}
 
-/* dilimler */
 .slice{position:absolute; inset:0; transform-origin:50% 50%; pointer-events:none}
 .sector{
   position:absolute; inset:0; border-radius:999px;
@@ -385,28 +299,26 @@ const css = `
   background:
     radial-gradient(60% 60% at 60% 45%, rgba(0,229,255,.08), transparent 70%),
     linear-gradient(180deg, var(--sliceA), var(--sliceB));
-  filter:drop-shadow(0 0 1px rgba(0,0,0,.6));
 }
 .neonEdge{
   position:absolute; left:50%; top:50%; width:50%; height:1px; transform-origin:left center;
-  background: hsl(var(--neon) 95% 60% / .55);
-  box-shadow: 0 0 8px hsl(var(--neon) 95% 60% / .55), 0 0 14px hsl(var(--neon) 95% 60% / .35);
+  background:hsl(var(--neon) 95% 60% / .55);
+  box-shadow:0 0 8px hsl(var(--neon) 95% 60% / .55), 0 0 14px hsl(var(--neon) 95% 60% / .35);
 }
 
-/* etiket – en UCA taşındı (daha okunur) */
+/* EN UÇTA, TANGENT – maksimum okunurluk */
 .label{
   position:absolute; left:50%; top:50%;
-  transform: rotate(calc(var(--label-rot) + 90deg)) translate(64%, -50%); /* UCA 64%% */
+  transform: rotate(calc(var(--label-rot) + 90deg)) translate(78%, -50%); /* >>> UCA 78% */
   transform-origin:left center;
   display:flex; align-items:center; gap:6px;
-  color:#f5fbff; text-shadow:0 2px 12px rgba(0,0,0,.9), 0 0 2px rgba(0,0,0,.9);
-  font-weight:900; letter-spacing:.4px;
-  pointer-events:none;
+  color:#f8fdff; text-shadow:0 2px 12px rgba(0,0,0,.95), 0 0 3px rgba(0,0,0,.95);
+  font-weight:900; letter-spacing:.35px; pointer-events:none; z-index:3;
 }
 .label img{ width:18px; height:18px; border-radius:4px; object-fit:cover; opacity:.98 }
-.label span{ font-size:13.5px; max-width:200px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.label span{ font-size:13.5px; max-width:240px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
 
-/* merkez plakası */
+/* merkez plaka */
 .hub{
   position:absolute; inset:36% 36%;
   border-radius:999px; background:
@@ -417,20 +329,13 @@ const css = `
 }
 
 /* form */
-.panel{margin:8px 0 16px; position:relative; z-index:5;}
+.panel{margin:8px 0 16px; position:relative; z-index:5}
 .panel.below{display:grid; place-items:center}
 .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end; justify-content:center}
 .f{display:flex;flex-direction:column;gap:6px}
 .f span{font-size:12px;color:var(--muted)}
-input{
-  background:#0e1730;border:1px solid rgba(255,255,255,.12);color:#eaf2ff;
-  border-radius:10px;padding:10px 12px;min-width:260px;
-}
-.btn{
-  background:linear-gradient(90deg,#00e5ff,#4aa7ff); color:#001018; border:none;
-  border-radius:10px; padding:12px 16px; font-weight:900; cursor:pointer;
-  box-shadow:0 8px 22px rgba(0,229,255,.25);
-}
+input{background:#0e1730;border:1px solid rgba(255,255,255,.12);color:#eaf2ff;border-radius:10px;padding:10px 12px;min-width:260px}
+.btn{background:linear-gradient(90deg,#00e5ff,#4aa7ff); color:#001018; border:none;border-radius:10px; padding:12px 16px; font-weight:900; cursor:pointer; box-shadow:0 8px 22px rgba(0,229,255,.25)}
 .btn:disabled{opacity:.7;cursor:not-allowed}
 .msg.error{color:#ffb3c0;margin-top:8px}
 
