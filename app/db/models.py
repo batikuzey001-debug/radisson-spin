@@ -34,6 +34,7 @@ class Prize(Base):
         viewonly=True,
     )
 
+    # -> Çark dağılım ilişkisi
     distributions = relationship(
         "PrizeDistribution",
         back_populates="prize",
@@ -49,7 +50,7 @@ class Code(Base):
     # Spin sonrası dolacak -> nullable
     prize_id: Mapped[int | None] = mapped_column(ForeignKey("prizes.id"), nullable=True)
 
-    # Kodun seviyesini tutar (bronze/silver/gold/platinum)
+    # Kodun seviyesini tutar (dinamik tier; prize_tiers.key)
     tier_key: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     # Kod oluştururken manuel ödül atanırsa (opsiyonel, tek seferlik)
@@ -64,7 +65,7 @@ class Code(Base):
     prize = relationship(
         "Prize",
         back_populates="codes",
-        foreign_keys=[prize_id],        # <-- yalnızca prize_id ile bağla
+        foreign_keys=[prize_id],        # yalnızca prize_id ile bağla
     )
 
 
@@ -200,13 +201,32 @@ class SiteConfig(Base):
     created_at = Column(DateTime(timezone=True), default=_utcnow)
     updated_at = Column(DateTime(timezone=True), default=_utcnow)
 
+# --- DİNAMİK SEVİYELER (Admin tarafından yönetilebilir) ---
+class PrizeTier(Base):
+    __tablename__ = "prize_tiers"
+    # Örn. key: "bronze", "silver-300", "custom-1"
+    key: Mapped[str] = mapped_column(String(32), primary_key=True)
+    label: Mapped[str] = mapped_column(String(100))          # Örn. "100 TL"
+    sort: Mapped[int] = mapped_column(Integer, default=0)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
+
+    # ilişkiler
+    distributions = relationship("PrizeDistribution", back_populates="tier", cascade="all, delete-orphan")
+
 # --- ÇARK DAĞILIMI (Seviye -> Ödül -> Ağırlık) ---
 class PrizeDistribution(Base):
     __tablename__ = "prize_distributions"
-    id       = mapped_column(Integer, primary_key=True, autoincrement=True)
-    tier_key = mapped_column(String(32), index=True)             # bronze/silver/gold/platinum
-    prize_id = mapped_column(ForeignKey("prizes.id"), index=True)
-    weight_bp = mapped_column(Integer, default=0)                # 1% = 100 bp
-    enabled  = mapped_column(Boolean, default=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
-    prize    = relationship("Prize", back_populates="distributions")
+    # Dinamik seviye anahtarı: prize_tiers.key
+    tier_key: Mapped[str] = mapped_column(ForeignKey("prize_tiers.key"), index=True)
+
+    prize_id: Mapped[int] = mapped_column(ForeignKey("prizes.id"), index=True)
+    weight_bp: Mapped[int] = mapped_column(Integer, default=0)    # 1% = 100 basis point
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # ilişkiler
+    prize = relationship("Prize", back_populates="distributions")
+    tier  = relationship("PrizeTier", back_populates="distributions")
