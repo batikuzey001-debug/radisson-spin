@@ -17,13 +17,17 @@ type VerifyOut = {
 type CommitIn = { code: string; spinToken: string };
 
 const API = import.meta.env.VITE_API_BASE_URL;
-const SEGMENTS = 20; // 20/24/32 ayarlanabilir
+
+/** Görsel denge için 20 dilim (24/32 yapabilirsin) */
+const SEGMENTS = 20;
+/** Etiketi dış çembere yakınlaştırma (yüzde) */
+const LABEL_RADIAL = 86; // 86% → daha da uca: 88-90
 
 type Slice = {
   prize: Prize;
   sourceIndex: number;
   label: string;
-  neonHue: number;
+  hue: number;
 };
 
 export default function RadiCark() {
@@ -32,12 +36,13 @@ export default function RadiCark() {
   const [basePrizes, setBasePrizes] = useState<Prize[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+
   const [spinning, setSpinning] = useState(false);
   const [result, setResult] = useState<{ label: string; image?: string | null } | null>(null);
   const [angle, setAngle] = useState(0);
   const lastAngleRef = useRef(0);
 
-  // ödüller
+  // Ödülleri çek
   useEffect(() => {
     let ok = true;
     setLoading(true);
@@ -57,7 +62,7 @@ export default function RadiCark() {
     return () => { ok = false; };
   }, []);
 
-  // 20 dilime genişlet + hafif karıştır
+  // Dilimler
   const slices: Slice[] = useMemo(() => {
     if (!basePrizes.length) return [];
     const rep: Slice[] = [];
@@ -67,7 +72,7 @@ export default function RadiCark() {
         prize: p,
         sourceIndex: p.wheelIndex,
         label: p.label,
-        neonHue: hueFromLabel(p.label),
+        hue: hueFromLabel(p.label),
       });
     }
     return shuffle(rep);
@@ -75,7 +80,7 @@ export default function RadiCark() {
 
   const segAngle = 360 / (slices.length || 1);
 
-  // SPIN
+  // Spin
   const onSpin = async () => {
     setErr(""); setResult(null);
     if (!code.trim() || !username.trim()) return setErr("Kullanıcı adı ve kod gerekli.");
@@ -89,7 +94,6 @@ export default function RadiCark() {
         code: code.trim(), username: username.trim(),
       } as VerifyIn);
 
-      // görsel listede aynı sourceIndex'e sahip dilimlerden rastgele biri
       const matches = slices
         .map((s, idx) => ({ idx, s }))
         .filter((x) => x.s.sourceIndex === vr.targetIndex)
@@ -97,16 +101,15 @@ export default function RadiCark() {
       if (!matches.length) throw new Error("Hedef dilim bulunamadı.");
 
       const targetSlice = matches[Math.floor(Math.random() * matches.length)];
-
-      // pointer tepe (90°) – hizalama
+      /** Pointer tepede = 90° */
       const pointerDeg = 90;
-      const centerDeg   = (targetSlice + 0.5) * segAngle;
-      const fullTurns   = randInt(11, 14);       // daha yavaş
-      const jitter      = (Math.random() - 0.5) * 2; // ±1°
-      const absolute    = lastAngleRef.current + fullTurns * 360 + (pointerDeg - centerDeg) + jitter;
+      const centerDeg  = (targetSlice + 0.5) * segAngle;
+      const fullTurns  = randInt(11, 14);           // daha yavaş
+      const jitter     = (Math.random() - 0.5) * 2; // ±1°
+      const absolute   = lastAngleRef.current + fullTurns * 360 + (pointerDeg - centerDeg) + jitter;
 
-      setAngle(absolute);
-      await wait(13500 + 200);                   // ~13.5s
+      setAngle(absolute);                 // transition transform üzerinde
+      await wait(13600 + 200);            // ~13.6s
 
       await postJson(`${API}/api/commit-spin`, {
         code: code.trim(), spinToken: vr.spinToken,
@@ -121,24 +124,6 @@ export default function RadiCark() {
     }
   };
 
-  /** SVG ölçüsü – label arc’ları için */
-  const vb = 1000;
-  const C = vb / 2;
-  const outerR = 420;       // yazı yarıçapı (dış çember)
-  const segRad = (Math.PI * 2) / (slices.length || 1);
-  const arcPad = 0.06;      // radian; yazıyı wedge içine sığdırma payı
-
-  // dilim etiket yayını döndür
-  const buildArc = (startRad: number, endRad: number) => {
-    // küçük bir padding ile
-    const s = startRad + arcPad;
-    const e = endRad   - arcPad;
-    const p1 = polar(C, C, outerR, s);
-    const p2 = polar(C, C, outerR, e);
-    const large = e - s > Math.PI ? 1 : 0;
-    return `M ${p1.x},${p1.y} A ${outerR},${outerR} 0 ${large} 1 ${p2.x},${p2.y}`;
-  };
-
   return (
     <main className="spin">
       <div className="bgDecor" aria-hidden />
@@ -151,54 +136,25 @@ export default function RadiCark() {
         <div className={`neonRing ${spinning ? "alive" : ""}`} aria-hidden />
         <div className={`pointer ${spinning ? "tick" : ""}`}><div className="pin" /></div>
 
-        <div className={`wheel ${spinning ? "spin" : ""}`} style={{ transform: `rotate(${angle}deg)` }}>
+        {/* Çark gövdesi */}
+        <div className="wheel" style={{ transform: `rotate(${angle}deg)` }}>
           <div className="rim" />
-          {/* wedge çizgileri */}
           <div className="spokes">
             {Array.from({ length: slices.length }).map((_, i) => (
               <div key={i} className="spoke" style={{ transform: `rotate(${i * segAngle}deg)` }} />
             ))}
           </div>
 
-          {/* wedge dolguları */}
+          {/* wedge + yatay etiket */}
           {slices.map((sl, i) => (
             <Slice
               key={`sl-${i}-${sl.prize.id}`}
               index={i}
               segAngle={segAngle}
               label={sl.label}
-              neonHue={sl.neonHue}
+              hue={sl.hue}
             />
           ))}
-
-          {/* Etiketler – her wedge için KENDİ ARC’ı */}
-          <svg className="labels" viewBox={`0 0 ${vb} ${vb}`} aria-hidden>
-            {slices.map((sl, i) => {
-              const start = i * segRad;
-              const end   = start + segRad;
-              const id    = `arc-${i}`;
-              const d     = buildArc(start, end);
-              // Metin yay ortasına oturur → okunur
-              return (
-                <g key={id} style={{ filter: "drop-shadow(0 0 4px rgba(0,0,0,.85))" }}>
-                  <path id={id} d={d} fill="none" />
-                  <text className="arcTxt" textAnchor="middle">
-                    <textPath href={`#${id}`} startOffset="50%">
-                      {sl.label}
-                    </textPath>
-                  </text>
-                  {/* Uç noktası */}
-                  <circle
-                    cx={polar(C, C, outerR, (start + end) / 2).x}
-                    cy={polar(C, C, outerR, (start + end) / 2).y}
-                    r="9"
-                    fill={`hsl(${sl.neonHue} 95% 60%)`}
-                    opacity=".9"
-                  />
-                </g>
-              );
-            })}
-          </svg>
 
           <div className="hub" />
         </div>
@@ -250,12 +206,11 @@ function wait(ms: number) { return new Promise((res) => setTimeout(res, ms)); }
 function randInt(a: number, b: number) { return Math.floor(a + Math.random() * (b - a + 1)); }
 function shuffle<T>(arr: T[]): T[] { const a = arr.slice(); for (let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; }
 function hueFromLabel(s: string): number { let h = 0; for (let i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i)) % 360; return h; }
-function polar(cx:number, cy:number, r:number, rad:number){ return { x: cx + r*Math.cos(rad), y: cy + r*Math.sin(rad) }; }
 
-/* ---------------- slice ---------------- */
+/* ---------------- slice: wedge + HİÇ EĞİM YOK, TAM YATAY METİN ---------------- */
 function Slice({
-  index, segAngle, label, neonHue,
-}: { index:number; segAngle:number; label:string; neonHue:number }) {
+  index, segAngle, label, hue,
+}: { index:number; segAngle:number; label:string; hue:number }) {
   const rotate = index * segAngle;
   return (
     <div
@@ -263,14 +218,35 @@ function Slice({
       style={
         {
           transform: `rotate(${rotate}deg)`,
-          ["--label-rot" as any]: `${segAngle / 2}deg`,
-          ["--neon" as any]: neonHue,
+          ["--rot" as any]: `${rotate}deg`,
+          ["--neon" as any]: hue,
         } as React.CSSProperties
       }
     >
       <div className="sector" />
       <div className="neonEdge" />
-      {/* görsel etiketleri SVG tarafında yazıyoruz */}
+      {/* 1) Metni dış çemberde yatay bas: slice döndü → etiketi karşı yönde döndür */}
+      <div
+        className="hLabel"
+        style={
+          {
+            transform: `rotate(${-rotate - 90}deg) translate(${LABEL_RADIAL}%, -50%)`,
+          } as React.CSSProperties
+        }
+        title={label}
+      >
+        {label}
+      </div>
+      {/* 2) Uç parlak nokta – aynı hizaya */}
+      <div
+        className="endDot"
+        style={
+          {
+            transform: `rotate(${-rotate - 90}deg) translate(${LABEL_RADIAL + 12}%, -50%)`,
+            background: `hsl(${hue} 95% 60%)`,
+          } as React.CSSProperties
+        }
+      />
     </div>
   );
 }
@@ -292,7 +268,7 @@ const css = `
 :root{
   --text:#eaf2ff; --muted:#9fb1cc;
   --ring:#091227; --rim:#0c1430; --pointer:#ff3b6b;
-  --sliceA:#10224a; --sliceB:#142e66;
+  --sliceA:#10224a; --sliceB:#143069;
 }
 .spin{max-width:1200px;margin:0 auto;padding:16px;color:var(--text)}
 .bgDecor{position:fixed; inset:0; pointer-events:none; z-index:-1;
@@ -308,21 +284,22 @@ const css = `
 
 .neonRing{position:absolute; width:min(76vw,580px); height:min(76vw,580px); border-radius:999px;
   background: radial-gradient(60% 60% at 50% 50%, rgba(0,229,255,.08), transparent 70%),
-              conic-gradient(from 0deg, rgba(0,229,255,.4) 0 6deg, rgba(0,229,255,0) 6deg 12deg);
-  filter:blur(.8px); opacity:.65; animation:neonIdle 2.2s ease-in-out infinite alternate;
+              conic-gradient(from 0deg, rgba(0,229,255,.5) 0 6deg, rgba(0,229,255,0) 6deg 12deg);
+  filter:blur(.8px); opacity:.72; animation:neonIdle 2s ease-in-out infinite alternate;
 }
-.neonRing.alive{ animation:neonRun .9s ease-in-out infinite; opacity:.95 }
-@keyframes neonIdle{ from{opacity:.45} to{opacity:.68} }
-@keyframes neonRun{ 0%{filter:blur(1px)} 50%{filter:blur(2.3px)} 100%{filter:blur(1px)} }
+.neonRing.alive{ animation:neonRun .9s ease-in-out infinite; opacity:.98 }
+@keyframes neonIdle{ from{opacity:.5} to{opacity:.8} }
+@keyframes neonRun{ 0%{filter:blur(1px)} 50%{filter:blur(2.6px)} 100%{filter:blur(1px)} }
 
 .pointer{position:absolute;top:-10px;pointer-events:none}
 .pointer .pin{position:absolute;top:-8px;left:-3px;width:6px;height:6px;border-radius:50%;background:#ffe0ea;box-shadow:0 0 10px rgba(255,59,107,.8)}
 .pointer.tick{animation:ptr .08s linear infinite}
 @keyframes ptr{0%{transform:translateX(0)}50%{transform:translateX(1px)}100%{transform:translateX(0)}}
 
+/* çark */
 .wheel{width:min(72vw,540px); height:min(72vw,540px); border-radius:999px; background:var(--ring); border:1px solid rgba(255,255,255,.15); position:relative;
   box-shadow:inset 0 0 0 10px var(--rim), 0 22px 70px rgba(0,0,0,.5);
-  transition: transform 13.5s cubic-bezier(.17,.85,.08,1);
+  transition: transform 13.6s cubic-bezier(.17,.85,.08,1);
   will-change: transform; pointer-events:none; transform:rotate(0deg);
 }
 .rim{position:absolute; inset:2%; border-radius:999px; box-shadow:inset 0 0 0 2px rgba(255,255,255,.08), inset 0 0 50px rgba(0,229,255,.12)}
@@ -340,12 +317,14 @@ const css = `
   box-shadow:0 0 8px hsl(var(--neon) 95% 60% / .55), 0 0 14px hsl(var(--neon) 95% 60% / .35);
 }
 
-/* SVG label – wedge başına ayrı ARC ve metin */
-.labels{position:absolute; inset:0; pointer-events:none}
-.arcTxt{
-  font-weight:1000; font-size:19px; fill:#f8fdff;
-  paint-order: stroke; stroke: rgba(0,0,0,.85); stroke-width: 4px;
+/* === YATAY ETİKET === */
+.hLabel{position:absolute; left:50%; top:50%; transform-origin:left center;
+  color:#f8fdff; font-weight:1000; font-size:16px; letter-spacing:.35px;
+  text-shadow:0 2px 12px rgba(0,0,0,.95), 0 0 3px rgba(0,0,0,.95);
+  pointer-events:none; white-space:nowrap; max-width:280px; overflow:hidden; text-overflow:ellipsis; z-index:2;
 }
+/* Uç nokta */
+.endDot{position:absolute; left:50%; top:50%; width:10px; height:10px; border-radius:999px; box-shadow:0 0 10px currentColor, 0 0 16px currentColor; pointer-events:none}
 
 /* merkez plaka */
 .hub{position:absolute; inset:36% 36%; border-radius:999px;
