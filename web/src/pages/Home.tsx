@@ -1,10 +1,13 @@
 // web/src/pages/Home.tsx
 import Hero from "../components/Hero";
+import QuickBonus from "../components/QuickBonus";
 
 export default function Home() {
   return (
     <main className="home">
       <Hero />
+      <QuickBonus />
+
       <style>{css}</style>
     </main>
   );
