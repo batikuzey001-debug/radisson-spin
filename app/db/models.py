@@ -3,7 +3,7 @@ from datetime import datetime
 import enum
 
 from sqlalchemy import (
-    Integer, String, Text, DateTime, ForeignKey, text, Enum, Boolean, Float
+    Integer, String, Text, DateTime, ForeignKey, text, Enum, Boolean
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -17,11 +17,28 @@ class Prize(Base):
     label: Mapped[str] = mapped_column(String(64))
     wheel_index: Mapped[int] = mapped_column(Integer)
     image_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    enabled: Mapped[bool] = mapped_column(Boolean, default=True)  # Why: seçime dahil mi
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    # ilişkiler
-    codes = relationship("Code", back_populates="prize")
-    distributions = relationship("PrizeDistribution", back_populates="prize", cascade="all, delete-orphan")
+    # İLİŞKİLER
+    # -> Code.prize_id ile bağlanan kodlar (asıl kazanılan ödül)
+    codes = relationship(
+        "Code",
+        back_populates="prize",
+        foreign_keys="Code.prize_id",          # <-- AMBIGUITY FIX
+        cascade="save-update, merge",
+    )
+    # -> Code.manual_prize_id ile bağlanan kodlar (sadece rapor/okuma; spin mantığı bunu kullanmaz)
+    manual_codes = relationship(
+        "Code",
+        foreign_keys="Code.manual_prize_id",
+        viewonly=True,
+    )
+
+    distributions = relationship(
+        "PrizeDistribution",
+        back_populates="prize",
+        cascade="all, delete-orphan",
+    )
 
 
 class Code(Base):
@@ -29,13 +46,13 @@ class Code(Base):
     code: Mapped[str] = mapped_column(String(64), primary_key=True)
     username: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
-    # Artık ödül spin sırasında belirlenecek → nullable
+    # Spin sonrası dolacak -> nullable
     prize_id: Mapped[int | None] = mapped_column(ForeignKey("prizes.id"), nullable=True)
 
-    # Kodun hangi seviye çarkı döndüreceği (örn. bronze/silver/gold/platinum)
+    # Kodun seviyesini tutar (bronze/silver/gold/platinum)
     tier_key: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
-    # İstisna: kod oluştururken manuel ödül atanırsa (opsiyonel)
+    # Kod oluştururken manuel ödül atanırsa (opsiyonel, tek seferlik)
     manual_prize_id: Mapped[int | None] = mapped_column(ForeignKey("prizes.id"), nullable=True)
 
     status: Mapped[str] = mapped_column(String(16), default="issued")  # issued|used|expired
@@ -43,7 +60,14 @@ class Code(Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
 
-    prize = relationship("Prize", back_populates="codes", foreign_keys=[prize_id])
+    # İLİŞKİLER
+    prize = relationship(
+        "Prize",
+        back_populates="codes",
+        foreign_keys=[mapped_column.foreign_keys]  # placeholder to satisfy type checkers
+    )
+    # Yukarıdaki tip kontrol hatası yaşamamak için gerçek foreign_keys bağı aşağıda:
+    prize = relationship("Prize", back_populates="codes", foreign_keys=[lambda: Code.prize_id])
 
 
 class Spin(Base):
@@ -81,7 +105,7 @@ def _utcnow(): return datetime.now(timezone.utc)
 class Tournament(Base):
     __tablename__ = "tournaments"
     id            = Column(Integer, primary_key=True)
-    slug          = Column(String(200), unique=True, index=True)  # URL-dostu
+    slug          = Column(String(200), unique=True, index=True)
     title         = Column(String(200), nullable=False)
     subtitle      = Column(String(200))
     short_desc    = Column(Text)
@@ -136,7 +160,7 @@ class PromoCode(Base):
     accent_color = Column(String(16))
     bg_color     = Column(String(16))
     variant      = Column(String(24))
-    coupon_code  = Column(String(64))     # Hızlı Bonus kartları
+    coupon_code  = Column(String(64))
     cta_url      = Column(String(512))
     created_at = Column(DateTime(timezone=True), default=_utcnow)
     updated_at = Column(DateTime(timezone=True), default=_utcnow)
@@ -182,9 +206,9 @@ class SiteConfig(Base):
 class PrizeDistribution(Base):
     __tablename__ = "prize_distributions"
     id       = mapped_column(Integer, primary_key=True, autoincrement=True)
-    tier_key = mapped_column(String(32), index=True)             # bronze/silver/gold/platinum (100/300/500/1000)
+    tier_key = mapped_column(String(32), index=True)             # bronze/silver/gold/platinum
     prize_id = mapped_column(ForeignKey("prizes.id"), index=True)
-    weight_bp = mapped_column(Integer, default=0)                # 1% = 100 basis point
+    weight_bp = mapped_column(Integer, default=0)                # 1% = 100 bp
     enabled  = mapped_column(Boolean, default=True)
 
     prize    = relationship("Prize", back_populates="distributions")
