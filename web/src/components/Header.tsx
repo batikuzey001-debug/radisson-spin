@@ -3,11 +3,10 @@ import { useEffect, useMemo, useState } from "react";
 import { getHeaderConfig, type HeaderConfig } from "../api/site";
 
 /**
- * Global Header (UI revamp only)
- * - Link/işlevler KORUNDU (getHeaderConfig, login yönlendirme)
- * - Hızlı Bonus: köşeli premium "chip" + gelişmiş bildirim (pulse + ring)
- * - Radisson Giriş: köşeli “primary” buton, çok katmanlı premium görünüm
- * - LIVE: dijital saat fontu (mümkün olan local font aileleriyle)
+ * Global Header (UI only – bağlantılar/akış KORUNDU)
+ * - Hızlı Bonus: köşeli premium “chip” + pulse/ring rozeti
+ * - Radisson Giriş: köşeli primary buton, katmanlı glow
+ * - LIVE: dijital saat font ailesi
  */
 
 type HeaderConfigExt = HeaderConfig & {
@@ -21,23 +20,24 @@ export default function Header() {
   const [dir, setDir] = useState<1 | -1>(1);
   const [clicked, setClicked] = useState(false);
 
-  // CMS'den ayar
+  // CMS
   useEffect(() => {
     getHeaderConfig()
       .then((data) => {
-        setCfg(data as HeaderConfigExt);
-        const { low, high } = calcBandRange(data);
+        const ext = data as HeaderConfigExt;
+        setCfg(ext);
+        const { low, high } = calcBandRange(ext);
         setOnline(randInt(low, high));
       })
       .catch(() => {
-        const fallback: HeaderConfigExt = { logo_url: "", login_cta_text: "Giriş", login_cta_url: "" };
-        setCfg(fallback);
-        const { low, high } = calcBandRange(fallback);
+        const fb: HeaderConfigExt = { logo_url: "", login_cta_text: "Giriş", login_cta_url: "" };
+        setCfg(fb);
+        const { low, high } = calcBandRange(fb);
         setOnline(randInt(low, high));
       });
   }, []);
 
-  // 4 sn'de bir dalgalanma
+  // 4 sn dalgalanma
   useEffect(() => {
     const t = setInterval(() => {
       const { low, high } = calcBandRange(cfg);
@@ -70,7 +70,7 @@ export default function Header() {
 
         {/* Sağ: Hızlı Bonus + Giriş */}
         <div className="right">
-          {/* Hızlı Bonus (köşeli chip) */}
+          {/* Hızlı Bonus */}
           <button
             className="chip ghost"
             onClick={(e) => e.preventDefault()}
@@ -85,7 +85,7 @@ export default function Header() {
             </span>
           </button>
 
-          {/* Radisson Giriş (primary, premium) */}
+          {/* Radisson Giriş */}
           <button
             className="chip primary"
             onClick={() => {
@@ -109,7 +109,7 @@ export default function Header() {
   );
 }
 
-/* ----------------- LIVE (kırmızı) + dijital sayı + kayan neon şerit ----------------- */
+/* ----------------- LIVE ----------------- */
 function LiveStrip({ value }: { value: number }) {
   const parts = useMemo(() => splitThousands(value), [value]);
   return (
@@ -208,9 +208,9 @@ function splitThousands(n: number): Array<{ kind: "num"; value: string } | { kin
 const css = `
 :root{
   --bg:#0b1224; --bg2:#0e1a33; --text:#eaf2ff; --aqua:#00e5ff; --red:#ff2a2a;
-  --gold:#ffd36a; --gold2:#f0b73a; --ink:#001018;
+  --gold:#ffd36a; --ink:#001018;
 }
-/* Header zemin */
+/* Header */
 .hdr{background:linear-gradient(180deg,var(--bg),var(--bg2));border-bottom:1px solid rgba(255,255,255,.06)}
 .hdr__in{max-width:1200px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}
 .left,.right{display:flex;align-items:center;gap:12px;flex-wrap:nowrap}
@@ -219,7 +219,7 @@ const css = `
 .logo{height:32px;display:block;filter:drop-shadow(0 0 10px rgba(0,229,255,.22))}
 @media (max-width:720px){ .logo{height:28px} }
 
-/* LIVE (dijital font ailesi) */
+/* LIVE (dijital font) */
 .liveWrap{display:flex;flex-direction:column;align-items:flex-start;gap:2px}
 @media (max-width:820px){ .liveWrap{display:none} }
 .liveRow{display:flex;align-items:center;gap:6px}
@@ -228,7 +228,7 @@ const css = `
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
 .roller{
   display:inline-flex;align-items:center;gap:2px;font-weight:800;font-size:13px;color:#fff;
-  font-family: "DS-Digital","Digital-7","Orbitron","Share Tech Mono","Courier New",monospace;
+  font-family:"DS-Digital","Digital-7","Orbitron","Share Tech Mono","Courier New",monospace;
   letter-spacing:.4px;
 }
 .sep{opacity:.7;margin:0 1px}
@@ -240,7 +240,7 @@ const css = `
   text-shadow:0 0 6px rgba(0,229,255,.35);
 }
 
-/* Kayan kırmızı çizgi (aktif) */
+/* Kayan kırmızı çizgi */
 .liveUnderline{
   width:100%; height:2px; border-radius:2px; overflow:hidden;
   background:linear-gradient(90deg, rgba(255,42,42,0), rgba(255,42,42,1), rgba(255,42,42,0));
@@ -260,10 +260,10 @@ const css = `
   white-space:nowrap; text-decoration:none; cursor:pointer; position:relative;
   isolation:isolate; transform:translateZ(0);
 }
-.chip:after{ /* üst parlama çizgisi */
+.chip:after{ /* üst parlama */
   content:""; position:absolute; inset:0; border-radius:12px;
   background:linear-gradient(180deg,rgba(255,255,255,.18),rgba(255,255,255,0) 40%);
-  pointer-events:none; mix-blend:screen; opacity:.6;
+  pointer-events:none; mix-blend:screen; opacity:.55;
 }
 .chip .chip__ico{font-size:13px; display:inline-grid; place-items:center}
 
@@ -274,18 +274,14 @@ const css = `
     linear-gradient(90deg, rgba(255,255,255,.08), rgba(255,255,255,0));
   backdrop-filter: blur(6px);
   border-color: rgba(255,255,255,.18);
-  box-shadow:
-    inset 0 0 0 0.5px rgba(255,255,255,.2),
-    0 6px 16px rgba(0,0,0,.25);
+  box-shadow: inset 0 0 0 .5px rgba(255,255,255,.2), 0 6px 16px rgba(0,0,0,.25);
 }
 .chip.ghost:hover{ filter:brightness(1.08) }
-.chip__ledge{ /* sol ince ledge: premium detay */
+.chip__ledge{
   width:2px; height:60%; border-radius:2px; background:linear-gradient(180deg,#ff6584,#ffc0cb);
   box-shadow:0 0 10px rgba(255,101,132,.6), 0 0 20px rgba(255,101,132,.35);
 }
-.chip__badge{
-  position:relative; width:10px; height:10px; flex:0 0 10px;
-}
+.chip__badge{ position:relative; width:10px; height:10px; flex:0 0 10px }
 .chip__badge .pulse{
   position:absolute; inset:0; border-radius:999px; background:#ff4d6d;
   box-shadow:0 0 12px rgba(255,77,109,.8);
@@ -295,13 +291,40 @@ const css = `
   position:absolute; inset:-8px; border-radius:999px; border:2px solid rgba(255,77,109,.25);
   animation:ring 1.4s ease-out infinite;
 }
-@keyframes pulse{
-  0%,100%{transform:scale(1); opacity:1} 50%{transform:scale(.8); opacity:.6}
-}
-@keyframes ring{
-  0%{transform:scale(.6); opacity:.6} 100%{transform:scale(1.2); opacity:0}
-}
+@keyframes pulse{ 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(.8);opacity:.7} }
+@keyframes ring{ 0%{transform:scale(.6);opacity:.6} 100%{transform:scale(1.2);opacity:0} }
 
 /* PRIMARY (Radisson Giriş) */
 .chip.primary{
-  background
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,0) 40%),
+    linear-gradient(90deg, var(--aqua), #4aa7ff);
+  color:var(--ink);
+  border:1px solid #1599c2;
+  box-shadow:0 8px 22px rgba(0,229,255,.28), inset 0 0 0 1px rgba(255,255,255,.22);
+}
+.chip.primary .chip__glow{
+  position:absolute; inset:-2px; border-radius:14px; z-index:-1;
+  background: radial-gradient(100% 70% at 50% 0%, rgba(0,229,255,.35), rgba(0,229,255,0));
+  filter: blur(12px);
+}
+.chip.primary:hover{ filter:brightness(1.06) }
+.chip.primary[data-clicked="1"]{ animation:press .5s cubic-bezier(.2,.7,.2,1) }
+@keyframes press{
+  0%{ transform:translateY(0) scale(1) }
+  40%{ transform:translateY(1px) scale(.98) }
+  100%{ transform:translateY(0) scale(1) }
+}
+
+/* Metin */
+.chip__txt{ letter-spacing:.2px }
+
+/* Mobil */
+@media (max-width:380px){
+  .chip{ gap:8px; padding:0 10px; --h:34px }
+  .chip__txt{ font-size:12px }
+}
+
+/* Odak */
+.chip:focus-visible{ outline:2px solid rgba(0,229,255,.8); outline-offset:2px }
+`;
