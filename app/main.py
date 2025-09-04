@@ -214,6 +214,38 @@ def on_startup() -> None:
                 END IF;
             END $$;
             """))
+            # prize_tiers tablosu yoksa oluştur + varsayılan seed (100/300/500/1000)
+            conn.execute(text("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='prize_tiers') THEN
+                    EXECUTE '
+                        CREATE TABLE prize_tiers (
+                            key VARCHAR(32) PRIMARY KEY,
+                            label VARCHAR(100) NOT NULL,
+                            sort INTEGER NOT NULL DEFAULT 0,
+                            enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                            created_at TIMESTAMPTZ DEFAULT now(),
+                            updated_at TIMESTAMPTZ DEFAULT now()
+                        );
+                    ';
+                END IF;
+
+                -- seed (yoksa ekle)
+                IF NOT EXISTS (SELECT 1 FROM prize_tiers WHERE key = ''bronze'') THEN
+                    INSERT INTO prize_tiers(key,label,sort,enabled) VALUES (''bronze'',''100 TL'',0,TRUE);
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM prize_tiers WHERE key = ''silver'') THEN
+                    INSERT INTO prize_tiers(key,label,sort,enabled) VALUES (''silver'',''300 TL'',1,TRUE);
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM prize_tiers WHERE key = ''gold'') THEN
+                    INSERT INTO prize_tiers(key,label,sort,enabled) VALUES (''gold'',''500 TL'',2,TRUE);
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM prize_tiers WHERE key = ''platinum'') THEN
+                    INSERT INTO prize_tiers(key,label,sort,enabled) VALUES (''platinum'',''1000 TL'',3,TRUE);
+                END IF;
+            END $$;
+            """))
             # prize_distributions tablosu yoksa oluştur + indexler
             conn.execute(text("""
             DO $$
@@ -230,6 +262,20 @@ def on_startup() -> None:
                         CREATE INDEX IF NOT EXISTS ix_prize_distributions_tier ON prize_distributions(tier_key);
                         CREATE INDEX IF NOT EXISTS ix_prize_distributions_prize ON prize_distributions(prize_id);
                     ';
+                END IF;
+
+                -- FK: prize_distributions.tier_key -> prize_tiers.key (yoksa ekle)
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM information_schema.table_constraints c
+                    WHERE c.table_name = 'prize_distributions'
+                      AND c.constraint_type = 'FOREIGN KEY'
+                      AND c.constraint_name = 'fk_prize_distributions_tier'
+                ) THEN
+                    ALTER TABLE prize_distributions
+                    ADD CONSTRAINT fk_prize_distributions_tier
+                    FOREIGN KEY (tier_key) REFERENCES prize_tiers(key)
+                    ON UPDATE CASCADE ON DELETE RESTRICT;
                 END IF;
             END $$;
             """))
