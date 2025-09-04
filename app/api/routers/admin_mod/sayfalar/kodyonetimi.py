@@ -145,7 +145,7 @@ def kod_yonetimi(
         try:
             dist_rows = db.query(PrizeDistribution).all()
         except ProgrammingError:
-            body_parts.append("<div class='card'><b>Uyarı:</b> Dağılım tablosu henüz oluşturulmamış görünüyor. Sayfayı yeniden yüklemeyi veya bir güncelleme sonrası uygulamayı yeniden başlatmayı deneyin.</div>")
+            body_parts.append("<div class='card'><b>Uyarı:</b> Dağılım tablosu henüz oluşturulmamış görünüyor. Yeniden başlatmayı veya bir güncellemeden sonra tekrar denemeyi deneyin.</div>")
             dist_rows = []
         except Exception:
             body_parts.append("<div class='card'><b>Uyarı:</b> Dağılım verileri okunamadı.</div>")
@@ -258,7 +258,7 @@ def kod_yonetimi(
           var warn = document.getElementById('sumWarn');
           var btn = document.getElementById('saveBtn');
           if(!ok){
-            if(warn) warn.textContent = "Toplam %100 olmalı: " + messages.join(" | ");
+            if(warn) warn.textContent = "Toplam %%100 olmalı: " + messages.join(" | ");
             if(btn) btn.disabled = true;
           }else{
             if(warn) warn.textContent = "";
@@ -281,7 +281,7 @@ def kod_yonetimi(
         }, true);
         sumCheck();
         </script>
-        """ % (str(tiers_keys_js).replace("'", "\""))
+        """ % (str(tiers_keys_js).replace("'", "\""))  # % formatında '%%' kaçışları eklendi
         body_parts.append(js)
 
     # ----------------- SEVİYELER -----------------
@@ -571,7 +571,6 @@ async def tiers_delete(
         flash(request, "Seviye bulunamadı.", "error")
         return RedirectResponse(url="/admin/kod-yonetimi?tab=seviyeler", status_code=303)
 
-    # İleride güvenlik: bu tier için aktif kod var mı vs. (şimdilik direkt sil)
     db.delete(row)
     db.commit()
     flash(request, "Seviye silindi.", "success")
