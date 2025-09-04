@@ -24,10 +24,10 @@ class Prize(Base):
     codes = relationship(
         "Code",
         back_populates="prize",
-        foreign_keys="Code.prize_id",          # <-- AMBIGUITY FIX
+        foreign_keys="Code.prize_id",   # AMBIGUITY FIX
         cascade="save-update, merge",
     )
-    # -> Code.manual_prize_id ile bağlanan kodlar (sadece rapor/okuma; spin mantığı bunu kullanmaz)
+    # -> Code.manual_prize_id ile bağlanan kodlar (rapor/okuma)
     manual_codes = relationship(
         "Code",
         foreign_keys="Code.manual_prize_id",
@@ -64,10 +64,8 @@ class Code(Base):
     prize = relationship(
         "Prize",
         back_populates="codes",
-        foreign_keys=[mapped_column.foreign_keys]  # placeholder to satisfy type checkers
+        foreign_keys=[prize_id],        # <-- yalnızca prize_id ile bağla
     )
-    # Yukarıdaki tip kontrol hatası yaşamamak için gerçek foreign_keys bağı aşağıda:
-    prize = relationship("Prize", back_populates="codes", foreign_keys=[lambda: Code.prize_id])
 
 
 class Spin(Base):
