@@ -21,7 +21,7 @@ from app.api.routers.site import router as site_router
 from app.api.routers.live import router as live_router
 from app.api.routers.schedule import router as schedule_router   # /api/schedule/...
 from app.api.routers.promos import router as promos_router       # /api/promos/...
-from app.api.routers.events import router as events_router       # /api/events/...  <-- eklendi
+from app.api.routers.events import router as events_router       # /api/events/...
 from app.api.routers.admin_mod import admin_router
 from app.db.session import SessionLocal, engine
 from app.db.models import Base, Prize, Code
@@ -84,7 +84,7 @@ app.include_router(site_router,      prefix="/api")
 app.include_router(live_router,      prefix="/api")
 app.include_router(schedule_router,  prefix="/api")
 app.include_router(promos_router,    prefix="/api")
-app.include_router(events_router,    prefix="/api")   # <-- eklendi
+app.include_router(events_router,    prefix="/api")
 app.include_router(admin_router)
 
 # -----------------------------
@@ -171,35 +171,77 @@ def on_startup() -> None:
             conn.execute(text("""
             DO $$
             BEGIN
-                IF EXISTS (
-                    SELECT 1 FROM information_schema.tables
-                    WHERE table_name='promo_codes'
-                ) THEN
-                    IF NOT EXISTS (
-                        SELECT 1 FROM information_schema.columns
-                        WHERE table_name='promo_codes' AND column_name='coupon_code'
-                    ) THEN
+                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='promo_codes') THEN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='promo_codes' AND column_name='coupon_code') THEN
                         EXECUTE 'ALTER TABLE promo_codes ADD COLUMN coupon_code VARCHAR(64)';
                     END IF;
-
-                    IF NOT EXISTS (
-                        SELECT 1 FROM information_schema.columns
-                        WHERE table_name='promo_codes' AND column_name='cta_url'
-                    ) THEN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='promo_codes' AND column_name='cta_url') THEN
                         EXECUTE 'ALTER TABLE promo_codes ADD COLUMN cta_url VARCHAR(512)';
                     END IF;
                 END IF;
             END $$;
             """))
+            # --- Çark için idempotent migrationlar ---
+            # prizes.enabled kolonu yoksa ekle
+            conn.execute(text("""
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='prizes') THEN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='prizes' AND column_name='enabled') THEN
+                        EXECUTE 'ALTER TABLE prizes ADD COLUMN enabled BOOLEAN DEFAULT TRUE';
+                    END IF;
+                END IF;
+            END $$;
+            """))
+            # codes.tier_key, manual_prize_id, used_at kolonu yoksa ekle; prize_id'ı nullable yap
+            conn.execute(text("""
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='codes') THEN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='codes' AND column_name='tier_key') THEN
+                        EXECUTE 'ALTER TABLE codes ADD COLUMN tier_key VARCHAR(32)';
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='codes' AND column_name='manual_prize_id') THEN
+                        EXECUTE 'ALTER TABLE codes ADD COLUMN manual_prize_id INTEGER REFERENCES prizes(id)';
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='codes' AND column_name='used_at') THEN
+                        EXECUTE 'ALTER TABLE codes ADD COLUMN used_at TIMESTAMPTZ';
+                    END IF;
+                    -- prize_id'ı nullable yap (spin sonrası dolacak)
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='codes' AND column_name='prize_id' AND is_nullable='NO') THEN
+                        EXECUTE 'ALTER TABLE codes ALTER COLUMN prize_id DROP NOT NULL';
+                    END IF;
+                END IF;
+            END $$;
+            """))
+            # prize_distributions tablosu yoksa oluştur + indexler
+            conn.execute(text("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='prize_distributions') THEN
+                    EXECUTE '
+                        CREATE TABLE prize_distributions (
+                            id SERIAL PRIMARY KEY,
+                            tier_key VARCHAR(32) NOT NULL,
+                            prize_id INTEGER NOT NULL REFERENCES prizes(id) ON DELETE CASCADE,
+                            weight_bp INTEGER NOT NULL DEFAULT 0,
+                            enabled BOOLEAN NOT NULL DEFAULT TRUE
+                        );
+                        CREATE INDEX IF NOT EXISTS ix_prize_distributions_tier ON prize_distributions(tier_key);
+                        CREATE INDEX IF NOT EXISTS ix_prize_distributions_prize ON prize_distributions(prize_id);
+                    ';
+                END IF;
+            END $$;
+            """))
 
-    # Seed
+    # Seed örneği (spin için)
     with SessionLocal() as db:
         if db.query(Prize).count() == 0:
             db.add_all([
-                Prize(label="₺100",  wheel_index=0),
-                Prize(label="₺250",  wheel_index=1),
-                Prize(label="₺500",  wheel_index=2),
-                Prize(label="₺1000", wheel_index=3),
+                Prize(label="₺100",  wheel_index=0, enabled=True),
+                Prize(label="₺250",  wheel_index=1, enabled=True),
+                Prize(label="₺500",  wheel_index=2, enabled=True),
+                Prize(label="₺1000", wheel_index=3, enabled=True),
             ])
             db.commit()
 
@@ -208,8 +250,8 @@ def on_startup() -> None:
             p500  = db.query(Prize).filter_by(label="₺500").first()
             if p1000 and p500:
                 db.add_all([
-                    Code(code="ABC123",  username="yasin", prize_id=p1000.id, status="issued"),
-                    Code(code="TEST500", username=None,    prize_id=p500.id,  status="issued"),
+                    Code(code="ABC123",  username="yasin", prize_id=None, tier_key="platinum", status="issued"),
+                    Code(code="TEST500", username=None,    prize_id=None, tier_key="gold",     status="issued"),
                 ])
                 db.commit()
 
