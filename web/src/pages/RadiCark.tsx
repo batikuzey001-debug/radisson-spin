@@ -255,6 +255,7 @@ async function postJson<T = any>(url: string, body: any): Promise<T> {
 function raf() { return new Promise((res) => requestAnimationFrame(() => res(null))); }
 
 /* ---------------- styles ---------------- */
+/* ---------------- styles ---------------- */
 const css = `
 :root{
   --bg1:#0b1224; --bg2:#0e1a33; --text:#eaf2ff; --muted:#9fb1cc;
@@ -266,11 +267,11 @@ const css = `
 .bgLogo{
   position:fixed; inset:0; z-index:-2; pointer-events:none;
   background-repeat:no-repeat; background-position:center; background-size:36vmin;
-  opacity:.08; filter:drop-shadow(0 0 12px rgba(0,229,255,.35));
-  animation:bgPulse 3.2s ease-in-out infinite;
+  opacity:.10; filter:drop-shadow(0 0 10px rgba(0,229,255,.25));
+  animation:bgPulse 3s ease-in-out infinite;
 }
-.bgLogo.run{ animation-duration:1.8s; opacity:.12 }
-@keyframes bgPulse{ 0%{transform:scale(0.98)} 50%{transform:scale(1.04)} 100%{transform:scale(0.98)} }
+.bgLogo.run{ animation-duration:1.8s; opacity:.14 }
+@keyframes bgPulse{ 0%{transform:scale(.98)} 50%{transform:scale(1.03)} 100%{transform:scale(.98)} }
 
 .hero{display:grid;place-items:center;margin:6px 0 10px}
 .title{font-weight:1000;font-size:clamp(26px,5vw,38px);letter-spacing:2px}
@@ -279,85 +280,59 @@ const css = `
 /* Reel alanı */
 .reelWrap{
   position:relative; height:${VISIBLE * ITEM_H}px; overflow:hidden; border-radius:16px;
-  background:linear-gradient(180deg,#07122a,#0a1733 40%, #09142f);
-  border:1px solid rgba(255,255,255,.12);
-  box-shadow:0 12px 40px rgba(0,0,0,.4), inset 0 0 50px rgba(0,229,255,.06);
+  background:#0a1327;                 /* sade koyu */
+  border:1px solid rgba(255,255,255,.10);
+  box-shadow:0 12px 36px rgba(0,0,0,.45);
 }
 
-/* Neon çerçeve – SABİT (dönme yok) */
-.neon{
-  pointer-events:none; position:absolute; inset:-2px; border-radius:18px;
-  background: conic-gradient(from 0deg,
-    rgba(0,229,255,.0) 0 24deg,
-    rgba(0,229,255,.65) 24deg 48deg,
-    rgba(255,196,0,.65) 48deg 72deg,
-    rgba(255,80,160,.65) 72deg 96deg,
-    rgba(0,229,255,.65) 96deg 120deg,
-    rgba(0,229,255,.0) 120deg 360deg);
-  filter:blur(7px); opacity:.70; z-index:2;
-  /* önceden run ile dönüyordu – kaldırıldı */
-}
+/* Neon çerçeve – KAPALI */
+.neon{ display:none }
 
-/* Reel */
+/* Reel (kayan içerik) */
 .reel{position:absolute; left:0; right:0; top:0; will-change: transform; z-index:1}
 
-/* Kutu – cam + renkli tint */
+/* Kutu – cam + hafif tint (çok düşük) */
 .card{
   height:${ITEM_H}px; display:flex; align-items:center; justify-content:center; position:relative;
   margin:10px 16px; border-radius:14px; text-align:center;
   font-weight:1000; font-size:22px; letter-spacing:.4px;
-  color:#fdfdff; text-shadow:0 2px 10px rgba(0,0,0,.8);
-  border:1px solid rgba(255,255,255,.12);
+  color:#fdfdff; text-shadow:0 2px 10px rgba(0,0,0,.75);
+  border:1px solid rgba(255,255,255,.10);
   background:
-    linear-gradient(180deg, hsla(var(--tint, 200) 90% 55% / .18), hsla(var(--tint, 200) 90% 55% / .10)),
-    linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.04));
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,.06), 0 10px 26px rgba(0,0,0,.28);
+    linear-gradient(180deg, hsla(var(--tint, 200) 90% 55% / .10), hsla(var(--tint, 200) 90% 55% / .06)),
+    linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.04));
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.05), 0 8px 20px rgba(0,0,0,.25);
   overflow:hidden;
 }
 /* Cam gövde */
 .glass{
   position:absolute; inset:0; display:grid; place-items:center;
-  background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.02));
+  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
   backdrop-filter: blur(2px);
 }
 .card .txt{ position:relative; z-index:1; padding:0 14px }
 
-/* LED halka – SABİT parıltı */
-.card .led{
-  content:""; position:absolute; inset:-1px; border-radius:16px; z-index:0; pointer-events:none;
-  background: conic-gradient(from 0deg,
-    rgba(0,229,255,.0) 0 45deg,
-    hsla(var(--tint, 200) 95% 60% / .65) 45deg 90deg,
-    rgba(255,255,255,.1) 90deg 100deg,
-    rgba(255,196,0,.6) 100deg 150deg,
-    rgba(0,229,255,.0) 150deg 360deg);
-  filter: blur(8px);
-}
+/* LED halka – KAPALI */
+.card .led{ display:none }
 
-/* Tier’lar */
-.card.high{ border-color: rgba(255,196,0,.55) }
-.card.mid { border-color: rgba(0,229,255,.45) }
-.card.low { border-color: rgba(120,170,255,.35) }
-.card.mini{ border-color: rgba(255,255,255,.18) }
+/* Tier kenar vurgusu (çok hafif) */
+.card.high{ border-color: rgba(255,196,0,.45) }
+.card.mid { border-color: rgba(0,229,255,.35) }
+.card.low { border-color: rgba(120,170,255,.28) }
+.card.mini{ border-color: rgba(255,255,255,.16) }
 
-/* Kazanan şerit – belirgin */
+/* Kazanan şerit – belirgin ama sade */
 .winRibbon{
-  position:absolute; left:-12%; right:-12%; top:calc(50% - 20px); height:40px; z-index:1;
-  background:
-    linear-gradient(90deg, rgba(0,229,255,0), rgba(0,229,255,.85), rgba(0,229,255,0)),
-    repeating-linear-gradient(90deg, rgba(255,255,255,.22) 0 6px, rgba(255,255,255,0) 6px 12px);
-  filter: blur(0.6px);
+  position:absolute; left:-10%; right:-10%; top:calc(50% - 18px); height:36px; z-index:1;
+  background: linear-gradient(90deg, transparent, rgba(0,229,255,.85), transparent);
+  box-shadow:0 0 18px rgba(0,229,255,.55), 0 0 26px rgba(0,229,255,.35);
   border-radius:12px;
-  box-shadow:0 0 18px rgba(0,229,255,.65), 0 0 28px rgba(0,229,255,.45);
 }
 
 /* Kazanan kutu – picker ortasında büyüt ve parlat */
 .card.win{
-  transform:scale(1.07);
-  box-shadow:
-    0 0 0 2px rgba(255,255,255,.14),
-    0 0 26px hsla(var(--tint, 200) 95% 60% / .55),
-    0 18px 36px rgba(0,0,0,.35);
+  transform:scale(1.06);
+  box-shadow:0 0 0 2px rgba(255,255,255,.12), 0 0 22px hsla(var(--tint, 200) 95% 60% / .5), 0 16px 30px rgba(0,0,0,.35);
 }
 
 /* Üst/alt maske (picker vurgusu) */
@@ -371,10 +346,9 @@ const css = `
 /* Ortadaki çizgi (picker) */
 .selectLine{
   position:absolute; left:10%; right:10%; top:calc(50% - 1px); height:2px; z-index:4;
-  background:linear-gradient(90deg, transparent, rgba(0,229,255,.98), transparent);
-  box-shadow:0 0 14px rgba(0,229,255,.75);
-  border-radius:2px;
-  pointer-events:none;
+  background:linear-gradient(90deg, transparent, rgba(0,229,255,.95), transparent);
+  box-shadow:0 0 12px rgba(0,229,255,.65);
+  border-radius:2px; pointer-events:none;
 }
 
 /* form */
@@ -393,14 +367,3 @@ input{background:#0e1730;border:1px solid rgba(255,255,255,.12);color:#eaf2ff;bo
 .m-img{width:100%; height:140px; object-fit:cover; border-radius:10px; margin-bottom:8px}
 .close{position:absolute;right:10px;top:10px;border:none;background:transparent;color:#9fb1cc;font-size:18px;cursor:pointer}
 `;
-/* Modal */
-function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
-  return (
-    <div className="modalWrap" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <button className="close" onClick={onClose}>✕</button>
-        {children}
-      </div>
-    </div>
-  );
-}
