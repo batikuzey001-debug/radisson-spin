@@ -3,11 +3,11 @@ import { useEffect, useMemo, useState } from "react";
 import { getHeaderConfig, type HeaderConfig } from "../api/site";
 
 /**
- * Global Header
- * - Logo (CMS)
- * - LIVE sayaç (daha küçük)
- * - Sağda: Hızlı Bonus (ghost pill) + Giriş CTA (primary pill)
- * - Altındaki kırmızı çizgi (liveUnderline) yanıp kayar
+ * Global Header (UI revamp only)
+ * - Link/işlevler KORUNDU (getHeaderConfig, login yönlendirme)
+ * - Hızlı Bonus: köşeli premium "chip" + gelişmiş bildirim (pulse + ring)
+ * - Radisson Giriş: köşeli “primary” buton, çok katmanlı premium görünüm
+ * - LIVE: dijital saat fontu (mümkün olan local font aileleriyle)
  */
 
 type HeaderConfigExt = HeaderConfig & {
@@ -70,14 +70,24 @@ export default function Header() {
 
         {/* Sağ: Hızlı Bonus + Giriş */}
         <div className="right">
-          <button className="pill ghost" onClick={(e) => e.preventDefault()} title="Hızlı Bonus (demo)">
-            <span className="ico" aria-hidden>🔔</span>
-            <span>Hızlı Bonus</span>
-            <span className="dot" aria-hidden />
+          {/* Hızlı Bonus (köşeli chip) */}
+          <button
+            className="chip ghost"
+            onClick={(e) => e.preventDefault()}
+            title="Hızlı Bonus (demo)"
+          >
+            <span className="chip__ledge" aria-hidden />
+            <span className="chip__ico" aria-hidden>🔔</span>
+            <span className="chip__txt">Hızlı Bonus</span>
+            <span className="chip__badge" aria-hidden>
+              <span className="pulse" />
+              <span className="ring" />
+            </span>
           </button>
 
+          {/* Radisson Giriş (primary, premium) */}
           <button
-            className="pill primary"
+            className="chip primary"
             onClick={() => {
               if (!cfg?.login_cta_url) return;
               setClicked(true);
@@ -87,8 +97,9 @@ export default function Header() {
             data-clicked={clicked ? "1" : "0"}
             title={cfg?.login_cta_text || "Giriş"}
           >
-            <span className="ico" aria-hidden>🟢</span>
-            <span>{cfg?.login_cta_text || "Giriş"}</span>
+            <span className="chip__glow" aria-hidden />
+            <span className="chip__ico" aria-hidden>🟢</span>
+            <span className="chip__txt">{cfg?.login_cta_text || "Giriş"}</span>
           </button>
         </div>
       </div>
@@ -197,6 +208,7 @@ function splitThousands(n: number): Array<{ kind: "num"; value: string } | { kin
 const css = `
 :root{
   --bg:#0b1224; --bg2:#0e1a33; --text:#eaf2ff; --aqua:#00e5ff; --red:#ff2a2a;
+  --gold:#ffd36a; --gold2:#f0b73a; --ink:#001018;
 }
 /* Header zemin */
 .hdr{background:linear-gradient(180deg,var(--bg),var(--bg2));border-bottom:1px solid rgba(255,255,255,.06)}
@@ -207,19 +219,26 @@ const css = `
 .logo{height:32px;display:block;filter:drop-shadow(0 0 10px rgba(0,229,255,.22))}
 @media (max-width:720px){ .logo{height:28px} }
 
-/* LIVE (küçültüldü) */
+/* LIVE (dijital font ailesi) */
 .liveWrap{display:flex;flex-direction:column;align-items:flex-start;gap:2px}
 @media (max-width:820px){ .liveWrap{display:none} }
 .liveRow{display:flex;align-items:center;gap:6px}
-.liveWord{display:inline-flex;align-items:center;gap:5px;font-weight:800;color:var(--red);font-size:13px;line-height:1}
+.liveWord{display:inline-flex;align-items:center;gap:5px;font-weight:800;color:var(--red);font-size:13px;line-height:1;letter-spacing:.4px}
 .dotR{width:6px;height:6px;border-radius:999px;background:var(--red);box-shadow:0 0 8px rgba(255,42,42,.8);animation:blink 1s infinite}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
-.roller{display:inline-flex;align-items:center;gap:2px;font-weight:800;font-size:13px;color:#fff}
+.roller{
+  display:inline-flex;align-items:center;gap:2px;font-weight:800;font-size:13px;color:#fff;
+  font-family: "DS-Digital","Digital-7","Orbitron","Share Tech Mono","Courier New",monospace;
+  letter-spacing:.4px;
+}
 .sep{opacity:.7;margin:0 1px}
 .grp{display:inline-flex;gap:1px}
-.digit{display:inline-block;width:11px;height:13px;overflow:hidden}
+.digit{display:inline-block;width:12px;height:14px;overflow:hidden}
 .col{display:flex;flex-direction:column;transition:transform .6s cubic-bezier(.2,.7,.2,1)}
-.cell{height:13px;line-height:13px;text-align:center;font-size:12px;color:#fff}
+.cell{
+  height:14px;line-height:14px;text-align:center;font-size:12px;color:#e9f6ff;
+  text-shadow:0 0 6px rgba(0,229,255,.35);
+}
 
 /* Kayan kırmızı çizgi (aktif) */
 .liveUnderline{
@@ -231,28 +250,58 @@ const css = `
 }
 @keyframes slidebar{ 0%{background-position:0% 0} 100%{background-position:180% 0} }
 
-/* PILL butonlar (düzgün hizalı) */
-.pill{
-  display:inline-flex; align-items:center; gap:8px;
-  height:34px; padding:0 12px;
-  border-radius:999px; border:1px solid transparent;
-  font-weight:700; font-size:13px; line-height:34px; color:#eaf2ff;
+/* ===================== Premium Köşeli Chip Butonlar ===================== */
+.chip{
+  --h:36px;
+  display:inline-flex; align-items:center; gap:10px;
+  height:var(--h); padding:0 14px;
+  border-radius:12px; border:1px solid rgba(255,255,255,.12);
+  font-weight:800; font-size:13px; line-height:var(--h); color:#eaf2ff;
   white-space:nowrap; text-decoration:none; cursor:pointer; position:relative;
+  isolation:isolate; transform:translateZ(0);
 }
-.pill .ico{font-size:13px}
-.pill.ghost{
-  background: rgba(255,255,255,.06);
-  border-color: rgba(255,255,255,.12);
+.chip:after{ /* üst parlama çizgisi */
+  content:""; position:absolute; inset:0; border-radius:12px;
+  background:linear-gradient(180deg,rgba(255,255,255,.18),rgba(255,255,255,0) 40%);
+  pointer-events:none; mix-blend:screen; opacity:.6;
 }
-.pill.ghost .dot{
-  width:8px;height:8px;border-radius:999px;background:#ff4d6d;
-  box-shadow:0 0 0 6px rgba(255,77,109,.18); margin-left:2px;
+.chip .chip__ico{font-size:13px; display:inline-grid; place-items:center}
+
+/* GHOST (Hızlı Bonus) */
+.chip.ghost{
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.04)),
+    linear-gradient(90deg, rgba(255,255,255,.08), rgba(255,255,255,0));
+  backdrop-filter: blur(6px);
+  border-color: rgba(255,255,255,.18);
+  box-shadow:
+    inset 0 0 0 0.5px rgba(255,255,255,.2),
+    0 6px 16px rgba(0,0,0,.25);
 }
-.pill.primary{
-  background: linear-gradient(90deg,#00e5ff,#4aa7ff);
-  color:#001018;
-  border-color:#0f6d8c;
-  box-shadow: 0 4px 12px rgba(0,229,255,.22), inset 0 0 0 1px rgba(255,255,255,.18);
+.chip.ghost:hover{ filter:brightness(1.08) }
+.chip__ledge{ /* sol ince ledge: premium detay */
+  width:2px; height:60%; border-radius:2px; background:linear-gradient(180deg,#ff6584,#ffc0cb);
+  box-shadow:0 0 10px rgba(255,101,132,.6), 0 0 20px rgba(255,101,132,.35);
 }
-.pill:hover{ filter:brightness(1.06) }
-`;
+.chip__badge{
+  position:relative; width:10px; height:10px; flex:0 0 10px;
+}
+.chip__badge .pulse{
+  position:absolute; inset:0; border-radius:999px; background:#ff4d6d;
+  box-shadow:0 0 12px rgba(255,77,109,.8);
+  animation:pulse 1.4s ease-in-out infinite;
+}
+.chip__badge .ring{
+  position:absolute; inset:-8px; border-radius:999px; border:2px solid rgba(255,77,109,.25);
+  animation:ring 1.4s ease-out infinite;
+}
+@keyframes pulse{
+  0%,100%{transform:scale(1); opacity:1} 50%{transform:scale(.8); opacity:.6}
+}
+@keyframes ring{
+  0%{transform:scale(.6); opacity:.6} 100%{transform:scale(1.2); opacity:0}
+}
+
+/* PRIMARY (Radisson Giriş) */
+.chip.primary{
+  background
