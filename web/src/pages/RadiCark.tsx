@@ -2,28 +2,24 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 /**
- * Tek Sütun Çark (slot tarzı) – Sade, net, okunur
+ * Tek Sütun Çark (slot tarzı) – Kutu tasarım + cam efekt
  * Akış:
  *  - GET  /api/prizes         -> ödüller (wheelIndex sırası)
  *  - POST /api/verify-spin    -> { targetIndex, prizeLabel, spinToken }
  *  - Animasyon biter -> POST /api/commit-spin
  *
- * Özellikler:
- *  - Kutu tasarımında ödüller, tutara göre renklenir (yüksek ödüller daha neon).
- *  - Kutuların etrafında dönen neon LED efekti.
- *  - Ortadaki picker cam efekti + çizgi.
- *  - Kazanan kutu sonunda picker ortasına denk gelir, soft zoom + glow alır.
+ * İstenilenler:
+ *  - Kutu arkaplanı ödülün "kendi rengine" (tutar odaklı tint) bürünsün AMA cam efekti korunsun.
+ *  - Arka planda sitenin logosu büyüyüp küçülsün (pulse).
+ *  - Kazanan kutuyu belirten şerit (ribbon) tasarıma daha uygun ve belirgin olsun.
  */
 
 type Prize = { id: number; label: string; wheelIndex: number; imageUrl?: string | null };
 type VerifyIn = { code: string; username: string };
-type VerifyOut = {
-  targetIndex: number;
-  prizeLabel: string;
-  spinToken: string;
-  prizeImage?: string | null;
-};
+type VerifyOut = { targetIndex: number; prizeLabel: string; spinToken: string; prizeImage?: string | null };
 type CommitIn = { code: string; spinToken: string };
+
+type HeaderConfig = { logo_url?: string; login_cta_text?: string; login_cta_url?: string };
 
 const API = import.meta.env.VITE_API_BASE_URL;
 
@@ -42,12 +38,12 @@ function parseAmount(label: string): number {
   const n = parseFloat(s);
   return Number.isFinite(n) ? n : 0;
 }
-/** Tutar -> görsel tier */
-function tierFromAmount(v: number): "high" | "mid" | "low" | "mini" {
-  if (v >= 10000) return "high";
-  if (v >= 1000) return "mid";
-  if (v >= 100) return "low";
-  return "mini";
+/** Tutar -> ton/hue + tier */
+function colorFromAmount(v: number): { hue: number; tier: "high" | "mid" | "low" | "mini" } {
+  if (v >= 10000) return { hue: 48, tier: "high" };   // altın sarısı
+  if (v >= 1000)  return { hue: 190, tier: "mid" };   // aqua/cyan
+  if (v >= 100)   return { hue: 225, tier: "low" };   // mavi
+  return { hue: 280, tier: "mini" };                  // mor
 }
 
 export default function RadiCark() {
@@ -57,6 +53,7 @@ export default function RadiCark() {
 
   // veri
   const [basePrizes, setBasePrizes] = useState<Prize[]>([]);
+  const [logoUrl, setLogoUrl] = useState<string>(""); // site logosu (arka plan pulse için)
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
 
@@ -72,27 +69,35 @@ export default function RadiCark() {
   // ödülleri çek
   useEffect(() => {
     let alive = true;
-    setLoading(true);
-    fetch(`${API}/api/prizes`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
-      .then((rows: Prize[]) => {
+    (async () => {
+      try {
+        setLoading(true);
+        // prizes
+        const r1 = await fetch(`${API}/api/prizes`);
+        if (!r1.ok) throw new Error(`HTTP ${r1.status}`);
+        const rows: Prize[] = await r1.json();
         if (!alive) return;
         const sorted = (rows || []).slice().sort((a, b) => a.wheelIndex - b.wheelIndex);
         setBasePrizes(sorted);
+        // site header - logo
+        try {
+          const r2 = await fetch(`${API}/api/site/header`);
+          if (r2.ok) {
+            const cfg: HeaderConfig = await r2.json();
+            setLogoUrl((cfg?.logo_url || "").trim());
+          }
+        } catch {/* yut */}
         setErr("");
-      })
-      .catch((e) => {
-        if (!alive) return;
-        setErr(e?.message ?? "Ödüller alınamadı");
-        setBasePrizes([]);
-      })
-      .finally(() => alive && setLoading(false));
-    return () => {
-      alive = false;
-    };
+      } catch (e: any) {
+        if (alive) {
+          setErr(e?.message ?? "Ödüller alınamadı");
+          setBasePrizes([]);
+        }
+      } finally {
+        alive && setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
   }, []);
 
   // Reel içeriği: etiketlerin LOOPS kez tekrarı
@@ -130,8 +135,6 @@ export default function RadiCark() {
       // hedef label & pozisyon (uzun dönüş için listenin son tekrarlarına denk getir)
       const lbl = basePrizes[vr.targetIndex]?.label ?? basePrizes[0].label;
       const baseLen = basePrizes.length;
-      const totalItems = baseLen * LOOPS;
-      // Hedefi sona yakın (sondan ikinci döngü) denk getirelim
       const targetIndexInReel = (LOOPS - 2) * baseLen + (vr.targetIndex % baseLen);
 
       // Picker ortalama için offset: containerHeight/2 - ITEM_H/2
@@ -154,12 +157,10 @@ export default function RadiCark() {
             code: code.trim(),
             spinToken: vr.spinToken,
           } as CommitIn);
-        } catch {
-          /* yutulabilir */
-        }
+        } catch {/* idempotent */}
         setResult({ label: vr.prizeLabel, image: vr.prizeImage });
         setSpinning(false);
-      }, SPIN_TIME * 1000 + 100);
+      }, SPIN_TIME * 1000 + 120);
     } catch (e: any) {
       setErr(String(e?.message || "Spin başarısız"));
       setSpinning(false);
@@ -168,6 +169,13 @@ export default function RadiCark() {
 
   return (
     <main className="slot">
+      {/* ARKA PLAN – LOGO PULSE */}
+      <div
+        className={`bgLogo ${spinning ? "run" : ""}`}
+        style={logoUrl ? { backgroundImage: `url('${logoUrl}')` } : undefined}
+        aria-hidden
+      />
+
       <header className="hero">
         <div className="title">RADİ ÇARK</div>
         <div className="sub">Tek sütun çark – şansını dene! 🎉</div>
@@ -192,20 +200,26 @@ export default function RadiCark() {
         >
           {reelItems.map((txt, i) => {
             const amt = parseAmount(txt);
-            const tier = tierFromAmount(amt);
+            const { hue, tier } = colorFromAmount(amt);
             const isWin =
-              result && txt === result.label && // sadece label uyuşması yeterli
-              Math.abs(translate + (i * ITEM_H - ((VISIBLE * ITEM_H) / 2 - ITEM_H / 2))) < 1; // merkezde mi?
+              result && txt === result.label &&
+              Math.abs(translate + (i * ITEM_H - ((VISIBLE * ITEM_H) / 2 - ITEM_H / 2))) < 1;
 
             return (
               <div
                 key={`ri-${i}`}
                 className={`card ${tier} ${isWin ? "win" : ""}`}
-                style={{ height: ITEM_H }}
+                style={{ height: ITEM_H, ["--tint" as any]: String(hue) } as any}
                 title={txt}
               >
+                {/* Neon LED halka (kutu çevresi) */}
                 <div className="led" aria-hidden />
-                <div className="txt">{txt}</div>
+                {/* Kazanan şerit – belirgin ve markaya uygun */}
+                {isWin && <div className="winRibbon" aria-hidden />}
+                {/* Cam gövde + yazı */}
+                <div className="glass">
+                  <span className="txt">{txt}</span>
+                </div>
               </div>
             );
           })}
@@ -267,10 +281,21 @@ const css = `
   --bg1:#0b1224; --bg2:#0e1a33; --text:#eaf2ff; --muted:#9fb1cc;
 }
 *{box-sizing:border-box}
-.slot{max-width:680px;margin:0 auto;padding:16px;color:var(--text)}
+.slot{max-width:720px;margin:0 auto;padding:16px;color:var(--text);position:relative;}
+
+/* Pulsing BACKGROUND LOGO */
+.bgLogo{
+  position:fixed; inset:0; z-index:-2; pointer-events:none;
+  background-repeat:no-repeat; background-position:center; background-size:36vmin;
+  opacity:.08; filter:drop-shadow(0 0 12px rgba(0,229,255,.35));
+  animation:bgPulse 3.2s ease-in-out infinite;
+}
+.bgLogo.run{ animation-duration:1.8s; opacity:.12 }
+@keyframes bgPulse{ 0%{transform:scale(0.98)} 50%{transform:scale(1.04)} 100%{transform:scale(0.98)} }
+
 .hero{display:grid;place-items:center;margin:6px 0 10px}
 .title{font-weight:1000;font-size:clamp(26px,5vw,38px);letter-spacing:2px}
-.sub{color:var(--muted)}
+.sub{color:#9fb1cc}
 
 /* Reel alanı */
 .reelWrap{
@@ -280,89 +305,110 @@ const css = `
   box-shadow:0 12px 40px rgba(0,0,0,.4), inset 0 0 50px rgba(0,229,255,.06);
 }
 
-/* Neon LED çerçeve – döner animasyon */
+/* Neon LED çerçeve (döner) */
 .neon{
   pointer-events:none; position:absolute; inset:-2px; border-radius:18px;
   background: conic-gradient(from 0deg,
-    rgba(0,229,255,.0) 0deg 20deg,
-    rgba(0,229,255,.65) 20deg 40deg,
-    rgba(255,80,160,.65) 40deg 60deg,
-    rgba(0,229,255,.65) 60deg 80deg,
-    rgba(0,229,255,.0) 80deg 360deg);
-  filter:blur(6px); opacity:.6; z-index:2;
+    rgba(0,229,255,.0) 0 24deg,
+    rgba(0,229,255,.65) 24deg 48deg,
+    rgba(255,196,0,.65) 48deg 72deg,
+    rgba(255,80,160,.65) 72deg 96deg,
+    rgba(0,229,255,.65) 96deg 120deg,
+    rgba(0,229,255,.0) 120deg 360deg);
+  filter:blur(7px); opacity:.6; z-index:2;
   animation:neonIdle 2.4s ease-in-out infinite alternate;
 }
-.neon.run{ animation:neonSpin 1.2s linear infinite; opacity:.9 }
-@keyframes neonIdle{ from{filter:blur(5px)} to{filter:blur(8px)} }
+.neon.run{ animation:neonSpin 1.2s linear infinite; opacity:.92 }
+@keyframes neonIdle{ from{filter:blur(6px)} to{filter:blur(9px)} }
 @keyframes neonSpin{ from{transform:rotate(0)} to{transform:rotate(360deg)} }
 
 .reel{position:absolute; left:0; right:0; top:0; will-change: transform; z-index:1}
 
-/* Kutu – tutara göre renk */
+/* Kutu – cam + renkli tint */
 .card{
   height:${ITEM_H}px; display:flex; align-items:center; justify-content:center; position:relative;
-  margin:8px 14px; border-radius:12px; text-align:center;
+  margin:10px 16px; border-radius:14px; text-align:center;
   font-weight:1000; font-size:22px; letter-spacing:.4px;
   color:#fdfdff; text-shadow:0 2px 10px rgba(0,0,0,.8);
   border:1px solid rgba(255,255,255,.12);
-  background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+  /* Tint rengini hsl(var(--tint)) ile veriyoruz; cam için alfa düşük */
+  background:
+    linear-gradient(180deg, hsla(var(--tint, 200) 90% 55% / .18), hsla(var(--tint, 200) 90% 55% / .10)),
+    linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.04));
   box-shadow:inset 0 0 0 1px rgba(255,255,255,.06), 0 10px 26px rgba(0,0,0,.28);
+  overflow:hidden;
 }
-/* LED halkası */
+/* Cam gövde */
+.glass{
+  position:absolute; inset:0; display:grid; place-items:center;
+  background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.02));
+  backdrop-filter: blur(2px);
+}
+.card .txt{ position:relative; z-index:1; padding:0 14px }
+
+/* LED halka */
 .card .led{
-  content:""; position:absolute; inset:-2px; border-radius:14px; z-index:0; pointer-events:none;
+  content:""; position:absolute; inset:-1px; border-radius:16px; z-index:0; pointer-events:none;
   background: conic-gradient(from 0deg,
-    rgba(0,229,255,.0) 0 30deg,
-    rgba(0,229,255,.6) 30deg 60deg,
-    rgba(255,196,0,.6) 60deg 90deg,
-    rgba(255,80,160,.6) 90deg 120deg,
-    rgba(0,229,255,.6) 120deg 150deg,
+    rgba(0,229,255,.0) 0 45deg,
+    hsla(var(--tint, 200) 95% 60% / .65) 45deg 90deg,
+    rgba(255,255,255,.1) 90deg 100deg,
+    rgba(255,196,0,.6) 100deg 150deg,
     rgba(0,229,255,.0) 150deg 360deg);
-  filter: blur(6px);
+  filter: blur(8px);
   animation: ring 2.2s linear infinite;
 }
 @keyframes ring{ from{transform:rotate(0)} to{transform:rotate(360deg)} }
 
-/* Tier renkleri */
-.card.high{ border-color: rgba(255,196,0,.6); box-shadow: 0 10px 30px rgba(255,196,0,.15), inset 0 0 0 1px rgba(255,255,255,.08) }
-.card.mid { border-color: rgba(0,229,255,.5); box-shadow: 0 10px 30px rgba(0,229,255,.12), inset 0 0 0 1px rgba(255,255,255,.08) }
+/* Tier'lara mikro vurgu */
+.card.high{ border-color: rgba(255,196,0,.55) }
+.card.mid { border-color: rgba(0,229,255,.45) }
 .card.low { border-color: rgba(120,170,255,.35) }
 .card.mini{ border-color: rgba(255,255,255,.18) }
 
-.card .txt{ position:relative; z-index:1; padding:0 12px }
+/* Kazanan şerit – belirgin, tasarıma uygun */
+.winRibbon{
+  position:absolute; left:-12%; right:-12%; top:calc(50% - 20px); height:40px; z-index:1;
+  background:
+    linear-gradient(90deg, rgba(0,229,255,0), rgba(0,229,255,.75), rgba(0,229,255,0)),
+    repeating-linear-gradient(90deg, rgba(255,255,255,.22) 0 6px, rgba(255,255,255,0) 6px 12px);
+  filter: blur(0.6px);
+  border-radius:12px;
+  box-shadow:0 0 18px rgba(0,229,255,.55), 0 0 26px rgba(0,229,255,.35);
+}
 
 /* Kazanan kutu – picker ortasında büyüt ve parlat */
 .card.win{
-  transform:scale(1.06);
+  transform:scale(1.07);
   box-shadow:
-    0 0 0 2px rgba(255,255,255,.12),
-    0 0 20px rgba(0,229,255,.45),
+    0 0 0 2px rgba(255,255,255,.14),
+    0 0 26px hsla(var(--tint, 200) 95% 60% / .55),
     0 18px 36px rgba(0,0,0,.35);
 }
 
 /* Üst/alt maske (picker vurgusu için) */
 .mask{position:absolute; left:0; right:0; height:${ITEM_H}px; z-index:3;
-  background:linear-gradient(180deg, rgba(5,10,20,.95), rgba(5,10,20,0));
+  background:linear-gradient(180deg, rgba(5,10,20,.92), rgba(5,10,20,0));
   pointer-events:none;
 }
-.mask.top{top:0; transform:translateY(-35%)}
-.mask.bottom{bottom:0; transform:translateY(35%)}
+.mask.top{top:0; transform:translateY(-38%)}
+.mask.bottom{bottom:0; transform:translateY(38%)}
 
 /* Ortadaki çizgi (picker) */
 .selectLine{
   position:absolute; left:10%; right:10%; top:calc(50% - 1px); height:2px; z-index:4;
-  background:linear-gradient(90deg, transparent, rgba(0,229,255,.95), transparent);
-  box-shadow:0 0 12px rgba(0,229,255,.65);
+  background:linear-gradient(90deg, transparent, rgba(0,229,255,.98), transparent);
+  box-shadow:0 0 14px rgba(0,229,255,.75);
   border-radius:2px;
   pointer-events:none;
 }
 
 /* form */
-.panel{margin-top:12px}
-.row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;justify-content:center;margin-bottom:8px}
+.panel{margin-top:14px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;justify-content:center;margin-bottom:10px}
 .f{display:flex;flex-direction:column;gap:6px}
 .f span{font-size:12px;color:var(--muted)}
-input{background:#0e1730;border:1px solid rgba(255,255,255,.12);color:#eaf2ff;border-radius:10px;padding:10px 12px;min-width:240px}
+input{background:#0e1730;border:1px solid rgba(255,255,255,.12);color:#eaf2ff;border-radius:10px;padding:10px 12px;min-width:260px}
 .btn{background:linear-gradient(90deg,#00e5ff,#4aa7ff); color:#001018; border:none;border-radius:10px; padding:12px 16px; font-weight:900; cursor:pointer; box-shadow:0 8px 22px rgba(0,229,255,.25)}
 .msg.error{color:#ffb3c0;margin-top:4px}
 
@@ -373,7 +419,6 @@ input{background:#0e1730;border:1px solid rgba(255,255,255,.12);color:#eaf2ff;bo
 .m-img{width:100%; height:140px; object-fit:cover; border-radius:10px; margin-bottom:8px}
 .close{position:absolute;right:10px;top:10px;border:none;background:transparent;color:#9fb1cc;font-size:18px;cursor:pointer}
 `;
-
 /* Modal */
 function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   return (
