@@ -37,7 +37,6 @@ def _dt_input(v):
     return ""
 
 def _fmt_try(v) -> str:
-    # Neden: Ödül miktarını okunaklı göstermek (TRY).
     try:
         if v is None:
             return "-"
@@ -48,7 +47,6 @@ def _fmt_try(v) -> str:
         return "-"
 
 def _has(Model: Type, name: str) -> bool:
-    # Model'de kolon var mı? (reflection yerine basit hasattr)
     return hasattr(Model, name)
 
 # SABİT kategoriler
@@ -94,7 +92,7 @@ def page_turnuvabonus(
     except Exception:
         editing = None
 
-    # Sekmeler (mobil açılır/kapanır)
+    # Sekmeler
     tabs = [
         ("tournaments",   "Turnuvalar"),
         ("daily-bonuses", "Güne Özel Bonuslar"),
@@ -123,7 +121,6 @@ def page_turnuvabonus(
         if editing else ""
     )
 
-    # Form: anlaşılır alan başlıkları ile (yalnızca Model'de olan kolonlar gösterilir)
     form = [
         "<div class='card form-card'>",
         f"<div class='form-head'><div><h1>{_e(title_text)}</h1><div class='sub'>{sub_text}</div></div>"
@@ -133,7 +130,7 @@ def page_turnuvabonus(
         "<div class='grid'>",
     ]
 
-    # Temel bilgi
+    # Temel
     form.append(f"<label class='field'><span>Başlık</span><input name='title' value='{val('title')}' required></label>")
 
     if _has(Model, "subtitle"):
@@ -165,23 +162,12 @@ def page_turnuvabonus(
         form.append(f"<option value='{s}' {sel}>{'Yayında' if s=='published' else 'Taslak'}</option>")
     form.append("</select></label>")
 
-    # Ödül / Katılım / CTA
-    if _has(Model, "prize_pool"):
-        form.append(
-            f"<label class='field'><span>Ödül Miktarı (₺)</span>"
-            f"<input name='prize_pool' type='number' inputmode='numeric' min='0' step='1' "
-            f"value='{_e(str(getattr(editing, 'prize_pool', '') or ''))}' placeholder='35000000'></label>"
-        )
-
-    if _has(Model, "participant_count"):
-        form.append(
-            f"<label class='field'><span>Katılımcı Sayısı</span>"
-            f"<input name='participant_count' type='number' inputmode='numeric' min='0' step='1' "
-            f"value='{_e(str(getattr(editing, 'participant_count', '') or ''))}' placeholder='0'></label>"
-        )
-
+    # Promosyon kodları için ekstra alanlar
     if _has(Model, "cta_url"):
-        form.append(f"<label class='field'><span>Buton Bağlantısı (KATIL)</span><input name='cta_url' value='{val('cta_url')}' placeholder='/wheel veya https://...'></label>")
+        form.append(f"<label class='field'><span>Buton Bağlantısı</span><input name='cta_url' value='{val('cta_url')}' placeholder='https://... veya /sayfa'></label>")
+
+    if _has(Model, "coupon_code"):
+        form.append(f"<label class='field'><span>Kupon Kodu</span><input name='coupon_code' value='{val('coupon_code')}' placeholder='Örn: NEON50'></label>")
 
     # Açıklamalar
     if _has(Model, "short_desc"):
@@ -190,14 +176,13 @@ def page_turnuvabonus(
     if _has(Model, "long_desc"):
         form.append(f"<label class='field'><span>Detay Açıklama (Modal)</span><textarea name='long_desc' rows='4' placeholder='Kart tıklanınca açılacak uzun açıklama...'>{val('long_desc')}</textarea></label>")
 
-    # Liderlik görünürlüğü
     if _has(Model, "rank_visible"):
         checked = "checked" if bool(getattr(editing, "rank_visible", False)) else ""
         form.append(f"<label class='field'><span>Liderlik Tablosu</span><label class='cb'><input type='checkbox' name='rank_visible' {checked}> Görünsün</label></label>")
 
     form.extend(
         [
-            "</div>",  # grid
+            "</div>",
             "<div class='form-actions'>"
             "<button class='btn primary' type='submit'>Kaydet</button>"
             f"{cancel_edit_btn}"
@@ -206,9 +191,12 @@ def page_turnuvabonus(
         ]
     )
 
-    # Altta: Liste
+    # Liste
     t = [f"<div class='card'><h1>{_e(KIND_MAP[tab]['label'])}</h1>"]
-    headers = "<tr><th>ID</th><th>Başlık</th><th>Durum</th><th>Başlangıç</th><th>Bitiş</th>"
+    headers = "<tr><th>ID</th><th>Başlık</th>"
+    if _has(Model, "coupon_code"):
+        headers += "<th>Kupon</th>"
+    headers += "<th>Durum</th><th>Başlangıç</th><th>Bitiş</th>"
     if _has(Model, "prize_pool"):
         headers += "<th>Ödül</th>"
     if _has(Model, "participant_count"):
@@ -225,11 +213,13 @@ def page_turnuvabonus(
 
         prize_td = f"<td>{_fmt_try(getattr(r, 'prize_pool', None))}</td>" if _has(Model, "prize_pool") else ""
         part_td = f"<td>{_e(str(getattr(r, 'participant_count', '-') or '-'))}</td>" if _has(Model, "participant_count") else ""
+        coupon_td = f"<td><code>{_e(getattr(r, 'coupon_code', '') or '-')}</code></td>" if _has(Model, "coupon_code") else ""
 
         t.append(
             f"<tr>"
             f"<td>{r.id}</td>"
             f"<td>{_e(r.title)}</td>"
+            f"{coupon_td}"
             f"<td>{_e(getattr(r,'status','-') or '-')}</td>"
             f"<td>{start_txt}</td>"
             f"<td>{end_txt}</td>"
@@ -322,7 +312,7 @@ async def upsert_item(
         "category":  (form.get("category") or "").strip() or None,
     }
 
-    # Opsiyonel alanlar (Model'de varsa set et)
+    # Opsiyonel alanlar
     if _has(Model, "subtitle"):
         data["subtitle"] = (form.get("subtitle") or "").strip() or None
     if _has(Model, "slug"):
@@ -331,6 +321,8 @@ async def upsert_item(
         data["banner_url"] = (form.get("banner_url") or "").strip() or None
     if _has(Model, "cta_url"):
         data["cta_url"] = (form.get("cta_url") or "").strip() or None
+    if _has(Model, "coupon_code"):
+        data["coupon_code"] = (form.get("coupon_code") or "").strip() or None
     if _has(Model, "short_desc"):
         data["short_desc"] = (form.get("short_desc") or "").strip() or None
     if _has(Model, "long_desc"):
