@@ -128,7 +128,7 @@ export default function RadiCark() {
 
       {/* REEL */}
       <section className="reelWrap">
-        {/* Sabit sınır (dönmez) */}
+        {/* Sabit çerçeve (dönmez) */}
         <div className="frame" aria-hidden />
         <div className="mask top" />
         <div className="mask bottom" />
@@ -144,7 +144,6 @@ export default function RadiCark() {
           {reelItems.map((txt, i) => {
             const amt = parseAmount(txt);
             const { hue, tier } = colorFromAmount(amt);
-            // picker merkezinde mi?
             const isCenter =
               result && txt === result.label &&
               Math.abs(translate + (i * ITEM_H - ((VISIBLE * ITEM_H) / 2 - ITEM_H / 2))) < 1;
@@ -156,11 +155,9 @@ export default function RadiCark() {
                 style={{ height: ITEM_H, ["--tint" as any]: String(hue) } as any}
                 title={txt}
               >
-                {/* Neon şeritli çerçeve (animasyonlu) */}
+                {/* neon şeritli kenar */}
                 <div className="neonBorder" aria-hidden />
-                {/* Kazanan şerit */}
                 {isCenter && <div className="winRibbon" aria-hidden />}
-                {/* Cam gövde */}
                 <div className="glass">
                   <span className="txt">{txt}</span>
                 </div>
@@ -190,6 +187,7 @@ export default function RadiCark() {
         {err && <div className="msg error">⚠️ {err}</div>}
       </section>
 
+      {/* MODAL */}
       {result && (
         <Modal onClose={() => setResult(null)}>
           <div className="m-title">Ödül kazandınız! 🎉</div>
@@ -219,6 +217,7 @@ async function postJson<T = any>(url: string, body: any, allowEmpty = false): Pr
   }
   return (await r.json()) as T;
 }
+/** tek tanım – duplicate hatasını engeller */
 function raf() { return new Promise((res) => requestAnimationFrame(() => res(null))); }
 
 /* styles */
@@ -252,12 +251,12 @@ const css = `
   border:1px solid rgba(255,255,255,.10);
   box-shadow:0 12px 32px rgba(0,0,0,.35);
 }
-/* Sabit, sade çerçeve */
+/* sabit, sade çerçeve */
 .frame{position:absolute; inset:-2px; border-radius:18px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.10); z-index:2}
 
 .reel{position:absolute; left:0; right:0; top:0; will-change: transform; z-index:1}
 
-/* KART: cam + belirgin tint + neon border */
+/* KART: cam + daha belirgin tint + neon border */
 .card{
   height:${ITEM_H}px; display:flex; align-items:center; justify-content:center; position:relative;
   margin:10px 16px; border-radius:14px; text-align:center;
@@ -290,16 +289,10 @@ const css = `
 }
 @keyframes borderSpin{ from{transform:rotate(0)} to{transform:rotate(360deg)} }
 
-/* TIER micro tweaks */
-.card.high{ box-shadow:0 8px 24px rgba(255,196,0,.20) inset }
-.card.mid { box-shadow:0 8px 24px rgba(0,229,255,.18) inset }
-.card.low { box-shadow:0 8px 24px rgba(120,170,255,.14) inset }
-.card.mini{ box-shadow:0 8px 24px rgba(255,255,255,.10) inset }
-
-/* Kazanan şerit – daha belirgin */
+/* Kazanan şerit – belirgin */
 .winRibbon{
   position:absolute; left:-12%; right:-12%; top:calc(50% - 18px); height:36px; z-index:1;
-  background:linear-gradient(90deg, transparent, rgba(0,229,255,.98), transparent);
+  background:linear-gradient(90deg, transparent, rgba(0,229,255,1), transparent);
   box-shadow:0 0 22px rgba(0,229,255,.85), 0 0 30px rgba(0,229,255,.55);
   border-radius:10px;
 }
@@ -332,20 +325,3 @@ input{background:#0e1730;border:1px solid rgba(255,255,255,.12);color:#eaf2ff;bo
 .m-img{width:100%; height:140px; object-fit:cover; border-radius:10px; margin-bottom:8px}
 .close{position:absolute;right:10px;top:10px;border:none;background:transparent;color:#9fb1cc;font-size:18px;cursor:pointer}
 `;
-
-// ---------- helpers ----------
-async function postJson<T = any>(url: string, body: any, allowEmpty = false): Promise<T> {
-  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  if (!r.ok) {
-    let msg = `HTTP ${r.status}`;
-    try { const js = await r.json(); if (js?.detail) msg = js.detail; } catch {}
-    throw new Error(msg);
-  }
-  if (allowEmpty) {
-    const txt = await r.text();
-    if (!txt) return {} as T;
-    try { return JSON.parse(txt) as T; } catch { return {} as T; }
-  }
-  return (await r.json()) as T;
-}
-function raf() { return new Promise((res) => requestAnimationFrame(() => res(null))); }
