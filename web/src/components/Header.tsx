@@ -72,6 +72,7 @@ export default function Header() {
         <div className="right">
           {/* Hızlı Bonus */}
           <button
+            type="button"
             className="chip ghost"
             onClick={(e) => e.preventDefault()}
             title="Hızlı Bonus (demo)"
@@ -87,6 +88,7 @@ export default function Header() {
 
           {/* Radisson Giriş */}
           <button
+            type="button"
             className="chip primary"
             onClick={() => {
               if (!cfg?.login_cta_url) return;
