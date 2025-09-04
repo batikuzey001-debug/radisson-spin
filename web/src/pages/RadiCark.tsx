@@ -7,6 +7,7 @@ type Prize = {
   wheelIndex: number;
   imageUrl?: string | null;
 };
+
 type VerifyIn = { code: string; username: string };
 type VerifyOut = {
   targetIndex: number;
@@ -18,10 +19,10 @@ type CommitIn = { code: string; spinToken: string };
 
 const API = import.meta.env.VITE_API_BASE_URL;
 
-/** Görsel denge için 20 dilim (24/32 yapabilirsin) */
+/** Dilim sayısı – 20 gayet okunur, istersen 24/32 yapabilirsin */
 const SEGMENTS = 20;
-/** Etiketi dış çembere yakınlaştırma (yüzde) */
-const LABEL_RADIAL = 86; // 86% → daha da uca: 88-90
+/** Etiketi dışa itme yüzdesi (merkezden) */
+const LABEL_R = 86;
 
 type Slice = {
   prize: Prize;
@@ -39,10 +40,12 @@ export default function RadiCark() {
 
   const [spinning, setSpinning] = useState(false);
   const [result, setResult] = useState<{ label: string; image?: string | null } | null>(null);
+
+  // Dönüş açısı (transition bunun üzerinde – var() yok)
   const [angle, setAngle] = useState(0);
   const lastAngleRef = useRef(0);
 
-  // Ödülleri çek
+  /** Ödülleri çek */
   useEffect(() => {
     let ok = true;
     setLoading(true);
@@ -62,7 +65,7 @@ export default function RadiCark() {
     return () => { ok = false; };
   }, []);
 
-  // Dilimler
+  /** Dilimler: 20’ye tamamla + hafif karıştır + renk tonu üret */
   const slices: Slice[] = useMemo(() => {
     if (!basePrizes.length) return [];
     const rep: Slice[] = [];
@@ -79,8 +82,9 @@ export default function RadiCark() {
   }, [basePrizes]);
 
   const segAngle = 360 / (slices.length || 1);
+  const wheelAngle = ((angle % 360) + 360) % 360; // -/+ açıları normalize et
 
-  // Spin
+  /** SPIN */
   const onSpin = async () => {
     setErr(""); setResult(null);
     if (!code.trim() || !username.trim()) return setErr("Kullanıcı adı ve kod gerekli.");
@@ -94,6 +98,7 @@ export default function RadiCark() {
         code: code.trim(), username: username.trim(),
       } as VerifyIn);
 
+      // Görsel listede aynı orijinal index’e sahip dilimlerden rasgele biri
       const matches = slices
         .map((s, idx) => ({ idx, s }))
         .filter((x) => x.s.sourceIndex === vr.targetIndex)
@@ -101,15 +106,15 @@ export default function RadiCark() {
       if (!matches.length) throw new Error("Hedef dilim bulunamadı.");
 
       const targetSlice = matches[Math.floor(Math.random() * matches.length)];
-      /** Pointer tepede = 90° */
+      /** Tepe pointer = 90° → hizalama */
       const pointerDeg = 90;
       const centerDeg  = (targetSlice + 0.5) * segAngle;
-      const fullTurns  = randInt(11, 14);           // daha yavaş
-      const jitter     = (Math.random() - 0.5) * 2; // ±1°
+      const fullTurns  = randInt(11, 14);                // daha yavaş
+      const jitter     = (Math.random() - 0.5) * 2;      // ±1°
       const absolute   = lastAngleRef.current + fullTurns * 360 + (pointerDeg - centerDeg) + jitter;
 
-      setAngle(absolute);                 // transition transform üzerinde
-      await wait(13600 + 200);            // ~13.6s
+      setAngle(absolute);
+      await wait(13600 + 200);                           // ~13.6s
 
       await postJson(`${API}/api/commit-spin`, {
         code: code.trim(), spinToken: vr.spinToken,
@@ -124,6 +129,19 @@ export default function RadiCark() {
     }
   };
 
+  /** Conic-gradient ile dilim arka planı */
+  const bgConic = useMemo(() => {
+    if (!slices.length) return "";
+    const cA = "#10224a", cB = "#143069";
+    const arr: string[] = [];
+    for (let i = 0; i < slices.length; i++) {
+      const a0 = i * segAngle;
+      const a1 = (i + 1) * segAngle;
+      arr.push(`${i % 2 ? cB : cA} ${a0}deg ${a1}deg`);
+    }
+    return `conic-gradient(${arr.join(",")})`;
+  }, [slices, segAngle]);
+
   return (
     <main className="spin">
       <div className="bgDecor" aria-hidden />
@@ -136,26 +154,50 @@ export default function RadiCark() {
         <div className={`neonRing ${spinning ? "alive" : ""}`} aria-hidden />
         <div className={`pointer ${spinning ? "tick" : ""}`}><div className="pin" /></div>
 
-        {/* Çark gövdesi */}
         <div className="wheel" style={{ transform: `rotate(${angle}deg)` }}>
+          {/* arka plan dilimler */}
+          <div className="bg" style={{ background: bgConic }} />
+          {/* dış ve iç halkalar */}
           <div className="rim" />
+          {/* ayraç çizgiler */}
           <div className="spokes">
             {Array.from({ length: slices.length }).map((_, i) => (
               <div key={i} className="spoke" style={{ transform: `rotate(${i * segAngle}deg)` }} />
             ))}
           </div>
 
-          {/* wedge + yatay etiket */}
-          {slices.map((sl, i) => (
-            <Slice
-              key={`sl-${i}-${sl.prize.id}`}
-              index={i}
-              segAngle={segAngle}
-              label={sl.label}
-              hue={sl.hue}
-            />
-          ))}
+          {/* YATAY etiketler (ekrana paralel) */}
+          {slices.map((sl, i) => {
+            const mid = (i + 0.5) * segAngle;
+            // Dış sarma mid'e döner → iç yazı teğete ve ekrana paralel kalması için wheelAngle'ı tersler
+            return (
+              <div
+                key={`lbl-${i}`}
+                className="lblWrap"
+                style={{ transform: `rotate(${mid}deg)` }}
+              >
+                <div
+                  className="lbl"
+                  style={{
+                    transform: `translate(${LABEL_R}%, -50%) rotate(${-mid - wheelAngle}deg)`,
+                  }}
+                  title={sl.label}
+                >
+                  {sl.label}
+                </div>
+                {/* uç nokta */}
+                <div
+                  className="endDot"
+                  style={{
+                    transform: `translate(${LABEL_R + 12}%, -50%) rotate(${-wheelAngle}deg)`,
+                    background: `hsl(${sl.hue} 95% 60%)`,
+                  }}
+                />
+              </div>
+            );
+          })}
 
+          {/* merkez plaka */}
           <div className="hub" />
         </div>
       </section>
@@ -192,7 +234,7 @@ export default function RadiCark() {
   );
 }
 
-/* ---------------- helpers ---------------- */
+/* ---------- helpers ---------- */
 async function postJson<T = any>(url: string, body: any): Promise<T> {
   const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!r.ok) {
@@ -207,68 +249,11 @@ function randInt(a: number, b: number) { return Math.floor(a + Math.random() * (
 function shuffle<T>(arr: T[]): T[] { const a = arr.slice(); for (let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; }
 function hueFromLabel(s: string): number { let h = 0; for (let i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i)) % 360; return h; }
 
-/* ---------------- slice: wedge + HİÇ EĞİM YOK, TAM YATAY METİN ---------------- */
-function Slice({
-  index, segAngle, label, hue,
-}: { index:number; segAngle:number; label:string; hue:number }) {
-  const rotate = index * segAngle;
-  return (
-    <div
-      className="slice"
-      style={
-        {
-          transform: `rotate(${rotate}deg)`,
-          ["--rot" as any]: `${rotate}deg`,
-          ["--neon" as any]: hue,
-        } as React.CSSProperties
-      }
-    >
-      <div className="sector" />
-      <div className="neonEdge" />
-      {/* 1) Metni dış çemberde yatay bas: slice döndü → etiketi karşı yönde döndür */}
-      <div
-        className="hLabel"
-        style={
-          {
-            transform: `rotate(${-rotate - 90}deg) translate(${LABEL_RADIAL}%, -50%)`,
-          } as React.CSSProperties
-        }
-        title={label}
-      >
-        {label}
-      </div>
-      {/* 2) Uç parlak nokta – aynı hizaya */}
-      <div
-        className="endDot"
-        style={
-          {
-            transform: `rotate(${-rotate - 90}deg) translate(${LABEL_RADIAL + 12}%, -50%)`,
-            background: `hsl(${hue} 95% 60%)`,
-          } as React.CSSProperties
-        }
-      />
-    </div>
-  );
-}
-
-/* ---------------- modal ---------------- */
-function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
-  return (
-    <div className="modalWrap" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <button className="close" onClick={onClose}>✕</button>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-/* ---------------- styles ---------------- */
+/* ---------- styles ---------- */
 const css = `
 :root{
   --text:#eaf2ff; --muted:#9fb1cc;
   --ring:#091227; --rim:#0c1430; --pointer:#ff3b6b;
-  --sliceA:#10224a; --sliceB:#143069;
 }
 .spin{max-width:1200px;margin:0 auto;padding:16px;color:var(--text)}
 .bgDecor{position:fixed; inset:0; pointer-events:none; z-index:-1;
@@ -282,6 +267,7 @@ const css = `
 
 .stage{position:relative;display:grid;place-items:center;margin:12px 0 6px;pointer-events:none;z-index:1}
 
+/* dış neon HALKA */
 .neonRing{position:absolute; width:min(76vw,580px); height:min(76vw,580px); border-radius:999px;
   background: radial-gradient(60% 60% at 50% 50%, rgba(0,229,255,.08), transparent 70%),
               conic-gradient(from 0deg, rgba(0,229,255,.5) 0 6deg, rgba(0,229,255,0) 6deg 12deg);
@@ -291,40 +277,37 @@ const css = `
 @keyframes neonIdle{ from{opacity:.5} to{opacity:.8} }
 @keyframes neonRun{ 0%{filter:blur(1px)} 50%{filter:blur(2.6px)} 100%{filter:blur(1px)} }
 
+/* pointer */
 .pointer{position:absolute;top:-10px;pointer-events:none}
 .pointer .pin{position:absolute;top:-8px;left:-3px;width:6px;height:6px;border-radius:50%;background:#ffe0ea;box-shadow:0 0 10px rgba(255,59,107,.8)}
 .pointer.tick{animation:ptr .08s linear infinite}
 @keyframes ptr{0%{transform:translateX(0)}50%{transform:translateX(1px)}100%{transform:translateX(0)}}
 
 /* çark */
-.wheel{width:min(72vw,540px); height:min(72vw,540px); border-radius:999px; background:var(--ring); border:1px solid rgba(255,255,255,.15); position:relative;
-  box-shadow:inset 0 0 0 10px var(--rim), 0 22px 70px rgba(0,0,0,.5);
-  transition: transform 13.6s cubic-bezier(.17,.85,.08,1);
-  will-change: transform; pointer-events:none; transform:rotate(0deg);
+.wheel{width:min(72vw,540px); height:min(72vw,540px); border-radius:999px; position:relative;
+  transition: transform 13.6s cubic-bezier(.17,.85,.08,1); will-change: transform; pointer-events:none; transform:rotate(0deg);
 }
-.rim{position:absolute; inset:2%; border-radius:999px; box-shadow:inset 0 0 0 2px rgba(255,255,255,.08), inset 0 0 50px rgba(0,229,255,.12)}
+.bg{position:absolute; inset:0; border-radius:999px; overflow:hidden}
+.bg:before{ /* radial parıltı */
+  content:""; position:absolute; inset:0; border-radius:999px;
+  background: radial-gradient(40% 40% at 60% 45%, rgba(255,255,255,.06), transparent 60%);
+}
+
+.rim{position:absolute; inset:2%; border-radius:999px; box-shadow:inset 0 0 0 10px var(--rim), 0 22px 70px rgba(0,0,0,.5)}
 .spokes{position:absolute; inset:0; pointer-events:none}
-.spoke{position:absolute; left:50%; top:50%; width:49%; height:1px; background:rgba(255,255,255,.10); transform-origin:left center}
+.spoke{position:absolute; left:50%; top:50%; width:49%; height:1px; background:rgba(255,255,255,.12); transform-origin:left center}
 
-.slice{position:absolute; inset:0; transform-origin:50% 50%; pointer-events:none}
-.sector{position:absolute; inset:0; border-radius:999px;
-  mask: conic-gradient(from 0deg, white 0deg, white var(--label-rot), transparent var(--label-rot));
-  background: radial-gradient(60% 60% at 60% 45%, rgba(0,229,255,.08), transparent 70%),
-             linear-gradient(180deg, var(--sliceA), var(--sliceB));
-}
-.neonEdge{position:absolute; left:50%; top:50%; width:50%; height:1px; transform-origin:left center;
-  background:hsl(var(--neon) 95% 60% / .55);
-  box-shadow:0 0 8px hsl(var(--neon) 95% 60% / .55), 0 0 14px hsl(var(--neon) 95% 60% / .35);
-}
-
-/* === YATAY ETİKET === */
-.hLabel{position:absolute; left:50%; top:50%; transform-origin:left center;
+.lblWrap{position:absolute; left:50%; top:50%; transform-origin:50% 50%; pointer-events:none}
+.lbl{
+  position:absolute; left:0; top:0; transform-origin:left center;
   color:#f8fdff; font-weight:1000; font-size:16px; letter-spacing:.35px;
   text-shadow:0 2px 12px rgba(0,0,0,.95), 0 0 3px rgba(0,0,0,.95);
-  pointer-events:none; white-space:nowrap; max-width:280px; overflow:hidden; text-overflow:ellipsis; z-index:2;
+  white-space:nowrap; max-width:280px; overflow:hidden; text-overflow:ellipsis;
 }
-/* Uç nokta */
-.endDot{position:absolute; left:50%; top:50%; width:10px; height:10px; border-radius:999px; box-shadow:0 0 10px currentColor, 0 0 16px currentColor; pointer-events:none}
+.endDot{
+  position:absolute; left:0; top:0; transform-origin:left center; width:10px; height:10px; border-radius:999px;
+  box-shadow:0 0 10px currentColor, 0 0 16px currentColor; pointer-events:none;
+}
 
 /* merkez plaka */
 .hub{position:absolute; inset:36% 36%; border-radius:999px;
@@ -343,12 +326,4 @@ input{background:#0e1730;border:1px solid rgba(255,255,255,.12);color:#eaf2ff;bo
 .btn{background:linear-gradient(90deg,#00e5ff,#4aa7ff); color:#001018; border:none;border-radius:10px; padding:12px 16px; font-weight:900; cursor:pointer; box-shadow:0 8px 22px rgba(0,229,255,.25)}
 .btn:disabled{opacity:.7;cursor:not-allowed}
 .msg.error{color:#ffb3c0;margin-top:8px}
-
-/* modal */
-.modalWrap{position:fixed; inset:0; background:rgba(0,0,0,.55); display:grid; place-items:center; z-index:70}
-.modal{position:relative; width:min(520px,94vw); background:#0f1628; border:1px solid rgba(255,255,255,.12); border-radius:16px; padding:16px; color:#eaf2ff; box-shadow:0 20px 60px rgba(0,0,0,.5)}
-.close{position:absolute; right:10px; top:10px; border:none; background:transparent; color:#9fb1cc; cursor:pointer; font-size:18px}
-.m-title{font-weight:900; margin:0 0 10px}
-.m-img{width:100%; height:160px; object-fit:cover; border-radius:10px; margin-bottom:10px}
-.m-text{margin:8px 0 14px}
 `;
