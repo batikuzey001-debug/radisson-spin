@@ -19,8 +19,9 @@ from app.api.routers.spin import router as spin_router
 from app.api.routers.home import router as home_router
 from app.api.routers.site import router as site_router
 from app.api.routers.live import router as live_router
-from app.api.routers.schedule import router as schedule_router  # /api/schedule/...
-from app.api.routers.promos import router as promos_router      # /api/promos/...
+from app.api.routers.schedule import router as schedule_router   # /api/schedule/...
+from app.api.routers.promos import router as promos_router       # /api/promos/...
+from app.api.routers.events import router as events_router       # /api/events/...  <-- eklendi
 from app.api.routers.admin_mod import admin_router
 from app.db.session import SessionLocal, engine
 from app.db.models import Base, Prize, Code
@@ -83,6 +84,7 @@ app.include_router(site_router,      prefix="/api")
 app.include_router(live_router,      prefix="/api")
 app.include_router(schedule_router,  prefix="/api")
 app.include_router(promos_router,    prefix="/api")
+app.include_router(events_router,    prefix="/api")   # <-- eklendi
 app.include_router(admin_router)
 
 # -----------------------------
