@@ -1,32 +1,21 @@
 // web/src/pages/RadiCark.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 
-type Prize = {
-  id: number;
-  label: string;
-  wheelIndex: number;
-  imageUrl?: string | null;
-};
-
+type Prize = { id: number; label: string; wheelIndex: number; imageUrl?: string | null };
 type VerifyIn = { code: string; username: string };
-type VerifyOut = {
-  targetIndex: number;
-  prizeLabel: string;
-  spinToken: string;
-  prizeImage?: string | null;
-};
+type VerifyOut = { targetIndex: number; prizeLabel: string; spinToken: string; prizeImage?: string | null };
 type CommitIn = { code: string; spinToken: string };
 
 const API = import.meta.env.VITE_API_BASE_URL;
 
-/** Dilim sayısı – 20 gayet okunur, istersen 24/32 yapabilirsin */
+/** Dilim sayısı – 20 okunaklı. İster 24/32 yap. */
 const SEGMENTS = 20;
-/** Etiketi dışa itme yüzdesi (merkezden) */
+/** Etiket dışa uzaklığı (% – merkeze göre) */
 const LABEL_R = 86;
 
 type Slice = {
   prize: Prize;
-  sourceIndex: number;
+  sourceIndex: number;   // orijinal listedeki index (backend verify ile eşleşir)
   label: string;
   hue: number;
 };
@@ -34,6 +23,7 @@ type Slice = {
 export default function RadiCark() {
   const [code, setCode] = useState("");
   const [username, setUsername] = useState("");
+
   const [basePrizes, setBasePrizes] = useState<Prize[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
@@ -41,11 +31,10 @@ export default function RadiCark() {
   const [spinning, setSpinning] = useState(false);
   const [result, setResult] = useState<{ label: string; image?: string | null } | null>(null);
 
-  // Dönüş açısı (transition bunun üzerinde – var() yok)
-  const [angle, setAngle] = useState(0);
+  const [angle, setAngle] = useState(0);      // dönüş açısı (transition çalışır)
   const lastAngleRef = useRef(0);
 
-  /** Ödülleri çek */
+  // Ödülleri çek
   useEffect(() => {
     let ok = true;
     setLoading(true);
@@ -65,26 +54,21 @@ export default function RadiCark() {
     return () => { ok = false; };
   }, []);
 
-  /** Dilimler: 20’ye tamamla + hafif karıştır + renk tonu üret */
+  // Dilimler – 20’ye tamamla + hafif karıştır + renk tonu
   const slices: Slice[] = useMemo(() => {
     if (!basePrizes.length) return [];
     const rep: Slice[] = [];
     for (let i = 0; i < SEGMENTS; i++) {
       const p = basePrizes[i % basePrizes.length];
-      rep.push({
-        prize: p,
-        sourceIndex: p.wheelIndex,
-        label: p.label,
-        hue: hueFromLabel(p.label),
-      });
+      rep.push({ prize: p, sourceIndex: p.wheelIndex, label: p.label, hue: hueFromLabel(p.label) });
     }
     return shuffle(rep);
   }, [basePrizes]);
 
   const segAngle = 360 / (slices.length || 1);
-  const wheelAngle = ((angle % 360) + 360) % 360; // -/+ açıları normalize et
+  const wheelAngle = ((angle % 360) + 360) % 360; // counter-rotate için normalize
 
-  /** SPIN */
+  // SPIN
   const onSpin = async () => {
     setErr(""); setResult(null);
     if (!code.trim() || !username.trim()) return setErr("Kullanıcı adı ve kod gerekli.");
@@ -98,7 +82,7 @@ export default function RadiCark() {
         code: code.trim(), username: username.trim(),
       } as VerifyIn);
 
-      // Görsel listede aynı orijinal index’e sahip dilimlerden rasgele biri
+      // görsel listede aynı sourceIndex’e sahip dilimlerden rastgele biri
       const matches = slices
         .map((s, idx) => ({ idx, s }))
         .filter((x) => x.s.sourceIndex === vr.targetIndex)
@@ -106,20 +90,17 @@ export default function RadiCark() {
       if (!matches.length) throw new Error("Hedef dilim bulunamadı.");
 
       const targetSlice = matches[Math.floor(Math.random() * matches.length)];
-      /** Tepe pointer = 90° → hizalama */
+      // Tepe pointer = 90°
       const pointerDeg = 90;
       const centerDeg  = (targetSlice + 0.5) * segAngle;
-      const fullTurns  = randInt(11, 14);                // daha yavaş
-      const jitter     = (Math.random() - 0.5) * 2;      // ±1°
+      const fullTurns  = randInt(11, 14);
+      const jitter     = (Math.random() - 0.5) * 2; // ±1°
       const absolute   = lastAngleRef.current + fullTurns * 360 + (pointerDeg - centerDeg) + jitter;
 
-      setAngle(absolute);
-      await wait(13600 + 200);                           // ~13.6s
+      setAngle(absolute);                // transition transform üzerinde
+      await wait(13600 + 200);           // ~13.6s
 
-      await postJson(`${API}/api/commit-spin`, {
-        code: code.trim(), spinToken: vr.spinToken,
-      } as CommitIn);
-
+      await postJson(`${API}/api/commit-spin`, { code: code.trim(), spinToken: vr.spinToken } as CommitIn);
       setResult({ label: vr.prizeLabel, image: vr.prizeImage });
       lastAngleRef.current = absolute;
     } catch (e: any) {
@@ -129,17 +110,17 @@ export default function RadiCark() {
     }
   };
 
-  /** Conic-gradient ile dilim arka planı */
+  // Conic background (sade, kontrast dilimler)
   const bgConic = useMemo(() => {
     if (!slices.length) return "";
-    const cA = "#10224a", cB = "#143069";
-    const arr: string[] = [];
+    const a = "#0f2251", b = "#17336f";
+    const parts: string[] = [];
     for (let i = 0; i < slices.length; i++) {
-      const a0 = i * segAngle;
-      const a1 = (i + 1) * segAngle;
-      arr.push(`${i % 2 ? cB : cA} ${a0}deg ${a1}deg`);
+      const s = i * segAngle;
+      const e = (i + 1) * segAngle;
+      parts.push(`${i % 2 ? b : a} ${s}deg ${e}deg`);
     }
-    return `conic-gradient(${arr.join(",")})`;
+    return `conic-gradient(${parts.join(",")})`;
   }, [slices, segAngle]);
 
   return (
@@ -155,49 +136,38 @@ export default function RadiCark() {
         <div className={`pointer ${spinning ? "tick" : ""}`}><div className="pin" /></div>
 
         <div className="wheel" style={{ transform: `rotate(${angle}deg)` }}>
-          {/* arka plan dilimler */}
           <div className="bg" style={{ background: bgConic }} />
-          {/* dış ve iç halkalar */}
           <div className="rim" />
-          {/* ayraç çizgiler */}
           <div className="spokes">
             {Array.from({ length: slices.length }).map((_, i) => (
               <div key={i} className="spoke" style={{ transform: `rotate(${i * segAngle}deg)` }} />
             ))}
           </div>
 
-          {/* YATAY etiketler (ekrana paralel) */}
-          {slices.map((sl, i) => {
-            const mid = (i + 0.5) * segAngle;
-            // Dış sarma mid'e döner → iç yazı teğete ve ekrana paralel kalması için wheelAngle'ı tersler
-            return (
-              <div
-                key={`lbl-${i}`}
-                className="lblWrap"
-                style={{ transform: `rotate(${mid}deg)` }}
-              >
-                <div
-                  className="lbl"
-                  style={{
-                    transform: `translate(${LABEL_R}%, -50%) rotate(${-mid - wheelAngle}deg)`,
-                  }}
-                  title={sl.label}
-                >
-                  {sl.label}
+          {/* YATAY – Dış çemberde, her biri kendi konumunda */}
+          <div
+            className="labels"
+            style={{ transform: `rotate(${-wheelAngle}deg)` }} // yazıları yatay tut
+          >
+            {slices.map((sl, i) => {
+              const mid = (i + 0.5) * segAngle; // metnin merkez açısı
+              return (
+                <div key={`t-${i}`} className="lblWrap" style={{ transform: `rotate(${mid}deg)` }}>
+                  <div className="lbl" style={{ transform: `translate(${LABEL_R}%, -50%)` }}>
+                    {sl.label}
+                  </div>
+                  <div
+                    className="endDot"
+                    style={{
+                      transform: `translate(${LABEL_R + 10}%, -50%)`,
+                      background: `hsl(${sl.hue} 95% 60%)`,
+                    }}
+                  />
                 </div>
-                {/* uç nokta */}
-                <div
-                  className="endDot"
-                  style={{
-                    transform: `translate(${LABEL_R + 12}%, -50%) rotate(${-wheelAngle}deg)`,
-                    background: `hsl(${sl.hue} 95% 60%)`,
-                  }}
-                />
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
 
-          {/* merkez plaka */}
           <div className="hub" />
         </div>
       </section>
@@ -234,7 +204,7 @@ export default function RadiCark() {
   );
 }
 
-/* ---------- helpers ---------- */
+/* ------------- helpers ------------- */
 async function postJson<T = any>(url: string, body: any): Promise<T> {
   const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!r.ok) {
@@ -249,7 +219,7 @@ function randInt(a: number, b: number) { return Math.floor(a + Math.random() * (
 function shuffle<T>(arr: T[]): T[] { const a = arr.slice(); for (let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; }
 function hueFromLabel(s: string): number { let h = 0; for (let i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i)) % 360; return h; }
 
-/* ---------- styles ---------- */
+/* ------------- styles ------------- */
 const css = `
 :root{
   --text:#eaf2ff; --muted:#9fb1cc;
@@ -277,32 +247,29 @@ const css = `
 @keyframes neonIdle{ from{opacity:.5} to{opacity:.8} }
 @keyframes neonRun{ 0%{filter:blur(1px)} 50%{filter:blur(2.6px)} 100%{filter:blur(1px)} }
 
-/* pointer */
 .pointer{position:absolute;top:-10px;pointer-events:none}
 .pointer .pin{position:absolute;top:-8px;left:-3px;width:6px;height:6px;border-radius:50%;background:#ffe0ea;box-shadow:0 0 10px rgba(255,59,107,.8)}
 .pointer.tick{animation:ptr .08s linear infinite}
 @keyframes ptr{0%{transform:translateX(0)}50%{transform:translateX(1px)}100%{transform:translateX(0)}}
 
-/* çark */
+/* çark ve label katmanları */
 .wheel{width:min(72vw,540px); height:min(72vw,540px); border-radius:999px; position:relative;
-  transition: transform 13.6s cubic-bezier(.17,.85,.08,1); will-change: transform; pointer-events:none; transform:rotate(0deg);
+  transition: transform 13.6s cubic-bezier(.17,.85,.08,1);
+  will-change: transform; pointer-events:none; transform:rotate(0deg);
 }
-.bg{position:absolute; inset:0; border-radius:999px; overflow:hidden}
-.bg:before{ /* radial parıltı */
-  content:""; position:absolute; inset:0; border-radius:999px;
-  background: radial-gradient(40% 40% at 60% 45%, rgba(255,255,255,.06), transparent 60%);
-}
-
+.bg{position:absolute; inset:0; border-radius:999px}
 .rim{position:absolute; inset:2%; border-radius:999px; box-shadow:inset 0 0 0 10px var(--rim), 0 22px 70px rgba(0,0,0,.5)}
 .spokes{position:absolute; inset:0; pointer-events:none}
 .spoke{position:absolute; left:50%; top:50%; width:49%; height:1px; background:rgba(255,255,255,.12); transform-origin:left center}
 
+/* etiket katmanı – tüm yazıyı yatay tutmak için tepe karşı döndürme */
+.labels{position:absolute; inset:0; transform-origin:50% 50%; pointer-events:none}
 .lblWrap{position:absolute; left:50%; top:50%; transform-origin:50% 50%; pointer-events:none}
 .lbl{
   position:absolute; left:0; top:0; transform-origin:left center;
   color:#f8fdff; font-weight:1000; font-size:16px; letter-spacing:.35px;
   text-shadow:0 2px 12px rgba(0,0,0,.95), 0 0 3px rgba(0,0,0,.95);
-  white-space:nowrap; max-width:280px; overflow:hidden; text-overflow:ellipsis;
+  white-space:nowrap; max-width:280px; overflow:hidden; text-overflow:ellipsis; pointer-events:none;
 }
 .endDot{
   position:absolute; left:0; top:0; transform-origin:left center; width:10px; height:10px; border-radius:999px;
