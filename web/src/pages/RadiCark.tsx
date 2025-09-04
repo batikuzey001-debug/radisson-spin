@@ -5,9 +5,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
  * Radi Çark – Çarkıfelek (32 dişli, neon, gerçekçi)
  * - /api/prizes -> ödüller (orijinal sıralı)
  * - /api/verify-spin -> targetIndex (orijinal liste index), spinToken
- * - Görselde 32 dilim; orijinal ödüller 32’ye tamamlanıp RASTGELE karıştırılır.
+ * - 32 dilim; orijinal ödüller 32’ye tamamlanıp RASTGELE karıştırılır.
  * - verify dönen index'e uyan dilim(ler) içinden rastgele biri hedeflenir.
- * - Dönüş: ease-in → quick → ease-out (yaklaşık 10.8s)
+ * - Dönüş: ease-in → hızlı → ease-out (~10.8s)
  */
 
 type Prize = {
@@ -31,10 +31,10 @@ const SEGMENTS = 32;
 
 type Slice = {
   prize: Prize;
-  sourceIndex: number; // orijinal listedeki index (verify eşleşmesi)
+  sourceIndex: number;
   label: string;
   imageUrl?: string | null;
-  neonHue: number; // her dilime özgü neon rengi
+  neonHue: number;
 };
 
 export default function RadiCark() {
@@ -47,11 +47,9 @@ export default function RadiCark() {
 
   const [spinning, setSpinning] = useState(false);
   const [result, setResult] = useState<{ label: string; image?: string | null } | null>(null);
-  const [angle, setAngle] = useState(0);
+  const [angle, setAngle] = useState(0);          // <-- DOĞRUDAN TRANSFORM İLE KULLANACAĞIZ
   const lastAngleRef = useRef(0);
-  const [kick, setKick] = useState(false); // başlangıç “kick” efekti
 
-  // ödülleri çek
   useEffect(() => {
     let ok = true;
     setLoading(true);
@@ -80,7 +78,6 @@ export default function RadiCark() {
     };
   }, []);
 
-  // 32 dilime genişlet + karıştır + neon rengi ata
   const slices: Slice[] = useMemo(() => {
     if (!basePrizes.length) return [];
     const rep: Slice[] = [];
@@ -99,7 +96,6 @@ export default function RadiCark() {
 
   const segAngle = 360 / (slices.length || 1);
 
-  // SPIN
   const onSpin = async () => {
     setErr("");
     setResult(null);
@@ -109,8 +105,6 @@ export default function RadiCark() {
 
     try {
       setSpinning(true);
-      setKick(true);               // kısa “kick” tetikle
-      setTimeout(() => setKick(false), 350);
 
       const vr: VerifyOut = await postJson(`${API}/api/verify-spin`, {
         code: code.trim(),
@@ -129,10 +123,11 @@ export default function RadiCark() {
       const jitter = (Math.random() - 0.5) * 2; // ±1°
       const absolute = lastAngleRef.current + fullTurns * 360 + (360 - center) + jitter;
 
+      // dönüş – CSS transition transform üzerinde (var() YOK)
       setAngle(absolute);
 
       const DURATION = 10800; // ~10.8s
-      await wait(DURATION + 200);
+      await wait(DURATION + 250);
 
       await postJson(`${API}/api/commit-spin`, {
         code: code.trim(),
@@ -156,8 +151,8 @@ export default function RadiCark() {
         <div className="sub">Şansını dene, ödülünü kap! 🎉</div>
       </header>
 
-      {/* ÇARK – üstte, form aşağıda; çark tıklama yakalamasın */}
-      <section className={`stage ${kick ? "kick" : ""}`}>
+      {/* ÇARK */}
+      <section className="stage">
         {/* dış neon ışıklar */}
         <div className="bulbs">
           {Array.from({ length: 64 }).map((_, i) => (
@@ -173,13 +168,8 @@ export default function RadiCark() {
         {/* çark */}
         <div
           className={`wheel ${spinning ? "spin" : ""}`}
-          style={{
-            ["--angle" as any]: `${angle}deg`,
-            ["--seg" as any]: `${segAngle}deg`,
-            ["--segcount" as any]: slices.length || 1,
-          }}
+          style={{ transform: `rotate(${angle}deg)` }}  // <-- TRANSFORM DİREKT
         >
-          {/* dış kadran ve ayırıcı çizgiler */}
           <div className="rim" />
           <div className="spokes">
             {Array.from({ length: slices.length }).map((_, i) => (
@@ -199,7 +189,7 @@ export default function RadiCark() {
             />
           ))}
 
-          {/* merkez – sade plaka, yazı yok (daha gerçekçi görünüm) */}
+          {/* merkez plakası */}
           <div className="hub" />
         </div>
       </section>
@@ -303,11 +293,9 @@ function Slice({
         } as React.CSSProperties
       }
     >
-      {/* konik dolgu */}
       <div className="sector" />
-      {/* neon ayraç (ödüle göre renk) */}
       <div className="neonEdge" />
-      {/* etiket – UCA taşıdık, tangent hizalı, daha büyük ve okunur */}
+      {/* etiket – en UCA taşındı */}
       <div className="label" title={label}>
         {imageUrl ? <img src={imageUrl} alt="" /> : null}
         <span>{label}</span>
@@ -346,23 +334,17 @@ const css = `
 
 /* sahne – çark tıklama yakalamasın */
 .stage{
-  position:relative;display:grid;place-items:center;margin:14px 0 6px;
+  position:relative;display:grid;place-items:center;margin:12px 0 6px;
   pointer-events:none; z-index:1;
 }
-.stage.kick .wheel{ animation:preKick .35s ease-in-out; }
-@keyframes preKick{
-  0%{ transform:rotate(var(--angle)); }
-  40%{ transform:rotate(calc(var(--angle) + 10deg)); }
-  100%{ transform:rotate(var(--angle)); }
-}
 
-/* neon ampuller */
+/* neon ampuller (dış halka) */
 .bulbs{
-  position:absolute; width:min(84vw,660px); height:min(84vw,660px);
+  position:absolute; width:min(74vw,560px); height:min(74vw,560px);
   border-radius:999px; display:grid; place-items:center; pointer-events:none; z-index:0;
 }
 .bulb{
-  position:absolute; top:0; left:50%; width:8px; height:8px; border-radius:999px;
+  position:absolute; top:0; left:50%; width:7px; height:7px; border-radius:999px;
   background:#9ae6ff; box-shadow:0 0 10px rgba(154,230,255,.8), 0 0 16px rgba(0,229,255,.45);
   animation:blink 1.6s infinite;
 }
@@ -375,19 +357,18 @@ const css = `
   position:absolute; top:-8px; left:-3px; width:6px; height:6px; border-radius:50%;
   background:#ffe0ea; box-shadow:0 0 10px rgba(255,59,107,.8);
 }
-/* tık efekti – hafif titreşim */
 .pointer.tick{animation:ptr 0.08s linear infinite}
 @keyframes ptr{0%{transform:translateX(0)}50%{transform:translateX(1px)}100%{transform:translateX(0)}}
 
+/* çark biraz daha küçük */
 .wheel{
-  width:min(82vw,640px); height:min(82vw,640px);
+  width:min(74vw,560px); height:min(74vw,560px);
   border-radius:999px; background:var(--ring); border:1px solid rgba(255,255,255,.15); position:relative;
   box-shadow:inset 0 0 0 10px var(--rim), 0 22px 70px rgba(0,0,0,.5);
-  transform: rotate(var(--angle, 0deg));
-  /* Ease-in-out ama ortada daha hızlı: bezier */
-  transition: transform 10.8s cubic-bezier(.17,.85,.08,1);
+  transition: transform 10.8s cubic-bezier(.17,.85,.08,1);  /* ease-in → hızlı → ease-out */
   will-change: transform;
   pointer-events:none;
+  transform: rotate(0deg); /* başlangıç */
 }
 .rim{position:absolute; inset:2%; border-radius:999px; box-shadow:inset 0 0 0 2px rgba(255,255,255,.08), inset 0 0 50px rgba(0,229,255,.12);}
 .spokes{position:absolute; inset:0; pointer-events:none}
@@ -400,36 +381,32 @@ const css = `
 .slice{position:absolute; inset:0; transform-origin:50% 50%; pointer-events:none}
 .sector{
   position:absolute; inset:0; border-radius:999px;
-  /* ince dilimler için konik maske */
   mask: conic-gradient(from 0deg, white 0deg, white var(--label-rot), transparent var(--label-rot));
   background:
     radial-gradient(60% 60% at 60% 45%, rgba(0,229,255,.08), transparent 70%),
     linear-gradient(180deg, var(--sliceA), var(--sliceB));
   filter:drop-shadow(0 0 1px rgba(0,0,0,.6));
 }
-/* neon ayırıcı – ödüle göre renk */
 .neonEdge{
   position:absolute; left:50%; top:50%; width:50%; height:1px; transform-origin:left center;
   background: hsl(var(--neon) 95% 60% / .55);
   box-shadow: 0 0 8px hsl(var(--neon) 95% 60% / .55), 0 0 14px hsl(var(--neon) 95% 60% / .35);
 }
 
-/* etiket – uca yaklaştırıldı, tangent hizalı, okunaklı */
+/* etiket – en UCA taşındı (daha okunur) */
 .label{
   position:absolute; left:50%; top:50%;
-  transform: rotate(calc(var(--label-rot) + 90deg)) translate(54%, -50%);
+  transform: rotate(calc(var(--label-rot) + 90deg)) translate(64%, -50%); /* UCA 64%% */
   transform-origin:left center;
   display:flex; align-items:center; gap:6px;
-  color:#f5fbff; text-shadow:0 2px 12px rgba(0,0,0,.85), 0 0 2px rgba(0,0,0,.9);
+  color:#f5fbff; text-shadow:0 2px 12px rgba(0,0,0,.9), 0 0 2px rgba(0,0,0,.9);
   font-weight:900; letter-spacing:.4px;
   pointer-events:none;
 }
-.label img{ width:20px; height:20px; border-radius:4px; object-fit:cover; opacity:.98 }
-.label span{
-  font-size:13.5px; max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-}
+.label img{ width:18px; height:18px; border-radius:4px; object-fit:cover; opacity:.98 }
+.label span{ font-size:13.5px; max-width:200px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
 
-/* merkez plakası – yazı yok, sadece efekt */
+/* merkez plakası */
 .hub{
   position:absolute; inset:36% 36%;
   border-radius:999px; background:
@@ -439,14 +416,14 @@ const css = `
   pointer-events:none;
 }
 
-/* form (altta, üst katmanda) */
+/* form */
 .panel{margin:8px 0 16px; position:relative; z-index:5;}
 .panel.below{display:grid; place-items:center}
 .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end; justify-content:center}
 .f{display:flex;flex-direction:column;gap:6px}
 .f span{font-size:12px;color:var(--muted)}
 input{
-  background:#0e1730;border:1px solid rgba(255,255,255,.12);color:var(--text);
+  background:#0e1730;border:1px solid rgba(255,255,255,.12);color:#eaf2ff;
   border-radius:10px;padding:10px 12px;min-width:260px;
 }
 .btn{
