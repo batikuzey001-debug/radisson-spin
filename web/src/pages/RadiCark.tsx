@@ -3,15 +3,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 /**
  * Tek Sütun Çark (slot tarzı) – Kutu tasarım + cam efekt
+ * Oyun arka planı DÖNMEZ; sadece arka planda site logosu pulse (büyüyüp-küçülür).
  * Akış:
  *  - GET  /api/prizes         -> ödüller (wheelIndex sırası)
  *  - POST /api/verify-spin    -> { targetIndex, prizeLabel, spinToken }
  *  - Animasyon biter -> POST /api/commit-spin
- *
- * İstenilenler:
- *  - Kutu arkaplanı ödülün "kendi rengine" (tutar odaklı tint) bürünsün AMA cam efekti korunsun.
- *  - Arka planda sitenin logosu büyüyüp küçülsün (pulse).
- *  - Kazanan kutuyu belirten şerit (ribbon) tasarıma daha uygun ve belirgin olsun.
  */
 
 type Prize = { id: number; label: string; wheelIndex: number; imageUrl?: string | null };
@@ -66,13 +62,12 @@ export default function RadiCark() {
   const [translate, setTranslate] = useState(0);
   const [duration, setDuration] = useState(0);
 
-  // ödülleri çek
+  // ödülleri + logo çek
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
         setLoading(true);
-        // prizes
         const r1 = await fetch(`${API}/api/prizes`);
         if (!r1.ok) throw new Error(`HTTP ${r1.status}`);
         const rows: Prize[] = await r1.json();
@@ -89,10 +84,7 @@ export default function RadiCark() {
         } catch {/* yut */}
         setErr("");
       } catch (e: any) {
-        if (alive) {
-          setErr(e?.message ?? "Ödüller alınamadı");
-          setBasePrizes([]);
-        }
+        if (alive) { setErr(e?.message ?? "Ödüller alınamadı"); setBasePrizes([]); }
       } finally {
         alive && setLoading(false);
       }
@@ -112,28 +104,19 @@ export default function RadiCark() {
   // hedef pozisyonu hesapla ve animasyonu başlat
   const onSpin = async () => {
     setErr(""); setResult(null);
-    if (!username.trim() || !code.trim()) {
-      setErr("Kullanıcı adı ve kod gerekli.");
-      return;
-    }
-    if (!basePrizes.length) {
-      setErr("Ödül verisi yok.");
-      return;
-    }
+    if (!username.trim() || !code.trim()) { setErr("Kullanıcı adı ve kod gerekli."); return; }
+    if (!basePrizes.length) { setErr("Ödül verisi yok."); return; }
     if (spinning) return;
 
     try {
       setSpinning(true);
-
       // verify
       const vr: VerifyOut = await postJson(`${API}/api/verify-spin`, {
-        code: code.trim(),
-        username: username.trim(),
+        code: code.trim(), username: username.trim(),
       } as VerifyIn);
       setSpinToken(vr.spinToken);
 
-      // hedef label & pozisyon (uzun dönüş için listenin son tekrarlarına denk getir)
-      const lbl = basePrizes[vr.targetIndex]?.label ?? basePrizes[0].label;
+      // hedef label & pozisyon (uzun dönüş için sona yakın)
       const baseLen = basePrizes.length;
       const targetIndexInReel = (LOOPS - 2) * baseLen + (vr.targetIndex % baseLen);
 
@@ -142,8 +125,7 @@ export default function RadiCark() {
       const targetY = targetIndexInReel * ITEM_H - centerOffset;
 
       // Reset (transition kapalı)
-      setDuration(0);
-      setTranslate(0);
+      setDuration(0); setTranslate(0);
       await raf();
 
       // Animasyon
@@ -153,10 +135,7 @@ export default function RadiCark() {
       // bitiş
       setTimeout(async () => {
         try {
-          await postJson(`${API}/api/commit-spin`, {
-            code: code.trim(),
-            spinToken: vr.spinToken,
-          } as CommitIn);
+          await postJson(`${API}/api/commit-spin`, { code: code.trim(), spinToken: vr.spinToken } as CommitIn);
         } catch {/* idempotent */}
         setResult({ label: vr.prizeLabel, image: vr.prizeImage });
         setSpinning(false);
@@ -169,7 +148,7 @@ export default function RadiCark() {
 
   return (
     <main className="slot">
-      {/* ARKA PLAN – LOGO PULSE */}
+      {/* SABİT ARKA PLAN – sadece LOGO pulse yapar */}
       <div
         className={`bgLogo ${spinning ? "run" : ""}`}
         style={logoUrl ? { backgroundImage: `url('${logoUrl}')` } : undefined}
@@ -183,8 +162,8 @@ export default function RadiCark() {
 
       {/* REEL */}
       <section className="reelWrap">
-        {/* hareketli neon LED çerçeve */}
-        <div className={`neon ${spinning ? "run" : ""}`} aria-hidden />
+        {/* Neon çerçeve – SABİT (dönmeyecek) */}
+        <div className="neon" aria-hidden />
         {/* üst/alt maskeler */}
         <div className="mask top" />
         <div className="mask bottom" />
@@ -212,9 +191,9 @@ export default function RadiCark() {
                 style={{ height: ITEM_H, ["--tint" as any]: String(hue) } as any}
                 title={txt}
               >
-                {/* Neon LED halka (kutu çevresi) */}
+                {/* LED halka (sabit parıltı) */}
                 <div className="led" aria-hidden />
-                {/* Kazanan şerit – belirgin ve markaya uygun */}
+                {/* Kazanan şerit */}
                 {isWin && <div className="winRibbon" aria-hidden />}
                 {/* Cam gövde + yazı */}
                 <div className="glass">
@@ -283,7 +262,7 @@ const css = `
 *{box-sizing:border-box}
 .slot{max-width:720px;margin:0 auto;padding:16px;color:var(--text);position:relative;}
 
-/* Pulsing BACKGROUND LOGO */
+/* SABİT ARKA PLAN – SADECE LOGO PULSE */
 .bgLogo{
   position:fixed; inset:0; z-index:-2; pointer-events:none;
   background-repeat:no-repeat; background-position:center; background-size:36vmin;
@@ -305,7 +284,7 @@ const css = `
   box-shadow:0 12px 40px rgba(0,0,0,.4), inset 0 0 50px rgba(0,229,255,.06);
 }
 
-/* Neon LED çerçeve (döner) */
+/* Neon çerçeve – SABİT (dönme yok) */
 .neon{
   pointer-events:none; position:absolute; inset:-2px; border-radius:18px;
   background: conic-gradient(from 0deg,
@@ -315,13 +294,11 @@ const css = `
     rgba(255,80,160,.65) 72deg 96deg,
     rgba(0,229,255,.65) 96deg 120deg,
     rgba(0,229,255,.0) 120deg 360deg);
-  filter:blur(7px); opacity:.6; z-index:2;
-  animation:neonIdle 2.4s ease-in-out infinite alternate;
+  filter:blur(7px); opacity:.70; z-index:2;
+  /* önceden run ile dönüyordu – kaldırıldı */
 }
-.neon.run{ animation:neonSpin 1.2s linear infinite; opacity:.92 }
-@keyframes neonIdle{ from{filter:blur(6px)} to{filter:blur(9px)} }
-@keyframes neonSpin{ from{transform:rotate(0)} to{transform:rotate(360deg)} }
 
+/* Reel */
 .reel{position:absolute; left:0; right:0; top:0; will-change: transform; z-index:1}
 
 /* Kutu – cam + renkli tint */
@@ -331,7 +308,6 @@ const css = `
   font-weight:1000; font-size:22px; letter-spacing:.4px;
   color:#fdfdff; text-shadow:0 2px 10px rgba(0,0,0,.8);
   border:1px solid rgba(255,255,255,.12);
-  /* Tint rengini hsl(var(--tint)) ile veriyoruz; cam için alfa düşük */
   background:
     linear-gradient(180deg, hsla(var(--tint, 200) 90% 55% / .18), hsla(var(--tint, 200) 90% 55% / .10)),
     linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.04));
@@ -346,7 +322,7 @@ const css = `
 }
 .card .txt{ position:relative; z-index:1; padding:0 14px }
 
-/* LED halka */
+/* LED halka – SABİT parıltı */
 .card .led{
   content:""; position:absolute; inset:-1px; border-radius:16px; z-index:0; pointer-events:none;
   background: conic-gradient(from 0deg,
@@ -356,25 +332,23 @@ const css = `
     rgba(255,196,0,.6) 100deg 150deg,
     rgba(0,229,255,.0) 150deg 360deg);
   filter: blur(8px);
-  animation: ring 2.2s linear infinite;
 }
-@keyframes ring{ from{transform:rotate(0)} to{transform:rotate(360deg)} }
 
-/* Tier'lara mikro vurgu */
+/* Tier’lar */
 .card.high{ border-color: rgba(255,196,0,.55) }
 .card.mid { border-color: rgba(0,229,255,.45) }
 .card.low { border-color: rgba(120,170,255,.35) }
 .card.mini{ border-color: rgba(255,255,255,.18) }
 
-/* Kazanan şerit – belirgin, tasarıma uygun */
+/* Kazanan şerit – belirgin */
 .winRibbon{
   position:absolute; left:-12%; right:-12%; top:calc(50% - 20px); height:40px; z-index:1;
   background:
-    linear-gradient(90deg, rgba(0,229,255,0), rgba(0,229,255,.75), rgba(0,229,255,0)),
+    linear-gradient(90deg, rgba(0,229,255,0), rgba(0,229,255,.85), rgba(0,229,255,0)),
     repeating-linear-gradient(90deg, rgba(255,255,255,.22) 0 6px, rgba(255,255,255,0) 6px 12px);
   filter: blur(0.6px);
   border-radius:12px;
-  box-shadow:0 0 18px rgba(0,229,255,.55), 0 0 26px rgba(0,229,255,.35);
+  box-shadow:0 0 18px rgba(0,229,255,.65), 0 0 28px rgba(0,229,255,.45);
 }
 
 /* Kazanan kutu – picker ortasında büyüt ve parlat */
@@ -386,7 +360,7 @@ const css = `
     0 18px 36px rgba(0,0,0,.35);
 }
 
-/* Üst/alt maske (picker vurgusu için) */
+/* Üst/alt maske (picker vurgusu) */
 .mask{position:absolute; left:0; right:0; height:${ITEM_H}px; z-index:3;
   background:linear-gradient(180deg, rgba(5,10,20,.92), rgba(5,10,20,0));
   pointer-events:none;
