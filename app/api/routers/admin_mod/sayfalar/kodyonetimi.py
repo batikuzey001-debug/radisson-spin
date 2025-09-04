@@ -7,6 +7,7 @@ from html import escape as _e
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import ProgrammingError  # tablo/sütun yoksa güvenli yakalama
 
 from app.db.session import get_db
 from app.db.models import Prize, Code, PrizeDistribution, PrizeTier, AdminUser, AdminRole
@@ -139,9 +140,20 @@ def kod_yonetimi(
         if not tiers:
             body_parts.append("<div class='card'><b>Uyarı:</b> Aktif seviye bulunamadı. Lütfen 'Seviyeler' sekmesinden ekleyin.</div>")
 
+        # dağılım kayıtlarını güvenli oku (tablo yoksa 500 yerine uyarı ver)
+        dist_rows: List[PrizeDistribution] = []
+        try:
+            dist_rows = db.query(PrizeDistribution).all()
+        except ProgrammingError:
+            body_parts.append("<div class='card'><b>Uyarı:</b> Dağılım tablosu henüz oluşturulmamış görünüyor. Sayfayı yeniden yüklemeyi veya bir güncelleme sonrası uygulamayı yeniden başlatmayı deneyin.</div>")
+            dist_rows = []
+        except Exception:
+            body_parts.append("<div class='card'><b>Uyarı:</b> Dağılım verileri okunamadı.</div>")
+            dist_rows = []
+
         # dağılımlar map
         dist = {p.id: {t.key: 0 for t in tiers} for p in prizes}
-        for d in db.query(PrizeDistribution).all():
+        for d in dist_rows:
             if d.prize_id in dist and any(t.key == d.tier_key for t in tiers):
                 dist[d.prize_id][d.tier_key] = int(d.weight_bp or 0)
 
@@ -198,7 +210,7 @@ def kod_yonetimi(
             "</form></div></div>"
         )
 
-        # ödül ekle/düzenle formu (mevcut)
+        # ödül ekle/düzenleme formu (mevcut)
         edit_id = request.query_params.get("edit")
         try:
             editing = db.get(Prize, int(edit_id)) if edit_id else None
