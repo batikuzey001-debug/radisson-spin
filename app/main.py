@@ -214,71 +214,58 @@ def on_startup() -> None:
                 END IF;
             END $$;
             """))
-            # prize_tiers tablosu yoksa oluştur + varsayılan seed (100/300/500/1000)
-            conn.execute(text("""
-            DO $$
-            BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='prize_tiers') THEN
-                    EXECUTE '
-                        CREATE TABLE prize_tiers (
-                            key VARCHAR(32) PRIMARY KEY,
-                            label VARCHAR(100) NOT NULL,
-                            sort INTEGER NOT NULL DEFAULT 0,
-                            enabled BOOLEAN NOT NULL DEFAULT TRUE,
-                            created_at TIMESTAMPTZ DEFAULT now(),
-                            updated_at TIMESTAMPTZ DEFAULT now()
-                        );
-                    ';
-                END IF;
 
-                -- seed (yoksa ekle)
-                IF NOT EXISTS (SELECT 1 FROM prize_tiers WHERE key = ''bronze'') THEN
-                    INSERT INTO prize_tiers(key,label,sort,enabled) VALUES (''bronze'',''100 TL'',0,TRUE);
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM prize_tiers WHERE key = ''silver'') THEN
-                    INSERT INTO prize_tiers(key,label,sort,enabled) VALUES (''silver'',''300 TL'',1,TRUE);
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM prize_tiers WHERE key = ''gold'') THEN
-                    INSERT INTO prize_tiers(key,label,sort,enabled) VALUES (''gold'',''500 TL'',2,TRUE);
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM prize_tiers WHERE key = ''platinum'') THEN
-                    INSERT INTO prize_tiers(key,label,sort,enabled) VALUES (''platinum'',''1000 TL'',3,TRUE);
-                END IF;
-            END $$;
+            # --- prize_tiers: tablo + seed (PL/pgSQL yerine plain SQL) ---
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS prize_tiers (
+                    key VARCHAR(32) PRIMARY KEY,
+                    label VARCHAR(100) NOT NULL,
+                    sort INTEGER NOT NULL DEFAULT 0,
+                    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMPTZ DEFAULT now(),
+                    updated_at TIMESTAMPTZ DEFAULT now()
+                );
             """))
-            # prize_distributions tablosu yoksa oluştur + indexler
-            conn.execute(text("""
-            DO $$
-            BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='prize_distributions') THEN
-                    EXECUTE '
-                        CREATE TABLE prize_distributions (
-                            id SERIAL PRIMARY KEY,
-                            tier_key VARCHAR(32) NOT NULL,
-                            prize_id INTEGER NOT NULL REFERENCES prizes(id) ON DELETE CASCADE,
-                            weight_bp INTEGER NOT NULL DEFAULT 0,
-                            enabled BOOLEAN NOT NULL DEFAULT TRUE
-                        );
-                        CREATE INDEX IF NOT EXISTS ix_prize_distributions_tier ON prize_distributions(tier_key);
-                        CREATE INDEX IF NOT EXISTS ix_prize_distributions_prize ON prize_distributions(prize_id);
-                    ';
-                END IF;
+            conn.execute(text(
+                "INSERT INTO prize_tiers(key,label,sort,enabled) VALUES ('bronze','100 TL',0,TRUE) "
+                "ON CONFLICT (key) DO NOTHING;"
+            ))
+            conn.execute(text(
+                "INSERT INTO prize_tiers(key,label,sort,enabled) VALUES ('silver','300 TL',1,TRUE) "
+                "ON CONFLICT (key) DO NOTHING;"
+            ))
+            conn.execute(text(
+                "INSERT INTO prize_tiers(key,label,sort,enabled) VALUES ('gold','500 TL',2,TRUE) "
+                "ON CONFLICT (key) DO NOTHING;"
+            ))
+            conn.execute(text(
+                "INSERT INTO prize_tiers(key,label,sort,enabled) VALUES ('platinum','1000 TL',3,TRUE) "
+                "ON CONFLICT (key) DO NOTHING;"
+            ))
 
-                -- FK: prize_distributions.tier_key -> prize_tiers.key (yoksa ekle)
-                IF NOT EXISTS (
-                    SELECT 1
-                    FROM information_schema.table_constraints c
-                    WHERE c.table_name = 'prize_distributions'
-                      AND c.constraint_type = 'FOREIGN KEY'
-                      AND c.constraint_name = 'fk_prize_distributions_tier'
-                ) THEN
+            # prize_distributions tablosu yoksa oluştur + indexler (plain SQL)
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS prize_distributions (
+                    id SERIAL PRIMARY KEY,
+                    tier_key VARCHAR(32) NOT NULL,
+                    prize_id INTEGER NOT NULL REFERENCES prizes(id) ON DELETE CASCADE,
+                    weight_bp INTEGER NOT NULL DEFAULT 0,
+                    enabled BOOLEAN NOT NULL DEFAULT TRUE
+                );
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_prize_distributions_tier ON prize_distributions(tier_key);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_prize_distributions_prize ON prize_distributions(prize_id);"))
+
+            # FK: prize_distributions.tier_key -> prize_tiers.key  (varsa sessiz geç)
+            try:
+                conn.execute(text("""
                     ALTER TABLE prize_distributions
                     ADD CONSTRAINT fk_prize_distributions_tier
                     FOREIGN KEY (tier_key) REFERENCES prize_tiers(key)
                     ON UPDATE CASCADE ON DELETE RESTRICT;
-                END IF;
-            END $$;
-            """))
+                """))
+            except Exception:
+                pass  # zaten var
 
     # Seed örneği (spin için)
     with SessionLocal() as db:
