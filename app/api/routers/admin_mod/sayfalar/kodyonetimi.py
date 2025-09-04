@@ -69,17 +69,15 @@ def kod_yonetimi(
     if tab == "kodlar":
         prizes = db.query(Prize).order_by(Prize.wheel_index).all()
         prize_label_by_id = {p.id: p.label for p in prizes}
-
         last = db.query(Code).order_by(Code.created_at.desc()).limit(20).all()
 
-        # Kod Oluştur: Seviye + Otomatik/Manuel seçim
         form = [
             "<div class='card'><h1>Kod Oluştur</h1>",
             "<form method='post' action='/admin/kod-yonetimi/create-code'>",
             "<div class='grid'>",
             "<div class='span-6'><div>Kullanıcı adı</div><input name='username' required></div>",
             "<div class='span-6'><div>Seviye</div><select name='tier_key' required>",
-            *[f"<option value='{k}'>{_e(v)}</option>" for k,v in TIERS.items()],
+            *[f"<option value='{k}'>{_e(v)}</option>" for k, v in TIERS.items()],
             "</select></div>",
             "</div>",
             "<div style='height:8px'></div>",
@@ -91,7 +89,7 @@ def kod_yonetimi(
             "</select></div>",
             "<div class='span-6'><div>Manuel Ödül (ops.)</div><select name='manual_prize_id'>",
             "<option value=''>— Seçiniz —</option>",
-            *[f\"<option value='{p.id}'>[{p.wheel_index}] {_e(p.label)}</option>\" for p in prizes],
+            *[f"<option value='{p.id}'>[{p.wheel_index}] {_e(p.label)}</option>" for p in prizes],
             "</select></div>",
             "</div>",
             "<div class='hint muted'>Not: 'Otomatik' modda ödül, seçilen seviyeye ait dağılım yüzdelerine göre belirlenir.</div>",
@@ -122,19 +120,18 @@ def kod_yonetimi(
     else:
         prizes = db.query(Prize).order_by(Prize.wheel_index).all()
 
-        # mevcut dağılımları oku -> {prize_id:{tier:weight_bp}}
-        dist: Dict[int, Dict[str,int]] = {p.id:{k:0 for k in TIERS} for p in prizes}
+        # mevcut dağılımlar -> {prize_id:{tier:bp}}
+        dist = {p.id: {k: 0 for k in TIERS} for p in prizes}
         for d in db.query(PrizeDistribution).all():
             if d.prize_id in dist and d.tier_key in TIERS:
                 dist[d.prize_id][d.tier_key] = int(d.weight_bp or 0)
 
-        # toplamlar (sütun bazında)
-        sums = {k:0 for k in TIERS}
+        # toplamlar sütun bazında
+        sums = {k: 0 for k in TIERS}
         for p in prizes:
             for k in TIERS:
                 sums[k] += dist[p.id][k]
 
-        # Liste
         rows = [
             "<div class='card'><h1>Ödüller</h1>",
             "<div class='table-wrap'><form method='post' action='/admin/kod-yonetimi/prizes/dist/save'><table>",
@@ -151,9 +148,7 @@ def kod_yonetimi(
             ]
             for k in TIERS:
                 val = dist[p.id][k] / 100  # bp -> %
-                cells.append(
-                    f"<td><input name='w_{p.id}_{k}' value='{val}' type='number' step='0.01' min='0' max='100' style='width:80px'></td>"
-                )
+                cells.append(f"<td><input name='w_{p.id}_{k}' value='{val}' type='number' step='0.01' min='0' max='100' style='width:80px'></td>")
             checked = "checked" if getattr(p, "enabled", True) else ""
             cells.append(f"<td><input type='checkbox' name='en_{p.id}' {checked}></td>")
             cells.append(
@@ -165,7 +160,7 @@ def kod_yonetimi(
                 "</td>"
             )
             rows.append("<tr>" + "".join(cells) + "</tr>")
-        # toplam satırı
+
         sum_cells = ["<td colspan='3' style='text-align:right'><b>Toplam (%)</b></td>"]
         for k in TIERS:
             sum_cells.append(f"<td><b>{sums[k]/100:.2f}</b></td>")
@@ -240,8 +235,8 @@ async def create_code(
     username = (form.get("username") or "").strip() or None
     tier_key = (form.get("tier_key") or "").strip() or None
     mode = (form.get("mode") or "auto").strip()
-    manual_pid_raw = (form.get("manual_prize_id") or "").strip()
-    manual_prize_id = int(manual_pid_raw) if (manual_pid_raw and manual_pid_raw.isdigit()) else None
+    manual_prize_id = (form.get("manual_prize_id") or "").strip()
+    manual_pid = int(manual_prize_id) if (manual_prize_id and manual_prize_id.isdigit()) else None
 
     if not tier_key:
         flash(request, "Seviye zorunludur.", "error")
@@ -253,8 +248,8 @@ async def create_code(
         username=username,
         tier_key=tier_key,
         status="issued",
-        manual_prize_id=manual_prize_id if mode == "manual" else None,
-        prize_id=None,  # spin sonrası dolacak
+        manual_prize_id=manual_pid if mode == "manual" else None,
+        prize_id=None,
     ))
     db.commit()
     flash(request, "Kod oluşturuldu.", "success")
@@ -323,12 +318,6 @@ async def prizes_dist_save(
     db: Annotated[Session, Depends(get_db)],
     current: Annotated[AdminUser, Depends(require_role(AdminRole.admin))],
 ):
-    """
-    Dağılım matrisini kaydeder. Form alanları:
-      w_<prizeId>_<tierKey> = yüzde (0..100, ondalık olabilir)
-      en_<prizeId>          = on/off (aktif)
-    Her tier toplamı %100 olmalı (bp = yüzde*100).
-    """
     form = await request.form()
     prizes = db.query(Prize).order_by(Prize.wheel_index).all()
 
@@ -337,12 +326,9 @@ async def prizes_dist_save(
         p.enabled = f"en_{p.id}" in form
         db.add(p)
 
-    # 2) tüm mevcut dağılımları getir -> dict
-    existing = {}
-    for d in db.query(PrizeDistribution).all():
-        existing[(d.prize_id, d.tier_key)] = d
+    # 2) mevcut dağılımlar
+    existing = {(d.prize_id, d.tier_key): d for d in db.query(PrizeDistribution).all()}
 
-    # 3) yeni ağırlıkları toparla + sütun toplamları
     sums = {k: 0 for k in TIERS}
     for p in prizes:
         for k in TIERS:
@@ -360,10 +346,9 @@ async def prizes_dist_save(
                 d = PrizeDistribution(prize_id=p.id, tier_key=k, weight_bp=bp, enabled=True)
             else:
                 d.weight_bp = bp
-            d.enabled = True
+                d.enabled = True
             db.add(d)
 
-    # 4) toplam kontrol: her sütun 100% (10000 bp) olmalı
     bad = [k for k, total in sums.items() if total != 10000]
     if bad:
         db.rollback()
