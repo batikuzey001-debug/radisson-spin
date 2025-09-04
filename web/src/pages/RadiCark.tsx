@@ -1,133 +1,212 @@
-// web/src/pages/RadiCark.tsx
+// web/src/pages/RadiSlot.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
+
+/**
+ * Tek Sütun Çark (Forza Horizon Spin tarzı)
+ * - /api/prizes  : ödülleri al (wheelIndex'e göre sırala)
+ * - /api/verify-spin : hedef index + spinToken
+ * - /api/commit-spin : animasyon bitince onayla
+ *
+ * Görünüm:
+ * ┌──────────────────────────┐
+ * │                          │
+ * │   (üst maske)            │
+ * │ ───────── SELECT WINDOW ─│  ← ortadaki çizgi/maske (kazanan burada durur)
+ * │   (alt maske)            │
+ * │                          │
+ * └──────────────────────────┘
+ */
 
 type Prize = { id: number; label: string; wheelIndex: number; imageUrl?: string | null };
 type VerifyIn = { code: string; username: string };
-type VerifyOut = { targetIndex: number; prizeLabel: string; spinToken: string; prizeImage?: string | null };
+type VerifyOut = {
+  targetIndex: number;
+  prizeLabel: string;
+  spinToken: string;
+  prizeImage?: string | null;
+};
 type CommitIn = { code: string; spinToken: string };
 
 const API = import.meta.env.VITE_API_BASE_URL;
-const SEGMENTS = 5;
 
-type Slice = { label: string; sourceIndex: number };
+// Kaç tur dönsün (toplam item yüksekliği kadar)
+const LOOPS = 18; // daha az / çok döndürmek için 12–24 arası deneyebilirsin
 
-export default function RadiCark() {
+export default function RadiSlot() {
+  // form
   const [code, setCode] = useState("");
   const [username, setUsername] = useState("");
 
-  const [prizes, setPrizes] = useState<Prize[]>([]);
+  const [basePrizes, setBasePrizes] = useState<Prize[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
 
+  // animasyon
   const [spinning, setSpinning] = useState(false);
+  const [spinToken, setSpinToken] = useState<string | null>(null);
   const [result, setResult] = useState<{ label: string; image?: string | null } | null>(null);
-  const [angle, setAngle] = useState(0);
-  const lastAngleRef = useRef(0);
 
+  // reel
+  const itemHRef = useRef<number>(0);
+  const reelRef = useRef<HTMLDivElement | null>(null);
+  const [translate, setTranslate] = useState(0); // px
+  const [duration, setDuration] = useState(0);   // sn
+
+  // ödülleri çek
   useEffect(() => {
-    let ok = true;
+    let alive = true;
     setLoading(true);
     fetch(`${API}/api/prizes`)
-      .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then((rows: Prize[]) => {
-        if (!ok) return;
-        const sorted = (rows || []).slice().sort((a, b) => a.wheelIndex - b.wheelIndex);
-        setPrizes(sorted);
+        if (!alive) return;
+        const sorted = (rows || [])
+          .slice()
+          .sort((a, b) => a.wheelIndex - b.wheelIndex)
+          .map((p, i) => ({ ...p, wheelIndex: i }));
+        setBasePrizes(sorted);
         setErr("");
       })
-      .catch((e) => { if (ok) { setErr(e?.message ?? "Ödüller alınamadı"); setPrizes([]); } })
-      .finally(() => ok && setLoading(false));
-    return () => { ok = false; };
+      .catch((e) => {
+        if (!alive) return;
+        setErr(e?.message ?? "Ödüller alınamadı");
+        setBasePrizes([]);
+      })
+      .finally(() => alive && setLoading(false));
+    return () => {
+      alive = false;
+    };
   }, []);
 
-  // 5 dilime indir / doldur
-  const slices: Slice[] = useMemo(() => {
-    const base = prizes.length ? prizes : [];
-    const take = base.slice(0, SEGMENTS).map((p) => ({ label: p.label, sourceIndex: p.wheelIndex }));
-    while (take.length < SEGMENTS) {
-      take.push({ label: `Ödül ${take.length + 1}`, sourceIndex: take.length });
-    }
-    return take;
-  }, [prizes]);
+  // reel içeriği: listeyi defalarca tekrar et
+  const reelItems = useMemo(() => {
+    if (!basePrizes.length) return [];
+    const labels = basePrizes.map((p) => p.label);
+    const arr: string[] = [];
+    for (let i = 0; i < LOOPS; i++) arr.push(...labels);
+    return arr;
+  }, [basePrizes]);
 
-  const segAngle = 360 / SEGMENTS;
+  // ilk yüklemede item yüksekliği ölç
+  useEffect(() => {
+    const first = document.querySelector(".slotItem") as HTMLElement | null;
+    if (first) {
+      itemHRef.current = first.getBoundingClientRect().height;
+    }
+  }, [reelItems.length]);
 
   const onSpin = async () => {
     setErr(""); setResult(null);
-    if (!code.trim() || !username.trim()) return setErr("Kullanıcı adı ve kod gerekli.");
-    if (!slices.length) return setErr("Ödül verisi yok.");
+    if (!username.trim() || !code.trim()) {
+      setErr("Kullanıcı adı ve kod gerekli.");
+      return;
+    }
+    if (!basePrizes.length || !itemHRef.current) {
+      setErr("Ödül verisi yok.");
+      return;
+    }
     if (spinning) return;
 
     try {
       setSpinning(true);
 
+      // verify -> hedef index (basePrizes listesine göre)
       const vr: VerifyOut = await postJson(`${API}/api/verify-spin`, {
-        code: code.trim(), username: username.trim(),
+        code: code.trim(),
+        username: username.trim(),
       } as VerifyIn);
 
-      // Görsel 5’lik dilimde hedef: aynı sourceIndex varsa onu kullan, yoksa mod 5
-      let target = slices.findIndex((s) => s.sourceIndex === vr.targetIndex);
-      if (target < 0) target = ((vr.targetIndex % SEGMENTS) + SEGMENTS) % SEGMENTS;
+      setSpinToken(vr.spinToken);
 
-      // Tepe pointer = 90°
-      const pointerDeg = 90;
-      const centerDeg  = (target + 0.5) * segAngle;
-      const fullTurns  = 6;                  // sade ve kısa
-      const absolute   = lastAngleRef.current + fullTurns * 360 + (pointerDeg - centerDeg);
+      // reel hesap: Hedef etiket basePrizes[vr.targetIndex]
+      // reelItems = labels repeated; hedefi en sonda bir kez daha eklemek yerine
+      // "son turda" hedefe denk gelen pozisyona kaydırıyoruz.
+      const labelH = itemHRef.current;
+      const totalItems = reelItems.length;
+      const targetLabel = basePrizes[vr.targetIndex]?.label ?? reelItems[0];
 
-      setAngle(absolute);
-      await wait(7200 + 150);                // ~7.2s
+      // reelItems içinde hedef label'ın son göründüğü index
+      // (sondan arayarak en yakın olanı bul)
+      let targetPos = -1;
+      for (let i = totalItems - 1; i >= 0; i--) {
+        if (reelItems[i] === targetLabel) {
+          targetPos = i;
+          break;
+        }
+      }
+      if (targetPos < 0) targetPos = totalItems - 1;
 
-      await postJson(`${API}/api/commit-spin`, { code: code.trim(), spinToken: vr.spinToken } as CommitIn);
+      // Ortadaki seçici çizgi yüksekliği: container 3 item gösteriyor, ortadaki 1'i seçici
+      const visibleCount = 3;
+      const centerOffsetPx = Math.floor((visibleCount / 2) * labelH);
 
-      setResult({ label: vr.prizeLabel, image: vr.prizeImage });
-      lastAngleRef.current = absolute;
+      // Başlangıç pozisyonu: 0px (tepedeki ilk item)
+      // Hedef: targetPos * itemH - centerOffset
+      const targetY = targetPos * labelH - centerOffsetPx;
+
+      // Daha doğal: önce küçük bir "kick" – anında küçük negatif translate
+      // (transition yokken uygula -> reflow -> transition ile hedefe git)
+      setDuration(0);
+      setTranslate(0); // reset
+      await raf();
+
+      // Animasyon parametreleri
+      const SPIN_TIME = 7.2; // saniye (yeterince yavaş)
+      setDuration(SPIN_TIME);
+      setTranslate(-targetY);
+
+      // animasyon bitişi
+      setTimeout(async () => {
+        try {
+          if (spinToken) {
+            await postJson(`${API}/api/commit-spin`, {
+              code: code.trim(),
+              spinToken: vr.spinToken,
+            } as CommitIn);
+          }
+        } catch (e) {
+          // yutsak da olur; backend idempotent
+        }
+        setResult({ label: vr.prizeLabel, image: vr.prizeImage });
+        setSpinning(false);
+      }, (SPIN_TIME * 1000) + 80);
     } catch (e: any) {
       setErr(String(e?.message || "Spin başarısız"));
-    } finally {
       setSpinning(false);
     }
   };
 
-  // Arka plan renkleri (sade)
-  const conic = useMemo(() => {
-    const cols = ["#0e2b78", "#123a9a", "#0e2b78", "#123a9a", "#0e2b78"];
-    const parts: string[] = [];
-    for (let i = 0; i < SEGMENTS; i++) {
-      const s = i * segAngle, e = (i + 1) * segAngle;
-      parts.push(`${cols[i % cols.length]} ${s}deg ${e}deg`);
-    }
-    return `conic-gradient(${parts.join(",")})`;
-  }, [segAngle]);
-
   return (
-    <main className="spin">
+    <main className="slot">
       <header className="hero">
         <div className="title">RADİ ÇARK</div>
-        <div className="sub">Şansını dene, ödülünü kap! 🎉</div>
+        <div className="sub">Tek sütun çark – şansını dene! 🎉</div>
       </header>
 
-      <section className="stage">
-        <div className="pointer"><div className="pin" /></div>
-
-        <div className="wheel" style={{ transform: `rotate(${angle}deg)` }}>
-          <div className="bg" style={{ background: conic }} />
-          <div className="rim" />
-          {/* Etiketler – sade, yatay, büyük */}
-          {slices.map((sl, i) => {
-            const mid = (i + 0.5) * segAngle;
-            return (
-              <div key={i} className="lblWrap" style={{ transform: `rotate(${mid}deg)` }}>
-                <div className="lbl" title={sl.label}>
-                  {sl.label}
-                </div>
-              </div>
-            );
-          })}
-          <div className="hub" />
+      {/* REEL */}
+      <section className="reelWrap">
+        {/* seçici pencere */}
+        <div className="mask top" />
+        <div className="mask bottom" />
+        <div className="selectLine" />
+        <div
+          ref={reelRef}
+          className="reel"
+          style={{
+            transform: `translateY(${translate}px)`,
+            transition: `transform ${duration}s cubic-bezier(.15,.85,.08,1)`,
+          }}
+        >
+          {reelItems.map((txt, i) => (
+            <div className="slotItem" key={`ri-${i}`}>{txt}</div>
+          ))}
         </div>
       </section>
 
+      {/* FORM */}
       <section className="panel">
         <div className="row">
           <label className="f">
@@ -145,11 +224,12 @@ export default function RadiCark() {
         {err && <div className="msg error">⚠️ {err}</div>}
       </section>
 
+      {/* RESULT */}
       {result && (
         <Modal onClose={() => setResult(null)}>
           <div className="m-title">Tebrikler 🎉</div>
           {result.image && <img className="m-img" src={result.image} alt="" />}
-          <div className="m-text">Ödülün: <b>{result.label}</b></div>
+          <div className="m-text">Kazandığın ödül: <b>{result.label}</b></div>
           <button className="btn" onClick={() => setResult(null)}>Kapat</button>
         </Modal>
       )}
@@ -159,7 +239,7 @@ export default function RadiCark() {
   );
 }
 
-/* ---------- helpers ---------- */
+/* helpers */
 async function postJson<T = any>(url: string, body: any): Promise<T> {
   const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!r.ok) {
@@ -170,51 +250,75 @@ async function postJson<T = any>(url: string, body: any): Promise<T> {
   return (await r.json()) as T;
 }
 function wait(ms: number) { return new Promise((res) => setTimeout(res, ms)); }
-function randInt(a: number, b: number) { return Math.floor(a + Math.random() * (b - a + 1)); }
-function shuffle<T>(arr: T[]): T[] { const a = arr.slice(); for (let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; }
+function raf() { return new Promise((res) => requestAnimationFrame(() => res(null))); }
 
-/* ---------- styles ---------- */
+/* styles */
 const css = `
 :root{
-  --text:#eaf2ff; --muted:#9fb1cc; --ring:#091227; --rim:#0c1430;
+  --bg:#0b1224; --text:#eaf2ff; --muted:#9fb1cc; --aqua:#00e5ff;
 }
 *{box-sizing:border-box}
-.spin{max-width:960px;margin:0 auto;padding:16px;color:var(--text)}
-.hero{display:grid;place-items:center;margin:6px 0 8px}
+.slot{max-width:560px;margin:0 auto;padding:16px;color:var(--text)}
+.hero{display:grid;place-items:center;margin:6px 0 10px}
 .title{font-weight:1000;font-size:clamp(26px,5vw,38px);letter-spacing:2px}
-.sub{color:#9fb1cc}
+.sub{color:var(--muted)}
 
-.stage{position:relative;display:grid;place-items:center;margin:8px 0 6px;pointer-events:none}
-.pointer{position:absolute; top:-8px}
-.pin{width:0;height:0;border-left:10px solid transparent;border-right:10px solid transparent;border-bottom:16px solid #36d1ff;filter:drop-shadow(0 0 8px rgba(54,209,255,.7))}
-
-.wheel{
-  width:min(78vw,480px); height:min(78vw,480px);
-  border-radius:999px; position:relative;
-  transition: transform 7.2s cubic-bezier(.2,.85,.08,1); will-change: transform;
-  transform:rotate(0deg);
+.reelWrap{
+  position:relative; height:240px; overflow:hidden; border-radius:14px;
+  background:linear-gradient(180deg,#07122a,#0a1733);
+  border:1px solid rgba(255,255,255,.12); box-shadow:0 10px 40px rgba(0,0,0,.35);
 }
-.bg{position:absolute; inset:0; border-radius:999px}
-.rim{position:absolute; inset:2%; border-radius:999px; box-shadow:inset 0 0 0 10px var(--rim), 0 18px 60px rgba(0,0,0,.45)}
-.lblWrap{position:absolute; left:50%; top:50%; transform-origin:50% 50%}
-.lbl{
-  position:absolute; left:0; top:0; transform-origin:left center;
-  transform: translate(78%, -50%);         /* etiket dışa taşır */
-  color:#fff; font-weight:900; font-size:18px; letter-spacing:.4px;
-  text-shadow:0 2px 8px rgba(0,0,0,.8);
-  pointer-events:none; white-space:nowrap; max-width:260px; overflow:hidden; text-overflow:ellipsis;
+.reel{
+  position:absolute; left:0; right:0; top:0;
+  will-change: transform;
 }
-.hub{
-  position:absolute; inset:32% 32%; border-radius:999px;
-  background:radial-gradient(circle at 30% 35%, #1d2e57 0%, #0c1430 60%);
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08), 0 10px 30px rgba(0,0,0,.35);
+.slotItem{
+  height:80px; display:grid; place-items:center; font-weight:1000;
+  font-size:22px; letter-spacing:.4px;
+  color:#fdfdff; text-shadow:0 2px 12px rgba(0,0,0,.8);
+  border-bottom:1px dashed rgba(255,255,255,.06);
 }
 
-.panel{margin-top:10px;pointer-events:auto}
+/* seçici pencere */
+.mask{position:absolute; left:0; right:0; height:80px; z-index:2;
+  background:linear-gradient(180deg, rgba(5,10,20,.85), rgba(5,10,20,0));
+  pointer-events:none;
+}
+.mask.top{top:0; transform:translateY(-20%)}
+.mask.bottom{bottom:0; transform:translateY(20%)}
+
+.selectLine{
+  position:absolute; left:10%; right:10%; top:calc(50% - 1px); height:2px; z-index:3;
+  background:linear-gradient(90deg, transparent, rgba(0,229,255,.95), transparent);
+  box-shadow:0 0 12px rgba(0,229,255,.65);
+  pointer-events:none;
+}
+
+/* form */
+.panel{margin-top:12px}
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;justify-content:center}
 .f{display:flex;flex-direction:column;gap:6px}
 .f span{font-size:12px;color:var(--muted)}
-input{background:#0e1730;border:1px solid rgba(255,255,255,.12);color:#eaf2ff;border-radius:10px;padding:10px 12px;min-width:220px}
-.btn{background:linear-gradient(90deg,#00e5ff,#4aa7ff);color:#001018;border:none;border-radius:10px;padding:12px 16px;font-weight:900;cursor:pointer;box-shadow:0 8px 20px rgba(0,229,255,.25)}
+input{background:#0e1730;border:1px solid rgba(255,255,255,.12);color:#eaf2ff;border-radius:10px;padding:10px 12px;min-width:210px}
+.btn{background:linear-gradient(90deg,#00e5ff,#4aa7ff); color:#001018; border:none;border-radius:10px; padding:12px 16px; font-weight:900; cursor:pointer; box-shadow:0 8px 20px rgba(0,229,255,.25)}
 .msg.error{color:#ffb3c0;margin-top:8px}
+
+/* result modal */
+.modalWrap{position:fixed; inset:0; background:rgba(0,0,0,.55); display:grid; place-items:center; z-index:50}
+.modal{position:relative; width:min(420px,92vw); background:#0f1628; border:1px solid rgba(255,255,255,.12); border-radius:14px; padding:16px}
+.m-title{font-weight:900;margin:0 0 10px}
+.m-img{width:100%; height:140px; object-fit:cover; border-radius:10px; margin-bottom:8px}
+.close{position:absolute;right:10px;top:10px;border:none;background:transparent;color:#9fb1cc;font-size:18px;cursor:pointer}
 `;
+
+/* Modal */
+function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  return (
+    <div className="modalWrap" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <button className="close" onClick={onClose}>✕</button>
+        {children}
+      </div>
+    </div>
+  );
+}
