@@ -2,11 +2,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 /**
- * Radi Çark – Çarkıfelek (32 dişli, gerçekçi)
+ * Radi Çark – Çarkıfelek (32 dişli, neon, gerçekçi)
  * - /api/prizes -> ödüller (orijinal sıralı)
  * - /api/verify-spin -> targetIndex (orijinal liste index), spinToken
  * - Görselde 32 dilim; orijinal ödüller 32’ye tamamlanıp RASTGELE karıştırılır.
  * - verify dönen index'e uyan dilim(ler) içinden rastgele biri hedeflenir.
+ * - Dönüş: ease-in → quick → ease-out (yaklaşık 10.8s)
  */
 
 type Prize = {
@@ -30,9 +31,10 @@ const SEGMENTS = 32;
 
 type Slice = {
   prize: Prize;
-  sourceIndex: number; // orijinal listedeki index (verify ile eşleşmede)
+  sourceIndex: number; // orijinal listedeki index (verify eşleşmesi)
   label: string;
   imageUrl?: string | null;
+  neonHue: number; // her dilime özgü neon rengi
 };
 
 export default function RadiCark() {
@@ -47,9 +49,11 @@ export default function RadiCark() {
   const [result, setResult] = useState<{ label: string; image?: string | null } | null>(null);
   const [angle, setAngle] = useState(0);
   const lastAngleRef = useRef(0);
+  const [kick, setKick] = useState(false); // başlangıç “kick” efekti
 
+  // ödülleri çek
   useEffect(() => {
-    let alive = true;
+    let ok = true;
     setLoading(true);
     fetch(`${API}/api/prizes`)
       .then((r) => {
@@ -57,7 +61,7 @@ export default function RadiCark() {
         return r.json();
       })
       .then((rows: Prize[]) => {
-        if (!alive) return;
+        if (!ok) return;
         const sorted = (rows || [])
           .slice()
           .sort((a, b) => a.wheelIndex - b.wheelIndex)
@@ -66,43 +70,47 @@ export default function RadiCark() {
         setErr("");
       })
       .catch((e) => {
-        if (!alive) return;
+        if (!ok) return;
         setErr(e?.message ?? "Ödüller alınamadı");
         setBasePrizes([]);
       })
-      .finally(() => alive && setLoading(false));
+      .finally(() => ok && setLoading(false));
     return () => {
-      alive = false;
+      ok = false;
     };
   }, []);
 
+  // 32 dilime genişlet + karıştır + neon rengi ata
   const slices: Slice[] = useMemo(() => {
     if (!basePrizes.length) return [];
     const rep: Slice[] = [];
     for (let i = 0; i < SEGMENTS; i++) {
       const p = basePrizes[i % basePrizes.length];
-      rep.push({ prize: p, sourceIndex: p.wheelIndex, label: p.label, imageUrl: p.imageUrl || undefined });
+      rep.push({
+        prize: p,
+        sourceIndex: p.wheelIndex,
+        label: p.label,
+        imageUrl: p.imageUrl || undefined,
+        neonHue: hueFromLabel(p.label),
+      });
     }
     return shuffle(rep);
   }, [basePrizes]);
 
   const segAngle = 360 / (slices.length || 1);
 
+  // SPIN
   const onSpin = async () => {
     setErr("");
     setResult(null);
-    if (!code.trim() || !username.trim()) {
-      setErr("Kullanıcı adı ve kod gerekli.");
-      return;
-    }
-    if (!slices.length) {
-      setErr("Ödül verisi yok.");
-      return;
-    }
+    if (!code.trim() || !username.trim()) return setErr("Kullanıcı adı ve kod gerekli.");
+    if (!slices.length) return setErr("Ödül verisi yok.");
     if (spinning) return;
 
     try {
       setSpinning(true);
+      setKick(true);               // kısa “kick” tetikle
+      setTimeout(() => setKick(false), 350);
 
       const vr: VerifyOut = await postJson(`${API}/api/verify-spin`, {
         code: code.trim(),
@@ -122,7 +130,8 @@ export default function RadiCark() {
       const absolute = lastAngleRef.current + fullTurns * 360 + (360 - center) + jitter;
 
       setAngle(absolute);
-      const DURATION = 11500;
+
+      const DURATION = 10800; // ~10.8s
       await wait(DURATION + 200);
 
       await postJson(`${API}/api/commit-spin`, {
@@ -147,12 +156,21 @@ export default function RadiCark() {
         <div className="sub">Şansını dene, ödülünü kap! 🎉</div>
       </header>
 
-      {/* ÇARK (üst katman engellemesin diye pointer-events: none) */}
-      <section className="stage">
+      {/* ÇARK – üstte, form aşağıda; çark tıklama yakalamasın */}
+      <section className={`stage ${kick ? "kick" : ""}`}>
+        {/* dış neon ışıklar */}
+        <div className="bulbs">
+          {Array.from({ length: 64 }).map((_, i) => (
+            <span key={i} style={{ transform: `rotate(${(i * 360) / 64}deg) translateY(calc(-50%))` }} className="bulb" />
+          ))}
+        </div>
+
+        {/* sabit pointer */}
         <div className={`pointer ${spinning ? "tick" : ""}`}>
           <div className="pin" />
         </div>
 
+        {/* çark */}
         <div
           className={`wheel ${spinning ? "spin" : ""}`}
           style={{
@@ -161,6 +179,7 @@ export default function RadiCark() {
             ["--segcount" as any]: slices.length || 1,
           }}
         >
+          {/* dış kadran ve ayırıcı çizgiler */}
           <div className="rim" />
           <div className="spokes">
             {Array.from({ length: slices.length }).map((_, i) => (
@@ -168,17 +187,24 @@ export default function RadiCark() {
             ))}
           </div>
 
+          {/* dilimler */}
           {slices.map((sl, i) => (
-            <Slice key={`sl-${i}-${sl.prize.id}`} index={i} segAngle={segAngle} label={sl.label} imageUrl={sl.imageUrl || undefined} />
+            <Slice
+              key={`sl-${i}-${sl.prize.id}`}
+              index={i}
+              segAngle={segAngle}
+              label={sl.label}
+              imageUrl={sl.imageUrl || undefined}
+              neonHue={sl.neonHue}
+            />
           ))}
 
-          <div className="hub">
-            <div className="hub2">RADİ ÇARK</div>
-          </div>
+          {/* merkez – sade plaka, yazı yok (daha gerçekçi görünüm) */}
+          <div className="hub" />
         </div>
       </section>
 
-      {/* FORM – ÇARKIN ALTINDA ve ÜST KATMANDA */}
+      {/* FORM – ALTTA ve tıklanabilir */}
       <section className="panel below">
         <div className="row">
           <label className="f">
@@ -245,23 +271,43 @@ function shuffle<T>(arr: T[]): T[] {
   }
   return a;
 }
+function hueFromLabel(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
+  return h;
+}
 
 /* ---------------- slice ---------------- */
-function Slice({ index, segAngle, label, imageUrl }: { index: number; segAngle: number; label: string; imageUrl?: string }) {
+function Slice({
+  index,
+  segAngle,
+  label,
+  imageUrl,
+  neonHue,
+}: {
+  index: number;
+  segAngle: number;
+  label: string;
+  imageUrl?: string;
+  neonHue: number;
+}) {
   const rotate = index * segAngle;
-  const alt = index % 2 === 0 ? "var(--sliceA)" : "var(--sliceB)";
   return (
     <div
       className="slice"
       style={
         {
           transform: `rotate(${rotate}deg)`,
-          ["--bg" as any]: alt,
           ["--label-rot" as any]: `${segAngle / 2}deg`,
+          ["--neon" as any]: neonHue,
         } as React.CSSProperties
       }
     >
+      {/* konik dolgu */}
       <div className="sector" />
+      {/* neon ayraç (ödüle göre renk) */}
+      <div className="neonEdge" />
+      {/* etiket – UCA taşıdık, tangent hizalı, daha büyük ve okunur */}
       <div className="label" title={label}>
         {imageUrl ? <img src={imageUrl} alt="" /> : null}
         <span>{label}</span>
@@ -287,38 +333,61 @@ const css = `
 :root{
   --bg1:#0b1224; --bg2:#0e1a33; --text:#eaf2ff; --muted:#9fb1cc;
   --ring:#091227; --rim:#0c1430; --pointer:#ff3b6b; --glow:#00e5ff;
-  --sliceA:#0f1a38; --sliceB:#14234d;
+  --sliceA:#101a36; --sliceB:#14234d;
 }
 
 /* üst başlık */
 .hero{display:grid;place-items:center;margin:10px 0 6px}
 .hero .title{
-  font-weight:1000; font-size:clamp(26px,5vw,42px);
+  font-weight:1000; font-size:clamp(26px,5vw,40px);
   letter-spacing:2px; color:#def4ff; text-shadow:0 6px 26px rgba(0,229,255,.25);
 }
 .hero .sub{color:var(--muted)}
 
+/* sahne – çark tıklama yakalamasın */
 .stage{
-  position:relative;display:grid;place-items:center;margin:16px 0 8px;
-  /* ÖNEMLİ: çark alanı tıklamaları engellemesin */
+  position:relative;display:grid;place-items:center;margin:14px 0 6px;
   pointer-events:none; z-index:1;
 }
-.pointer{ position:absolute; top:-12px; pointer-events:none; }
+.stage.kick .wheel{ animation:preKick .35s ease-in-out; }
+@keyframes preKick{
+  0%{ transform:rotate(var(--angle)); }
+  40%{ transform:rotate(calc(var(--angle) + 10deg)); }
+  100%{ transform:rotate(var(--angle)); }
+}
+
+/* neon ampuller */
+.bulbs{
+  position:absolute; width:min(84vw,660px); height:min(84vw,660px);
+  border-radius:999px; display:grid; place-items:center; pointer-events:none; z-index:0;
+}
+.bulb{
+  position:absolute; top:0; left:50%; width:8px; height:8px; border-radius:999px;
+  background:#9ae6ff; box-shadow:0 0 10px rgba(154,230,255,.8), 0 0 16px rgba(0,229,255,.45);
+  animation:blink 1.6s infinite;
+}
+.bulb:nth-child(odd){ background:#ffb3d0; box-shadow:0 0 10px rgba(255,179,208,.8), 0 0 16px rgba(255,80,160,.45); }
+.bulb:nth-child(4n){ animation-delay:.3s } .bulb:nth-child(4n+1){ animation-delay:.6s }
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+
+.pointer{ position:absolute; top:-10px; pointer-events:none; }
 .pointer .pin{
   position:absolute; top:-8px; left:-3px; width:6px; height:6px; border-radius:50%;
   background:#ffe0ea; box-shadow:0 0 10px rgba(255,59,107,.8);
 }
+/* tık efekti – hafif titreşim */
 .pointer.tick{animation:ptr 0.08s linear infinite}
 @keyframes ptr{0%{transform:translateX(0)}50%{transform:translateX(1px)}100%{transform:translateX(0)}}
 
 .wheel{
-  width:min(94vw,760px); height:min(94vw,760px);
+  width:min(82vw,640px); height:min(82vw,640px);
   border-radius:999px; background:var(--ring); border:1px solid rgba(255,255,255,.15); position:relative;
-  box-shadow:inset 0 0 0 12px var(--rim), 0 26px 80px rgba(0,0,0,.5);
+  box-shadow:inset 0 0 0 10px var(--rim), 0 22px 70px rgba(0,0,0,.5);
   transform: rotate(var(--angle, 0deg));
-  transition: transform 11.5s cubic-bezier(.08,.99,.06,1);
+  /* Ease-in-out ama ortada daha hızlı: bezier */
+  transition: transform 10.8s cubic-bezier(.17,.85,.08,1);
   will-change: transform;
-  pointer-events:none; /* çark altındaki elementleri engellemesin */
+  pointer-events:none;
 }
 .rim{position:absolute; inset:2%; border-radius:999px; box-shadow:inset 0 0 0 2px rgba(255,255,255,.08), inset 0 0 50px rgba(0,229,255,.12);}
 .spokes{position:absolute; inset:0; pointer-events:none}
@@ -327,35 +396,51 @@ const css = `
   transform-origin:left center;
 }
 
+/* dilimler */
 .slice{position:absolute; inset:0; transform-origin:50% 50%; pointer-events:none}
 .sector{
   position:absolute; inset:0; border-radius:999px;
+  /* ince dilimler için konik maske */
   mask: conic-gradient(from 0deg, white 0deg, white var(--label-rot), transparent var(--label-rot));
   background:
     radial-gradient(60% 60% at 60% 45%, rgba(0,229,255,.08), transparent 70%),
-    var(--bg);
+    linear-gradient(180deg, var(--sliceA), var(--sliceB));
   filter:drop-shadow(0 0 1px rgba(0,0,0,.6));
 }
+/* neon ayırıcı – ödüle göre renk */
+.neonEdge{
+  position:absolute; left:50%; top:50%; width:50%; height:1px; transform-origin:left center;
+  background: hsl(var(--neon) 95% 60% / .55);
+  box-shadow: 0 0 8px hsl(var(--neon) 95% 60% / .55), 0 0 14px hsl(var(--neon) 95% 60% / .35);
+}
+
+/* etiket – uca yaklaştırıldı, tangent hizalı, okunaklı */
 .label{
   position:absolute; left:50%; top:50%;
-  transform: rotate(calc(var(--label-rot) + 90deg)) translate(46%, -50%);
+  transform: rotate(calc(var(--label-rot) + 90deg)) translate(54%, -50%);
   transform-origin:left center;
   display:flex; align-items:center; gap:6px;
-  color:#eaf2ff; text-shadow:0 2px 10px rgba(0,0,0,.7); font-weight:900;
+  color:#f5fbff; text-shadow:0 2px 12px rgba(0,0,0,.85), 0 0 2px rgba(0,0,0,.9);
+  font-weight:900; letter-spacing:.4px;
   pointer-events:none;
 }
-.label img{ width:18px; height:18px; border-radius:4px; object-fit:cover; opacity:.95 }
-.label span{ font-size:12px; max-width:140px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
-
-.hub{
-  position:absolute; inset:34% 34%;
-  border-radius:999px; background:radial-gradient(circle at 30% 35%, #1d2e57, #0c1430 60%);
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08), inset 0 0 40px rgba(0,229,255,.15), 0 10px 30px rgba(0,0,0,.45);
-  display:grid; place-items:center; pointer-events:none;
+.label img{ width:20px; height:20px; border-radius:4px; object-fit:cover; opacity:.98 }
+.label span{
+  font-size:13.5px; max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
-.hub2{font-weight:1000; letter-spacing:.8px; color:#def4ff; text-shadow:0 2px 14px rgba(0,229,255,.35)}
 
-.panel{margin:8px 0 16px; position:relative; z-index:5;} /* FORM ÜST KATMANDA */
+/* merkez plakası – yazı yok, sadece efekt */
+.hub{
+  position:absolute; inset:36% 36%;
+  border-radius:999px; background:
+    radial-gradient(circle at 30% 35%, #1d2e57 0%, #0c1430 60%),
+    radial-gradient(circle at 60% 65%, rgba(0,229,255,.18), transparent 50%);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08), inset 0 0 40px rgba(0,229,255,.15), 0 10px 30px rgba(0,0,0,.45);
+  pointer-events:none;
+}
+
+/* form (altta, üst katmanda) */
+.panel{margin:8px 0 16px; position:relative; z-index:5;}
 .panel.below{display:grid; place-items:center}
 .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end; justify-content:center}
 .f{display:flex;flex-direction:column;gap:6px}
