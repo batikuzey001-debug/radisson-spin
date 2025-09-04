@@ -123,6 +123,9 @@ class PromoCode(Base):
     accent_color = Column(String(16))
     bg_color     = Column(String(16))
     variant      = Column(String(24))
+    # --- Hızlı Bonus Kartları için ek alanlar ---
+    coupon_code = Column(String(64))               # Why: Kartta gösterilecek kod/kopyalama için
+    cta_url     = Column(String(512))              # Why: (ops.) detay/hedef linki
     created_at = Column(DateTime(timezone=True), default=_utcnow)
     updated_at = Column(DateTime(timezone=True), default=_utcnow)
 
