@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-/** API veri tipi (events/active) – prize_amount eklendi */
+/** API veri tipi (events/active) – prize_amount dahil */
 type EventCard = {
   id: number | string;
   title: string;
@@ -15,18 +15,18 @@ type EventCard = {
   bg_color?: string | null;
   priority?: number | null;
   is_pinned?: boolean;
-  prize_amount?: number | null;      // <— YENİ
+  prize_amount?: number | null;
 };
 
 const API = import.meta.env.VITE_API_BASE_URL;
 
 /* --- Kategori -> renk eşleşmesi (hue) --- */
 const CAT: Record<string, { hue: number; label: string }> = {
-  "sports": { hue: 150, label: "SPOR" },
-  "live-casino": { hue: 10, label: "CANLI" },
-  "slots": { hue: 48, label: "SLOT" },
-  "all": { hue: 190, label: "HEPSİ" },
-  "other": { hue: 280, label: "ÖZEL" },
+  "sports":      { hue: 150, label: "SPOR" },
+  "live-casino": { hue: 10,  label: "CANLI" },
+  "slots":       { hue: 48,  label: "SLOT" },
+  "all":         { hue: 190, label: "HEPSİ" },
+  "other":       { hue: 280, label: "ÖZEL" },
 };
 
 function colorOf(ev: EventCard) {
@@ -57,7 +57,7 @@ function fmtDate(dt?: string | null) {
   }
 }
 
-/* Tutar gösterimi */
+/* TL biçimlendirici */
 const fmtTL = (n: number) =>
   new Intl.NumberFormat("tr-TR").format(Math.max(0, Math.floor(n))) + " ₺";
 
@@ -106,8 +106,8 @@ export default function EventsGrid() {
         {items.map((ev) => {
           const { hue, catLabel } = colorOf(ev);
           const stateLab = ev.state === "active" ? "AKTİF" : "YAKINDA";
-          const subTxt =
-            ev.state === "active" ? "Devam ediyor" : `Başlangıç: ${fmtDate(ev.start_at)}`;
+          // Aktifte “Devam ediyor” istemiyorsun → boş bırakıyoruz
+          const subTxt = ev.state === "active" ? "" : `Başlangıç: ${fmtDate(ev.start_at)}`;
           const amountText =
             typeof ev.prize_amount === "number" ? fmtTL(ev.prize_amount) : null;
 
@@ -120,7 +120,7 @@ export default function EventsGrid() {
               {/* Sol dikey neon şerit */}
               <span className="neonLeft" aria-hidden />
 
-              {/* Sağ üst kurdele (kategori) */}
+              {/* Sağ üst kurdele (kategori) – yazı kurdele ile aynı açıda */}
               <span className="ribbon" aria-label={catLabel}>
                 <span className="ribTxt">{catLabel}</span>
               </span>
@@ -136,19 +136,18 @@ export default function EventsGrid() {
                 <span className={`pill ${ev.state}`}>{stateLab}</span>
               </div>
 
-              {/* Başlık */}
-              <h3 className="title" title={ev.title}>{ev.title}</h3>
-
-              {/* ÖDÜL MİKTARI – varsa belirgin şekilde göster */}
+              {/* ÖDÜL MİKTARI – en öne, büyük ve dikkat çekici */}
               {amountText && (
-                <div className="amount" title={`Ödül: ${amountText}`}>
-                  <span className="label">ÖDÜL</span>
+                <div className="amount" title={amountText}>
                   <span className="value">{amountText}</span>
                 </div>
               )}
 
-              {/* Alt bilgi */}
-              <div className="meta">{subTxt}</div>
+              {/* Başlık */}
+              <h3 className="title" title={ev.title}>{ev.title}</h3>
+
+              {/* Alt bilgi (yalnız upcoming) */}
+              {subTxt && <div className="meta">{subTxt}</div>}
 
               {/* CTA */}
               <button className="cta" type="button">KATIL</button>
@@ -201,22 +200,23 @@ const css = `
 
 /* sağ üst kurdele */
 .card .ribbon{
-  position:absolute; right:-54px; top:14px; width:160px; height:28px; transform:rotate(45deg); z-index:3;
+  position:absolute; right:-56px; top:16px; width:168px; height:30px; transform:rotate(45deg); z-index:3;
   background:linear-gradient(90deg,
-    hsla(var(--tone,190), 95%, 65%, .95),
-    hsla(var(--tone,190), 95%, 55%, .85));
+    hsla(var(--tone,190), 95%, 65%, .98),
+    hsla(var(--tone,190), 95%, 55%, .90));
   box-shadow:0 6px 18px hsla(var(--tone,190), 95%, 60%, .55);
   display:grid; place-items:center;
 }
 .card .ribbon .ribTxt{
-  transform:rotate(-45deg);
-  color:#001018; font-weight:900; font-size:11px; letter-spacing:.6px;
+  transform: rotate(-45deg) skewX(-10deg);
+  color:#001018; font-weight:1000; font-size:12px; letter-spacing:.8px;
+  text-transform:uppercase; opacity:.95;
 }
 
 /* üst görsel */
 .card .thumb{
   position:relative; height:150px; background-size:cover; background-position:center;
-  filter:saturate(1.05); 
+  filter:saturate(1.05);
 }
 .card .thumb::after{
   content:""; position:absolute; inset:0;
@@ -234,27 +234,29 @@ const css = `
 }
 .pill.upcoming{ background:linear-gradient(90deg, #ffd36a, #ffe7a1); box-shadow:0 4px 14px rgba(255,211,106,.42) }
 
+/* ÖDÜL – en üstte, büyük ve neon vurgulu */
+.card .amount{
+  margin:12px 12px 2px;
+}
+.card .amount .value{
+  font-size: clamp(22px, 5vw, 28px);
+  font-weight:1000; letter-spacing:.6px;
+  background: linear-gradient(90deg,
+    hsla(var(--tone,190), 100%, 70%, 1),
+    hsla(var(--tone,190), 100%, 92%, 1));
+  -webkit-background-clip:text; background-clip:text;
+  -webkit-text-fill-color:transparent;
+  text-shadow: 0 0 18px hsla(var(--tone,190), 95%, 60%, .45);
+}
+
 /* başlık */
 .card .title{
-  margin:10px 12px 4px; font-size:18px; font-weight:900; color:#eaf2ff;
+  margin:6px 12px 4px; font-size:18px; font-weight:900; color:#eaf2ff;
   text-shadow:0 2px 12px rgba(0,0,0,.45);
   min-height: 44px;
 }
 
-/* ÖDÜL satırı – belirgin */
-.card .amount{
-  margin:4px 12px 2px;
-  display:flex; align-items:baseline; gap:8px;
-  font-weight:900;
-}
-.card .amount .label{
-  color:#a7bddb; font-size:12px; letter-spacing:.6px;
-}
-.card .amount .value{
-  font-size:20px; color:#f7fbff; text-shadow:0 0 14px rgba(0,229,255,.30);
-}
-
-/* alt bilgi */
+/* alt bilgi (yalnız upcoming) */
 .card .meta{
   margin:0 12px 12px; color:#cfe0ff; font-size:13px;
   opacity:.95;
