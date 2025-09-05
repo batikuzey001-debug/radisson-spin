@@ -22,6 +22,7 @@ from app.api.routers.live import router as live_router
 from app.api.routers.schedule import router as schedule_router
 from app.api.routers.promos import router as promos_router
 from app.api.routers.events import router as events_router
+from app.api.routers.hero import router as hero_router           # <-- eklendi
 from app.api.routers.admin_mod import admin_router
 from app.db.session import SessionLocal, engine
 from app.db.models import Base, Prize, Code
@@ -85,6 +86,7 @@ app.include_router(live_router,      prefix="/api")
 app.include_router(schedule_router,  prefix="/api")
 app.include_router(promos_router,    prefix="/api")
 app.include_router(events_router,    prefix="/api")
+app.include_router(hero_router,      prefix="/api")  # <-- eklendi (/api/hero/stats)
 app.include_router(admin_router)
 
 # -----------------------------
@@ -286,13 +288,9 @@ def on_startup() -> None:
             db.commit()
 
     # ---- prize_distributions için otomatik başlangıç verisi ----
-    # Amaç: Ödüller sekmesi 500 vermesin diye her aktif tier için en az 1 satır olsun.
-    # Strateji: Eğer bir tier için hiç satır yoksa, wheel_index'i en küçük olan ödüle %100 ver.
     with engine.begin() as conn:
-        # prize var mı?
         has_prize = conn.execute(text("SELECT EXISTS(SELECT 1 FROM prizes)")).scalar()
         if has_prize:
-            # her aktif tier için yoksa seed ekle
             conn.execute(text("""
                 INSERT INTO prize_distributions(tier_key, prize_id, weight_bp, enabled)
                 SELECT pt.key,
@@ -309,10 +307,10 @@ def on_startup() -> None:
 # Lokal çalıştırma kolaylığı
 # -----------------------------
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(
-        "app.main:app",
-        host="0.0.0.0",
-        port=int(os.getenv("PORT", "8000")),
-        reload=True,
-    )
+  import uvicorn
+  uvicorn.run(
+      "app.main:app",
+      host="0.0.0.0",
+      port=int(os.getenv("PORT", "8000")),
+      reload=True,
+  )
