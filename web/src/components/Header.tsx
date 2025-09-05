@@ -2,11 +2,10 @@
 import { useEffect, useRef, useState } from "react";
 
 /**
- * HERO (rev3 - sadece sayı mantığı değişti, boyutlar korunuyor)
+ * HERO — (final / boyutlar korunur)
  * - Sol: otomatik kayan banner (gösterge yok)
- * - Sağ: 3 metrik aynı formatta, aynı tipografi; SON 3 BASAMAK ÖZEL DEĞİL
- * - Artış: 10 dakikada 1 kez, +10..+300 arası tek adım artar (drift/animasyon yok)
- * - Backend uçları ve mevcut boyutlar korunur
+ * - Sağ: 3 metrik TEK format, TEK boy. Son 3 basamak özel DEĞİL.
+ * - Artış: 10 dakikada 1 kez +10..+300 arası (tek adım). Backend uçları korunur.
  */
 
 const API = import.meta.env.VITE_API_BASE_URL;
@@ -16,7 +15,7 @@ type HeroStats = {
   dist_min:  number; dist_max:  number;
   part_min:  number; part_max:  number;
 };
-type Banner = { id: string|number; image_url: string };
+type Banner = { id: string | number; image_url: string };
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const lerp  = (a: number, b: number, t: number)   => a + (b - a) * t;
@@ -26,14 +25,12 @@ export default function Hero() {
   const [slides, setSlides] = useState<Banner[]>([]);
   const [idx, setIdx] = useState(0);
 
-  // min/max aralıkları
   const [ranges, setRanges] = useState<HeroStats>({
     total_min: 60_000_000, total_max: 95_000_000,
     dist_min:    200_000,  dist_max:   1_200_000,
     part_min:    300_000,  part_max:     800_000,
   });
 
-  // değerler
   const [total, setTotal] = useState(72_000_000);
   const [dist,  setDist]  = useState(420_000);
   const [part,  setPart]  = useState(480_000);
@@ -43,22 +40,22 @@ export default function Hero() {
     fetch(`${API}/api/home/banners`)
       .then(r => r.json())
       .then(rows => {
-        const arr = (Array.isArray(rows)? rows:[])
-          .map((b:any)=> b?.image_url)
+        const arr = (Array.isArray(rows) ? rows : [])
+          .map((b: any) => b?.image_url)
           .filter(Boolean);
-        setSlides((arr.length? arr: FALLBACKS).map((src, i)=> ({ id: i, image_url: src })));
+        setSlides((arr.length ? arr : FALLBACKS).map((src, i) => ({ id: i, image_url: src })));
       })
-      .catch(()=> setSlides(FALLBACKS.map((src, i)=> ({ id: i, image_url: src }))));
+      .catch(() => setSlides(FALLBACKS.map((src, i) => ({ id: i, image_url: src }))));
   }, []);
 
-  // otomatik değişim (6 sn)
+  // Banner otomatik değişim (6 sn)
   useEffect(() => {
     if (!slides.length) return;
     const t = window.setInterval(() => setIdx(i => (i + 1) % slides.length), 6000);
     return () => window.clearInterval(t);
   }, [slides, idx]);
 
-  // min/max aralıkları + başlangıç değerleri
+  // min/max + başlangıç değerleri
   useEffect(() => {
     (async () => {
       try {
@@ -71,25 +68,22 @@ export default function Hero() {
             part_min:  js.part_min  ?? ranges.part_min,  part_max:  js.part_max  ?? ranges.part_max,
           };
           setRanges(merged);
-          // başlangıçları ortadan ver (boyutlar korunuyor)
           setTotal(lerp(merged.total_min, merged.total_max, 0.5));
           setDist (lerp(merged.dist_min,  merged.dist_max,  0.5));
           setPart (lerp(merged.part_min,  merged.part_max,  0.5));
         }
-      } catch { /* fallback sessiz */ }
+      } catch { /* sessiz fallback */ }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /**
-   * Artış mantığı:
-   * - Her 10 dakikada (600_000ms) bir kez, +10..+300 arası tek adım artış yap.
-   * - Max'ı geçmez (clamp).
-   * - Geri düşme, yumuşak drift vb. YOK.
+   * 10 dakikada 1 kez +10..+300 artış (tek adım), max'ı geçmez.
+   * Not: Sadece sayı mantığı; boyutlar/stiller aynı kalır.
    */
-  useTenMinuteIncrement(total, setTotal, ranges.total_min, ranges.total_max);
-  useTenMinuteIncrement(dist,  setDist,  ranges.dist_min,  ranges.dist_max);
-  useTenMinuteIncrement(part,  setPart,  ranges.part_min,  ranges.part_max);
+  useTenMinuteIncrement(setTotal, ranges.total_min, ranges.total_max);
+  useTenMinuteIncrement(setDist,  ranges.dist_min,  ranges.dist_max);
+  useTenMinuteIncrement(setPart,  ranges.part_min,  ranges.part_max);
 
   return (
     <section className="heroSplit" aria-label="Hero alanı">
@@ -102,14 +96,14 @@ export default function Hero() {
             style={{ ["--img" as any]: `url('${b.image_url}')` }}
           />
         ))}
-        <div className="shade"/>
+        <div className="shade" />
       </div>
 
-      {/* SAĞ — metrikler (boyutlar aynen korunur) */}
+      {/* SAĞ — tek set metrik (boyutlar AYNI) */}
       <div className="right">
-        <StatBlock label="Toplam Ödül" value={total} suffix=" ₺" tone="gold" />
-        <StatBlock label="Dağıtılan Ödül" value={dist} suffix=" ₺" tone="aqua" />
-        <StatBlock label="Katılımcı" value={part} suffix="" tone="vio" />
+        <StatBlock label="Toplam Ödül"    value={total} suffix=" ₺" tone="gold" />
+        <StatBlock label="Dağıtılan Ödül" value={dist}  suffix=" ₺" tone="aqua" />
+        <StatBlock label="Katılımcı"      value={part}  suffix=""   tone="vio"  />
       </div>
 
       <style>{css}</style>
@@ -117,33 +111,28 @@ export default function Hero() {
   );
 }
 
-/* ---- 10 dakikada bir artış hook'u ---- */
+/* ---- 10 dakikada 1 artış ---- */
 function useTenMinuteIncrement(
-  value: number,
-  setValue: (n: number) => void,
+  setValue: (u: (prev: number) => number) => void,
   min: number,
   max: number
 ){
-  const intervalRef = useRef<number | null>(null);
-
+  const timerRef = useRef<number | null>(null);
   useEffect(() => {
-    // her kurulumda eskiyi temizle
-    if (intervalRef.current) window.clearInterval(intervalRef.current);
-    const stepper = () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    const step = () => {
       const inc = 10 + Math.floor(Math.random() * 291); // 10..300
-      setValue(v => clamp(v + inc, min, max));
+      setValue(prev => clamp(prev + inc, min, max));
     };
-    intervalRef.current = window.setInterval(stepper, 600_000); // 10 dk
-    return () => {
-      if (intervalRef.current) window.clearInterval(intervalRef.current);
-    };
+    timerRef.current = window.setInterval(step, 600_000); // 10 dk
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [min, max, setValue]);
 }
 
-/* ---- Düz metinli metrik bloğu (boyutlar korunur) ---- */
-function StatBlock({ label, value, suffix, tone }:{
-  label: string; value: number; suffix: string; tone: "gold"|"aqua"|"vio"
-}) {
+/* ---- Düz metinli metrik bloğu (son 3 basamak ÖZEL DEĞİL) ---- */
+function StatBlock({
+  label, value, suffix, tone,
+}: { label: string; value: number; suffix: string; tone: "gold"|"aqua"|"vio" }) {
   return (
     <div className={`block ${tone}`} title={`${label}: ${fmt(value)}${suffix}`}>
       <div className="blab">{label}</div>
@@ -162,7 +151,7 @@ const FALLBACKS = [
   "https://images.unsplash.com/photo-1559703248-dcaaec9fab78?q=80&w=2000&auto=format&fit=crop",
 ];
 
-/* ---- Stil (ORİJİNAL BOYUTLAR KORUNDU) ---- */
+/* ---- Stil (İLK GÖNDERDİĞİN BOYUTLAR) ---- */
 const css = `
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@700;800;900&display=swap');
 
@@ -196,7 +185,6 @@ const css = `
 }
 .block{
   display:flex; flex-direction:column; gap:6px;
-  /* ÇERÇEVE YOK, sadece tipografi & glow */
 }
 .blab{
   font-size:clamp(12px,1.8vw,14px);
@@ -207,10 +195,10 @@ const css = `
   display:flex; align-items:flex-end; flex-wrap:wrap; gap:4px;
   font-weight:900; color:#e9fbff;
   text-shadow:0 0 16px rgba(0,229,255,.30);
-  font-size: clamp(28px, 6vw, 46px); /* ÖNCEKİ BOYUTLAR */
+  font-size: clamp(28px, 6vw, 46px); /* BOYUTLAR AYNI */
   line-height:1.06;
 
-  /* tüm rakamlar aynı genişlikte → zıplama yok */
+  /* Tüm rakamlar aynı genişlikte → format tek tip */
   font-variant-numeric: tabular-nums lining-nums;
   font-feature-settings: "tnum" 1, "lnum" 1;
 }
@@ -221,7 +209,6 @@ const css = `
 .num{ letter-spacing:.4px }
 .suf{ font-size:.6em; opacity:.95; margin-left:2px }
 
-/* Responsive ince ayar */
 @media(max-width:900px){
   .right{ padding:6px 8px }
 }
