@@ -15,18 +15,17 @@ type MatchCard = {
 };
 type FeaturedResp = { live?: any[]; upcoming?: MatchCard[]; debug?: any };
 
-/** UEFA Nations League öncelik IDs (API-Football) – gerekirse güncelleyin */
-const NATIONS_LEAGUE_IDS = [5]; // UEFA Nations League (bilinen ID). Farklıysa FE/BE'de override edilebilir.
+/** UEFA Nations League öncelik ID'si (gerekirse güncelleyin) */
+const NATIONS_LEAGUE_IDS = [5];
 
-/** Yakındaki maçlar – Hero altı yatay şerit */
 export default function HeroUpcomingStrip({
   days = 15,
   limit = 18,
-  showAll = false, // popüler lig önceliği için whitelist açık kalsın (show_all=0)
+  showAll = false,
   includeLeagues = [
     ...NATIONS_LEAGUE_IDS,
-    39, 140, 135, 78, 61, 203, // EPL, LaLiga, Serie A, Bundesliga, Ligue 1, Süper Lig
-    2, 3, 848, 531,            // UCL, UEL, UECL, Super Cup
+    39, 140, 135, 78, 61, 203,
+    2, 3, 848, 531,
   ],
 }: {
   days?: number;
@@ -53,11 +52,10 @@ export default function HeroUpcomingStrip({
         const js: FeaturedResp = await r.json();
         const up = Array.isArray(js?.upcoming) ? js.upcoming : [];
 
-        // Nations League -> en üst; sonra kickoff’a en yakın
         const sorted = [...up].sort((a, b) => {
-          const aNL = isNationsLeague(a);
-          const bNL = isNationsLeague(b);
-          if (aNL !== bNL) return aNL ? -1 : 1;
+          const an = isNationsLeague(a) ? 0 : 1;
+          const bn = isNationsLeague(b) ? 0 : 1;
+          if (an !== bn) return an - bn;
           const ta = a.kickoff ? new Date(a.kickoff).getTime() : Number.POSITIVE_INFINITY;
           const tb = b.kickoff ? new Date(b.kickoff).getTime() : Number.POSITIVE_INFINITY;
           return ta - tb;
@@ -75,7 +73,7 @@ export default function HeroUpcomingStrip({
       }
     })();
 
-    const t = setInterval(() => setItems((v) => v.slice()), 30_000); // countdown refresh
+    const t = setInterval(() => setItems((v) => v.slice()), 30_000);
     return () => {
       alive = false;
       clearInterval(t);
@@ -123,7 +121,7 @@ export default function HeroUpcomingStrip({
               }
               title={`${m.league} • ${m.home.name} vs ${m.away.name}`}
             >
-              {/* Üst şerit: Lig logo + lig adı */}
+              {/* Üst (satır-1): Lig logo + lig adı */}
               <div className="mcard__top">
                 <div className="lg">
                   {m.leagueLogo ? (
@@ -131,20 +129,18 @@ export default function HeroUpcomingStrip({
                   ) : (
                     <span className="lgPh" />
                   )}
-                  <span className="lgName" title={m.league}>
-                    {m.league}
-                  </span>
+                  <span className="lgName" title={m.league}>{m.league}</span>
                 </div>
               </div>
 
-              {/* Takımlar */}
+              {/* Orta (satır-2): Takımlar – sabit yükseklikli blok */}
               <div className="mcard__teams">
                 <TeamBadge name={m.home.name} logo={m.home.logo} />
                 <span className="vs">vs</span>
                 <TeamBadge name={m.away.name} logo={m.away.logo} />
               </div>
 
-              {/* Başlangıç & Geri sayım */}
+              {/* Alt (satır-3 – sabit): tarih + sabit pozisyonda geri sayım */}
               <div className="mcard__meta">
                 <span className="kickVal">{fmtLocal(m.kickoff)}</span>
                 <Countdown iso={m.kickoff} />
@@ -159,15 +155,13 @@ export default function HeroUpcomingStrip({
   );
 }
 
-/* -------- helpers -------- */
+/* ===== helpers ===== */
 function isNationsLeague(m: MatchCard): boolean {
   const name = (m.league || "").toLowerCase();
-  if (name.includes("nations league")) return true;
-  // isimden yakalanamazsa (edge), bayrağa/ID'ye güvenemiyoruz; BE tarafı ID veriyorsa genişletilebilir.
-  return false;
+  return name.includes("nations league");
 }
 
-/* -------- Subcomponents -------- */
+/* ===== subcomponents ===== */
 function TeamBadge({ name, logo }: { name: string; logo?: string }) {
   const initials = useMemo(() => {
     const parts = (name || "").split(" ").filter(Boolean);
@@ -183,9 +177,7 @@ function TeamBadge({ name, logo }: { name: string; logo?: string }) {
       ) : (
         <span className="tbPh">{initials}</span>
       )}
-      <div className="tbName" title={name}>
-        {name}
-      </div>
+      <div className="tbName" title={name}>{name}</div>
     </div>
   );
 }
@@ -209,7 +201,7 @@ function Countdown({ iso }: { iso?: string }) {
   return <span className="cd strong">{label}</span>;
 }
 
-/* -------- Utils -------- */
+/* ===== utils ===== */
 function pad2(n: number) { return String(n).padStart(2, "0"); }
 function fmtLocal(iso?: string) {
   if (!iso) return "";
@@ -219,12 +211,12 @@ function fmtLocal(iso?: string) {
   } catch { return iso; }
 }
 
-/* -------- Styles -------- */
+/* ===== styles ===== */
 const css = `
 .heroUpWrap{
   width: 100%;
-  padding: 12px 0;
-  background: linear-gradient(180deg, rgba(10,16,28,.72), rgba(10,16,28,.45) 60%, rgba(10,16,28,0));
+  padding: 10px 0;
+  background: linear-gradient(180deg, rgba(10,16,28,.68), rgba(10,16,28,.40) 60%, rgba(10,16,28,0));
   backdrop-filter: blur(2px) saturate(1.05);
 }
 .heroLane{ max-width: 1280px; margin: 0 auto; padding: 0 14px; }
@@ -240,70 +232,79 @@ const css = `
 }
 .scroller::-webkit-scrollbar{ display:none }
 
-/* Kart */
+/* === Kart: kısaltılmış yükseklik + genişlik artırıldı === */
 .mcard{
-  flex:0 0 auto; width: 220px; min-height: 168px;
-  display:flex; flex-direction:column; gap:8px;
+  flex:0 0 auto; width: 230px; min-height: 150px;
+  display:grid; grid-template-rows: auto 1fr auto; /* üst/orta/alt: countdown sabit */
+  gap:6px;
   text-decoration:none; color:#eaf2ff; position:relative;
   background:linear-gradient(180deg, rgba(6,10,22,.82), rgba(6,12,24,.82));
   border:1px solid rgba(255,255,255,.08);
-  border-radius:14px; padding:10px;
-  box-shadow: 0 8px 16px rgba(0,0,0,.28);
+  border-radius:12px; padding:8px 10px;
+  box-shadow: 0 8px 16px rgba(0,0,0,.26);
   transition: transform .15s ease, box-shadow .2s ease, filter .2s ease;
   overflow:hidden;
 }
 .mcard::before{
   content:""; position:absolute; inset:0;
   background-image: var(--bgimg); background-size:cover; background-position:center;
-  filter: saturate(1.1) contrast(1.05) opacity(.30);
+  filter: saturate(1.05) contrast(1.05) opacity(.28);
 }
 .mcard::after{
   content:""; position:absolute; inset:0;
-  background: radial-gradient(60% 50% at 50% 0%, rgba(4,8,18,.35), rgba(4,8,18,.65));
+  background: radial-gradient(60% 50% at 50% 0%, rgba(4,8,18,.32), rgba(4,8,18,.6));
 }
 .mcard > *{ position:relative; z-index:1 }
-.mcard:hover{ transform: translateY(-2px); filter:brightness(1.05); box-shadow:0 10px 20px rgba(0,0,0,.32) }
+.mcard:hover{ transform: translateY(-2px); filter:brightness(1.05); box-shadow:0 10px 20px rgba(0,0,0,.30) }
 
-/* Lig alanı – logo önde */
-.mcard__top{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+/* Üst: Lig bilgisi (logo önde) */
+.mcard__top{ display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:22px; }
 .lg{ display:flex; align-items:center; gap:8px; min-width:0 }
-.lgImg{ width:24px; height:24px; object-fit:contain; filter: drop-shadow(0 2px 8px rgba(0,229,255,.35)); }
-.lgName{ font-size:12px; font-weight:900; color:#e7f3ff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:150px; }
-.lgPh{ width:24px; height:24px; border-radius:6px; background:rgba(255,255,255,.12) }
+.lgImg{ width:22px; height:22px; object-fit:contain; filter: drop-shadow(0 2px 8px rgba(0,229,255,.35)); }
+.lgName{ font-size:12px; font-weight:900; color:#e7f3ff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:160px; }
+.lgPh{ width:22px; height:22px; border-radius:6px; background:rgba(255,255,255,.12) }
 
-/* Takımlar – isimler çok satırlı */
+/* Orta: Takımlar – sabit yüksekliğe yakın blok (isimler 2 satır) */
 .mcard__teams{
-  display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:8px; margin-top:2px;
+  display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:8px;
+  min-height: 68px; /* sabit alan → alttaki countdown kaymaz */
 }
 .vs{ font-weight:1000; color:#cceaff; opacity:.9; }
-.tb{ display:flex; flex-direction:column; align-items:center; gap:6px; min-width:0 }
-.tbImg{ width:38px; height:38px; border-radius:999px; object-fit:cover; box-shadow:0 6px 12px rgba(0,0,0,.28) }
-.tbPh{ width:38px; height:38px; border-radius:999px; display:grid; place-items:center; background:rgba(255,255,255,.12); color:#001018; font-weight:1000 }
+.tb{ display:flex; flex-direction:column; align-items:center; gap:4px; min-width:0 }
+.tbImg{ width:34px; height:34px; border-radius:999px; object-fit:cover; box-shadow:0 6px 12px rgba(0,0,0,.22) }
+.tbPh{ width:34px; height:34px; border-radius:999px; display:grid; place-items:center; background:rgba(255,255,255,.12); color:#001018; font-weight:1000 }
 .tbName{
   text-align:center; font-size:12px; font-weight:800; color:#eef4ff;
-  white-space:normal; word-break:break-word; overflow-wrap:anywhere; line-height:1.18;
-  max-height:3.6em;
+  line-height:1.15; max-height: 2.3em; /* ~2 satır */
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+  overflow:hidden; text-overflow:clip; /* '...' yok */
+  white-space:normal; word-break:break-word; overflow-wrap:anywhere;
 }
 
-/* Tarih + countdown (belirgin) */
-.mcard__meta{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:2px; }
-.kickVal{ font-size:12px; font-weight:900; color:#cfe0ff; }
+/* Alt: Tarih + Geri sayım (her kartta aynı yerde) */
+.mcard__meta{
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+  min-height: 28px;
+}
+.kickVal{ font-size:12px; font-weight:900; color:#cfe0ff; white-space:nowrap }
+
+/* Countdown badge – sabit ve belirgin */
 .cd{
   display:inline-flex; align-items:center; justify-content:center;
-  height:28px; padding:0 10px; border-radius:10px;
+  height:26px; padding:0 10px; border-radius:9px;
   font-size:12px; font-weight:1000; letter-spacing:.3px; text-transform:uppercase;
   color:#001018; background:linear-gradient(90deg,#ffd36a,#ffebad);
-  box-shadow: 0 6px 14px rgba(255,211,106,.28);
-  min-width: 124px;
+  box-shadow: 0 6px 14px rgba(255,211,106,.26);
+  min-width: 110px; font-variant-numeric: tabular-nums; /* sayı sıçramasını azaltır */
 }
 .cd.strong{ filter:saturate(1.05) }
 .cd.live{
   color:#fff; background:linear-gradient(90deg,#ff3b3b,#ff6b6b);
-  box-shadow: 0 6px 14px rgba(255,59,59,.35);
+  box-shadow: 0 6px 14px rgba(255,59,59,.32);
 }
 
 @media (max-width: 520px){
-  .mcard{ width: 200px; min-height: 160px; }
-  .lgName{ max-width: 120px; }
+  .mcard{ width: 210px; min-height: 146px; }
+  .lgName{ max-width: 130px; }
 }
 `;
