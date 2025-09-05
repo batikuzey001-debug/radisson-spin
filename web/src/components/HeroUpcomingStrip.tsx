@@ -182,8 +182,8 @@ function fmtLocal(iso?: string) {
 /* =============== Styles =============== */
 const css = `
 .heroUpWrap{
-  position:absolute; left:0; right:0; top:0; z-index:12;
-  padding: 10px 0;
+  width: 100%;
+  padding: 14px 0;
   background: linear-gradient(180deg, rgba(10,16,28,.72), rgba(10,16,28,.45) 60%, rgba(10,16,28,0));
   backdrop-filter: blur(2px) saturate(1.05);
 }
