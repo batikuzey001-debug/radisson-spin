@@ -11,83 +11,97 @@ type MatchCard = {
   leagueFlag?: string;
   home: Team;
   away: Team;
-  kickoff?: string; // ISO (+00:00)
-  // Backend ileride eklerse otomatik kullanılır
-  // leagueId?: number;
+  kickoff?: string;
 };
 type FeaturedResp = { live?: any[]; upcoming?: MatchCard[]; debug?: any };
 
-/** Öncelikli ligler – yalnız bunlar listelenecek */
-const UCL_ID = 2;
-const UEL_ID = 3;
-const UECL_ID = 848;
-const WCQ_UEFA_IDS = [32, 29, 34, 31, 30, 33]; // A..F grupları
-
-/** İsim bazlı emniyet şeridi (backend ID göndermese de eşleştir) */
-function isPriorityByName(name: string) {
-  const n = (name || "").toLowerCase();
+/* ---- Lig öncelik tespiti (isim tabanlı, geniş eşleşme) ---- */
+function isUCL(name = "") {
+  const n = name.toLowerCase();
+  return n.includes("champions league");
+}
+function isUEL(name = "") {
+  const n = name.toLowerCase();
+  return n.includes("europa league") && !n.includes("conference");
+}
+function isUECL(name = "") {
+  const n = name.toLowerCase();
+  return n.includes("europa conference");
+}
+function isWCQ_EU(name = "") {
+  const n = name.toLowerCase();
   return (
-    n.includes("champions league") ||
-    n.includes("europa league") ||
-    n.includes("europa conference") ||
     n.includes("world cup - qualification europe") ||
-    n.includes("world cup - qual. uefa")
+    n.includes("world cup - qual. uefa") ||
+    n.includes("world cup qualification europe") ||
+    n.includes("wc qual") && n.includes("uefa")
   );
 }
+function priorityRank(leagueName: string) {
+  if (isUCL(leagueName)) return 0;
+  if (isUEL(leagueName)) return 1;
+  if (isUECL(leagueName)) return 2;
+  if (isWCQ_EU(leagueName)) return 3;
+  return 9;
+}
+function isPriority(name: string) {
+  return isUCL(name) || isUEL(name) || isUECL(name) || isWCQ_EU(name);
+}
 
-export default function HeroUpcomingStrip({
-  limit = 24,
-}: {
-  limit?: number;
-}) {
+/* ---- Tarih yardımcıları (YARIN – UTC) ---- */
+function utcTomorrowBounds() {
+  const now = new Date();
+  const utc0 = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const start = new Date(utc0); // bugün 00:00 UTC
+  start.setUTCDate(start.getUTCDate() + 1); // yarın 00:00 UTC
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 1); // ertesi 00:00 UTC
+  return { startUTC: start.getTime(), endUTC: end.getTime() };
+}
+
+export default function HeroUpcomingStrip({ limit = 24 }: { limit?: number }) {
   const [items, setItems] = useState<MatchCard[]>([]);
-  const [err, setErr] = useState<string>("");
+  const [err, setErr] = useState("");
 
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        // Yalnızca öncelikli ligleri iste – 15 gün penceresi backend’de (gerekirse daraltırız)
-        const includeLeagues = [
-          UCL_ID,
-          UEL_ID,
-          UECL_ID,
-          ...WCQ_UEFA_IDS,
-        ];
+        // Geniş pencere + tüm ligler → FE tarafında kesin filtre
         const q = new URLSearchParams({
-          days: "15",
-          limit: String(limit),
-          show_all: "0",
-          include_leagues: includeLeagues.join(","),
+          days: "2",           // yarın da kesin dahil olsun
+          limit: "160",        // daha fazla maç getir
+          show_all: "1",       // whitelist kapalı
         });
         const r = await fetch(`${API}/api/live/featured?${q.toString()}`);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const js: FeaturedResp = await r.json();
-
         const up = Array.isArray(js?.upcoming) ? js.upcoming : [];
 
-        // ---- FE güvence: sadece yarın (UTC) + sadece öncelikli ligler ----
         const { startUTC, endUTC } = utcTomorrowBounds();
-        const filtered = up.filter((m) => {
-          const ts = m.kickoff ? Date.parse(m.kickoff) : NaN;
-          if (!Number.isFinite(ts) || ts < startUTC || ts >= endUTC) return false;
 
-          // Eğer backend ileride leagueId gönderirse burada ID ile doğrulanır;
-          // şu an isimle emniyet şeridi de var.
-          return isPriorityByName(m.league);
+        // 1) Yarın (UTC) içindeki tüm maçlar
+        const tomorrowAll = up.filter((m) => {
+          const ts = m.kickoff ? Date.parse(m.kickoff) : NaN;
+          return Number.isFinite(ts) && ts >= startUTC && ts < endUTC;
         });
 
-        // Sırala: en yakın maç önce, sonra lig önceliği (UCL > UEL > UECL > WCQ)
-        const sorted = filtered.sort((a, b) => {
+        // 2) Öncelikli ligler
+        const prio = tomorrowAll.filter((m) => isPriority(m.league));
+
+        // 3) Sıralama: kickoff ↑, sonra lig önceliği
+        const base = (prio.length ? prio : tomorrowAll).sort((a, b) => {
           const ta = a.kickoff ? Date.parse(a.kickoff) : Number.POSITIVE_INFINITY;
           const tb = b.kickoff ? Date.parse(b.kickoff) : Number.POSITIVE_INFINITY;
           if (ta !== tb) return ta - tb;
           return priorityRank(a.league) - priorityRank(b.league);
         });
 
+        const sliced = base.slice(0, limit);
+
         if (alive) {
-          setItems(sorted);
-          setErr(sorted.length ? "" : "Yarın için öncelikli liglerde maç bulunamadı.");
+          setItems(sliced);
+          setErr(sliced.length ? "" : "Yarın için öncelikli maç bulunamadı.");
         }
       } catch (e: any) {
         if (alive) {
@@ -119,7 +133,6 @@ export default function HeroUpcomingStrip({
       </div>
     );
   }
-
   if (!items.length) return null;
 
   return (
@@ -154,7 +167,9 @@ export default function HeroUpcomingStrip({
                   ) : (
                     <span className="lgPh" />
                   )}
-                  <span className="lgName" title={m.league}>{m.league}</span>
+                  <span className="lgName" title={m.league}>
+                    {m.league}
+                  </span>
                 </div>
               </div>
 
@@ -180,26 +195,7 @@ export default function HeroUpcomingStrip({
   );
 }
 
-/* ===== helpers ===== */
-function utcTomorrowBounds() {
-  const now = new Date();
-  const utc0 = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const start = new Date(utc0); // bugün 00:00 UTC
-  start.setUTCDate(start.getUTCDate() + 1); // yarın 00:00 UTC
-  const end = new Date(start);
-  end.setUTCDate(end.getUTCDate() + 1); // ertesi gün 00:00 UTC
-  return { startUTC: start.getTime(), endUTC: end.getTime() };
-}
-function priorityRank(leagueName: string) {
-  const n = (leagueName || "").toLowerCase();
-  if (n.includes("champions league")) return 0;
-  if (n.includes("europa league") && !n.includes("conference")) return 1;
-  if (n.includes("europa conference")) return 2;
-  if (n.includes("world cup - qualification europe") || n.includes("world cup - qual. uefa")) return 3;
-  return 9;
-}
-
-/* ===== subcomponents ===== */
+/* ===== Subcomponents ===== */
 function TeamBadge({ name, logo }: { name: string; logo?: string }) {
   const initials = useMemo(() => {
     const parts = (name || "").split(" ").filter(Boolean);
@@ -215,7 +211,9 @@ function TeamBadge({ name, logo }: { name: string; logo?: string }) {
       ) : (
         <span className="tbPh">{initials}</span>
       )}
-      <div className="tbName" title={name}>{name}</div>
+      <div className="tbName" title={name}>
+        {name}
+      </div>
     </div>
   );
 }
@@ -235,21 +233,33 @@ function Countdown({ iso }: { iso?: string }) {
   const h = Math.floor((s % 86400) / 3600);
   const m = Math.floor((s % 3600) / 60);
   const sec = s % 60;
-  const label = d > 0 ? `T-${d}g ${pad2(h)}:${pad2(m)}:${pad2(sec)}` : `T-${pad2(h)}:${pad2(m)}:${pad2(sec)}`;
+  const label =
+    d > 0
+      ? `T-${d}g ${pad2(h)}:${pad2(m)}:${pad2(sec)}`
+      : `T-${pad2(h)}:${pad2(m)}:${pad2(sec)}`;
   return <span className="cd strong">{label}</span>;
 }
 
-/* ===== utils ===== */
-function pad2(n: number) { return String(n).padStart(2, "0"); }
+/* ===== Utils ===== */
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
+}
 function fmtLocal(iso?: string) {
   if (!iso) return "";
   try {
     const d = new Date(iso);
-    return d.toLocaleString("tr-TR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-  } catch { return iso; }
+    return d.toLocaleString("tr-TR", {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
 }
 
-/* ===== styles ===== */
+/* ===== Styles ===== */
 const css = `
 .heroUpWrap{
   width: 100%;
