@@ -1,67 +1,164 @@
-// web/src/components/PromoCodeGrid.tsx
-import React from "react";
+// web/src/components/QuickBonus.tsx
+import { useEffect, useMemo, useState } from "react";
+import { getActivePromos, type PromoActive } from "../api/promos";
 
 /**
- * 🎟️ Sadece Görsel Tasarım (Script Yok)
- * - Aynı sınıf adları: spx-*
- * - Neon sol şerit ve efektler CSS ile
- * - Veriler üst bileşenden props ile gelir (ör: timeText, live)
+ * QuickBonus (spx tasarıma uyarlanmış)
+ * - Backend aynı: /api/promos/active?limit=...&include_future=1&window_hours=48
+ * - Veriler: p.title, p.image_url, p.priority (Max), p.cta_url, p.state, p.seconds_left, p.seconds_to_start
+ * - Tasarım: spx-* kartları (yalnızca görsel; script yok)
  */
 
-export type PromoCardView = {
-  id: string | number;
-  title: string;
-  imageUrl: string;
-  maxText?: string;     // ör: "3.000"
-  ctaUrl?: string;      // buton için
-  timeText?: string;    // ör: "AKTİF" veya "01:23:45"
-  live?: boolean;       // durum noktası için
+type PromoEx = PromoActive & {
+  state?: "active" | "upcoming";
+  seconds_to_start?: number | null;
 };
 
-export default function PromoCodeGrid({ items = [] as PromoCardView[] }: { items?: PromoCardView[] }) {
+export default function QuickBonus({ limit = 6 }: { limit?: number }) {
+  const [rows, setRows] = useState<PromoEx[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    fetch(`${import.meta.env.VITE_API_BASE_URL}/api/promos/active?limit=${limit}&include_future=1&window_hours=48`)
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then((arr: PromoEx[]) => {
+        if (!alive) return;
+        setRows(Array.isArray(arr) ? arr : []);
+        setErr("");
+      })
+      .catch(e => { if (alive) { setErr(e?.message ?? "Hata"); setRows([]); } })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [limit]);
+
+  // Geri sayım tick (yalnızca değer varsa ilerlet)
+  useEffect(() => {
+    if (!rows.length) return;
+    const t = setInterval(() => {
+      setRows(prev => prev.map(p => {
+        if (p.state === "upcoming" && p.seconds_to_start != null) {
+          return { ...p, seconds_to_start: Math.max(0, p.seconds_to_start - 1) };
+        }
+        if (p.state === "active" && p.seconds_left != null) {
+          return { ...p, seconds_left: Math.max(0, p.seconds_left - 1) };
+        }
+        return p;
+      }));
+    }, 1000);
+    return () => clearInterval(t);
+  }, [rows.length]);
+
   return (
-    <div className="spx-wrap" id="spxWrap">
-      {items.map((it) => (
-        <article className="spx-card" key={it.id}>
-          <header className="spx-media" style={{ ["--img" as any]: `url('${it.imageUrl}')` }} />
+    <section className="bonusSec">
+      <div className="bonusHead">
+        <h2>⚡ Hızlı Bonuslar</h2>
+        {!loading && !rows.length && <span className="muted">Şu an aktif veya yakında başlayacak promosyon yok.</span>}
+      </div>
+
+      {loading && <Skeleton />}
+
+      {!loading && rows.length > 0 && (
+        <div className="spx-wrap">
+          {rows.map((p) => {
+            const live = p.state === "active" && (p.seconds_left ?? 0) > 0;
+            const timeText = live ? "AKTİF" : formatTimeText(p);
+            const title = p.title ?? "Promo Kod";
+            const img = p.image_url || "https://images.unsplash.com/photo-1519741497674-611481863552?q=80&w=1600&auto=format&fit=crop";
+            const maxText = p.priority != null ? trNum(p.priority) : undefined;
+
+            return (
+              <article className="spx-card" key={String(p.id)}>
+                <header className="spx-media" style={{ ["--img" as any]: `url('${img}')` }} />
+                <div className="spx-body">
+                  <h3 className="spx-title" title={title}>{title}</h3>
+
+                  <div className="spx-statebar" title={live ? "Aktif" : "Beklemede"}>
+                    <span className={`spx-dot${live ? " live" : ""}`} />
+                  </div>
+
+                  <div className="spx-timer">
+                    <div className="spx-time" aria-live="polite">{timeText}</div>
+                  </div>
+
+                  <div className="spx-scan" />
+
+                  {maxText && (
+                    <div className="spx-limit">
+                      <span>Max:</span> <b>{maxText}</b>
+                    </div>
+                  )}
+
+                  {p.cta_url ? (
+                    <a className="spx-cta" href={p.cta_url} target="_blank" rel="nofollow noreferrer">
+                      Katıl
+                      <svg viewBox="0 0 24 24" className="spx-ic" aria-hidden="true">
+                        <path fill="currentColor" d="M9.2 16.7 9 20.7c.4 0 .6-.2.9-.4l2.1-1.7 4.3 3.1c.8.4 1.4.2 1.6-.8l2.9-13.6c.3-1.1-.4-1.6-1.2-1.3L2.7 9.9c-1 .4-1 1 0 1.3l4.9 1.5L18 6.9c.5-.3.9-.1.5.2l-9.3 8.3Z"/>
+                      </svg>
+                    </a>
+                  ) : null}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+
+      <style>{css}</style>
+    </section>
+  );
+}
+
+/* ---------------- Helpers ---------------- */
+function formatTimeText(p: PromoEx) {
+  const s = p.state === "upcoming" ? (p.seconds_to_start ?? 0) : (p.seconds_left ?? 0);
+  if (!Number.isFinite(s as number) || (s as number) <= 0) return "--:--:--";
+  const { hh, mm, ss } = fmt(s as number);
+  return `${hh}:${mm}:${ss}`;
+}
+function fmt(total: number) {
+  const hh = Math.floor(total / 3600);
+  const mm = Math.floor((total % 3600) / 60);
+  const ss = Math.max(0, total % 60);
+  return {
+    hh: String(hh).padStart(2, "0"),
+    mm: String(mm).padStart(2, "0"),
+    ss: String(ss).padStart(2, "0"),
+  };
+}
+function trNum(v: any) {
+  try {
+    const n = typeof v === "string" ? Number(v.replace(/\./g, "").replace(/,/g, ".")) : Number(v);
+    return Number.isFinite(n) ? n.toLocaleString("tr-TR") : String(v ?? "");
+  } catch {
+    return String(v ?? "");
+  }
+}
+
+/* ---------------- Skeleton ---------------- */
+function Skeleton() {
+  return (
+    <div className="spx-wrap">
+      {Array.from({ length: 3 }).map((_, i) => (
+        <article key={i} className="spx-card">
+          <header className="spx-media" />
           <div className="spx-body">
-            <h3 className="spx-title" title={it.title}>{it.title}</h3>
-
-            <div className="spx-statebar" title={it.live ? "Aktif" : "Beklemede"}>
-              <span className={`spx-dot${it.live ? " live" : ""}`} />
-            </div>
-
-            <div className="spx-timer">
-              <div className="spx-time" aria-live="polite">{it.timeText ?? "--:--:--"}</div>
-            </div>
-
+            <h3 className="spx-title" style={{ opacity: 0.4 }}>Yükleniyor…</h3>
+            <div className="spx-statebar"><span className="spx-dot" /></div>
+            <div className="spx-timer"><div className="spx-time">--:--:--</div></div>
             <div className="spx-scan" />
-
-            {it.maxText && (
-              <div className="spx-limit">
-                <span>Max:</span> <b>{it.maxText}</b>
-              </div>
-            )}
-
-            {it.ctaUrl && (
-              <a className="spx-cta" href={it.ctaUrl} target="_blank" rel="nofollow noreferrer">
-                Resmî Telegram Kanalı
-                <svg viewBox="0 0 24 24" className="spx-ic" aria-hidden="true">
-                  <path fill="currentColor" d="M9.2 16.7 9 20.7c.4 0 .6-.2.9-.4l2.1-1.7 4.3 3.1c.8.4 1.4.2 1.6-.8l2.9-13.6c.3-1.1-.4-1.6-1.2-1.3L2.7 9.9c-1 .4-1 1 0 1.3l4.9 1.5L18 6.9c.5-.3.9-.1.5.2l-9.3 8.3Z"/>
-                </svg>
-              </a>
-            )}
+            <div className="spx-limit"><span>Max:</span> <b>—</b></div>
+            <a className="spx-cta" href="#" onClick={e=>e.preventDefault()}>Katıl</a>
           </div>
         </article>
       ))}
-      <style>{css}</style>
     </div>
   );
 }
 
-/* =========================
-   CSS — Yalnızca Tasarım
-========================= */
+/* ---------------- CSS (Sadece görsel) ---------------- */
 const css = `
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@700;800;900&family=Rajdhani:wght@700;800;900&display=swap');
 
@@ -71,6 +168,11 @@ const css = `
   --n1:#00e5ff; --n2:#00b3ff;
   --live:#23e06c;
 }
+
+.bonusSec{margin:16px 0}
+.bonusHead{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.bonusHead h2{margin:0;font-size:18px;color:#eaf2ff}
+.muted{color:#9fb1cc;font-size:13px}
 
 /* Container */
 .spx-wrap{
@@ -129,7 +231,7 @@ const css = `
 }
 @keyframes pulseDot{0%,100%{transform:scale(1)}50%{transform:scale(1.25)}}
 
-/* Sayaç (metin dışarıdan gelir) */
+/* Sayaç (metin backend'den gelir) */
 .spx-timer{margin:2px 0 6px}
 .spx-time{
   font-family:Rajdhani,system-ui,sans-serif;font-weight:900;font-size:30px;letter-spacing:1.2px;color:#f2f7ff;
@@ -170,5 +272,6 @@ const css = `
 .spx-ic{width:18px;height:18px;margin-left:8px;vertical-align:-3px}
 
 /* Responsive */
-@media (max-width:420px){.spx-card{width:100%;max-width:340px}}
+@media (max-width:900px){.spx-card{width:46%}}
+@media (max-width:560px){.spx-card{width:100%;max-width:340px}}
 `;
