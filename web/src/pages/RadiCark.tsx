@@ -12,6 +12,7 @@ const VISIBLE = 3;
 const ITEM_H = 96;
 const SPIN_TIME = 8.2;
 
+/* utils */
 function parseAmount(label: string): number {
   const s = label.replace(/\./g, "").replace(",", ".").replace(/[^\d.]/g, "");
   const n = parseFloat(s);
@@ -31,6 +32,7 @@ export default function RadiCark() {
   const [basePrizes, setBasePrizes] = useState<Prize[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+
   const [spinning, setSpinning] = useState(false);
   const [result, setResult] = useState<{ label: string; image?: string | null } | null>(null);
 
@@ -51,9 +53,7 @@ export default function RadiCark() {
         setErr("");
       } catch (e: any) {
         if (alive) { setErr(e?.message ?? "Ödüller alınamadı"); setBasePrizes([]); }
-      } finally {
-        alive && setLoading(false);
-      }
+      } finally { alive && setLoading(false); }
     })();
     return () => { alive = false; };
   }, []);
@@ -75,7 +75,6 @@ export default function RadiCark() {
     try {
       setSpinning(true);
       const vr: VerifyOut = await postJson(`${API}/api/verify-spin`, { code: code.trim(), username: username.trim() } as VerifyIn);
-
       const baseLen = basePrizes.length;
       const targetIndexInReel = (LOOPS - 2) * baseLen + (vr.targetIndex % baseLen);
       const centerOffset = (VISIBLE * ITEM_H) / 2 - ITEM_H / 2;
@@ -83,8 +82,7 @@ export default function RadiCark() {
 
       setDuration(0); setTranslate(0);
       await raf();
-      setDuration(SPIN_TIME);
-      setTranslate(-targetY);
+      setDuration(SPIN_TIME); setTranslate(-targetY);
 
       setTimeout(async () => {
         try { await postJson(`${API}/api/commit-spin`, { code: code.trim(), spinToken: vr.spinToken } as CommitIn, true); } catch {}
@@ -92,14 +90,13 @@ export default function RadiCark() {
         setSpinning(false);
       }, SPIN_TIME * 1000 + 120);
     } catch (e: any) {
-      setErr(String(e?.message || "Spin başarısız"));
-      setSpinning(false);
+      setErr(String(e?.message || "Spin başarısız")); setSpinning(false);
     }
   };
 
   return (
     <main className="slot">
-      {/* ARKA PLAN LOGO */}
+      {/* SADECE LOGO – SABİT ve pulse */}
       <div className="bgLogo" aria-hidden />
 
       <header className="hero">
@@ -107,31 +104,30 @@ export default function RadiCark() {
         <div className="sub">Tek sütun çark – şansını dene! 🎉</div>
       </header>
 
+      {/* REEL */}
       <section className="reelWrap">
         <div className="mask top" />
         <div className="mask bottom" />
         <div className="selectLine" />
-
         <div
           className="reel"
-          style={{
-            transform: `translateY(${translate}px)`,
-            transition: `transform ${duration}s cubic-bezier(.12,.9,.06,1)`,
-          }}
+          style={{ transform: `translateY(${translate}px)`, transition: `transform ${duration}s cubic-bezier(.12,.9,.06,1)` }}
         >
           {reelItems.map((txt, i) => {
             const amt = parseAmount(txt);
             const { hue } = colorFromAmount(amt);
-            const isWin = result && txt === result.label &&
+            const isCenter = result && txt === result.label &&
               Math.abs(translate + (i * ITEM_H - ((VISIBLE * ITEM_H) / 2 - ITEM_H / 2))) < 1;
 
             return (
               <div
                 key={`ri-${i}`}
-                className={`card ${isWin ? "win" : ""}`}
+                className={`card ${isCenter ? "win" : ""}`}
                 style={{ height: ITEM_H, ["--tint" as any]: String(hue) } as any}
               >
-                {isWin && <div className="winRibbon" />}
+                {/* statik neon çerçeve (dönmez) */}
+                <div className="neonBorder" />
+                {isCenter && <div className="winRibbon" />}
                 <span className="txt">{txt}</span>
               </div>
             );
@@ -139,6 +135,7 @@ export default function RadiCark() {
         </div>
       </section>
 
+      {/* FORM */}
       <section className="panel">
         <div className="row">
           <label className="f"><span>Kullanıcı Adı</span>
@@ -200,14 +197,14 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
 const css = `
 :root{ --text:#fff; --muted:#9fb1cc }
 *{box-sizing:border-box}
-.slot{max-width:720px;margin:0 auto;padding:16px;color:var(--text);position:relative}
+.slot{max-width:720px;margin:0 auto;padding:16px;color:var(--text);position:relative;z-index:1}
 
-/* LOGO background */
+/* LOGO background – SADECE logo (sabit), pulse */
 .bgLogo{
-  position:fixed; inset:0; z-index:-5; pointer-events:none;
+  position:fixed; inset:0; z-index:0; pointer-events:none;
   background-image:url('https://cdn.prod.website-files.com/68ad80d65417514646edf3a3/68adb798dfed270f5040c714_logowhite.png');
-  background-repeat:no-repeat; background-position:center; background-size:38vmin;
-  opacity:.1; animation:logoPulse 3.6s ease-in-out infinite;
+  background-repeat:no-repeat; background-position:center; background-size:42vmin;
+  opacity:.14; animation:logoPulse 3.6s ease-in-out infinite;
 }
 @keyframes logoPulse{ 0%{transform:scale(0.95)} 50%{transform:scale(1.05)} 100%{transform:scale(0.95)} }
 
@@ -216,31 +213,43 @@ const css = `
 .sub{color:var(--muted)}
 
 /* Reel */
-.reelWrap{position:relative;height:${VISIBLE * ITEM_H}px;overflow:hidden;border-radius:16px;background:rgba(6,12,26,.55);border:1px solid rgba(255,255,255,.1)}
-.reel{position:absolute;left:0;right:0;top:0;will-change:transform}
+.reelWrap{
+  position:relative;height:${VISIBLE * ITEM_H}px;overflow:hidden;border-radius:16px;
+  background:transparent;border:1px solid rgba(255,255,255,.10);
+}
+.reel{position:absolute;left:0;right:0;top:0;will-change:transform;z-index:1}
+
+/* Kart: cam + tint; dış çerçeve neon AMA dönmez */
 .card{
   margin:10px 16px;height:${ITEM_H}px;border-radius:14px;display:flex;align-items:center;justify-content:center;
-  font-size:24px;font-weight:900;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.85);
-  background:rgba(20,30,60,.6);backdrop-filter:blur(3px);
+  font-size:26px;font-weight:900;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.85);
+  background: linear-gradient(180deg, hsla(var(--tint,200) 95% 55% / .24), hsla(var(--tint,200) 95% 55% / .10));
+  backdrop-filter: blur(3px);
   position:relative;overflow:hidden;
 }
-.card::before{
+/* dış çerçeve neon – statik (animasyon yok) */
+.neonBorder{
   content:"";position:absolute;inset:0;border-radius:14px;padding:2px;pointer-events:none;
-  background:conic-gradient(from 0deg, hsla(var(--tint,200) 95% 60% / .8) 0 90deg, rgba(255,255,255,.15) 90deg 180deg, hsla(var(--tint,200) 95% 60% / .8) 180deg 270deg, rgba(255,255,255,.15) 270deg 360deg);
+  background:conic-gradient(
+    from 0deg,
+    hsla(var(--tint,200) 98% 60% / .9) 0 90deg,
+    rgba(255,255,255,.18) 90 180deg,
+    hsla(var(--tint,200) 98% 60% / .9) 180 270deg,
+    rgba(255,255,255,.18) 270 360deg
+  );
   -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
-  -webkit-mask-composite:xor;mask-composite:exclude;
-  animation:spinBorder 4s linear infinite;
+  -webkit-mask-composite:xor; mask-composite:exclude;
+  filter:blur(4px);
 }
-@keyframes spinBorder{from{transform:rotate(0)}to{transform:rotate(360deg)}}
 .txt{position:relative;z-index:1}
-.card.win{transform:scale(1.06);box-shadow:0 0 20px rgba(0,229,255,.6)}
+.card.win{transform:scale(1.06);box-shadow:0 0 18px rgba(0,229,255,.55)}
 .winRibbon{position:absolute;left:0;right:0;top:calc(50% - 2px);height:4px;background:linear-gradient(90deg,transparent,rgba(0,229,255,.95),transparent);box-shadow:0 0 14px rgba(0,229,255,.9)}
 
 /* Mask & Line */
-.mask{position:absolute;left:0;right:0;height:${ITEM_H}px;z-index:3;background:linear-gradient(180deg,rgba(5,10,20,.92),rgba(5,10,20,0))}
+.mask{position:absolute;left:0;right:0;height:${ITEM_H}px;z-index:2;background:linear-gradient(180deg,rgba(5,10,20,.92),rgba(5,10,20,0))}
 .mask.top{top:0;transform:translateY(-40%)}
 .mask.bottom{bottom:0;transform:translateY(40%)}
-.selectLine{position:absolute;left:8%;right:8%;top:50%;height:2px;z-index:4;background:linear-gradient(90deg,transparent,#00e5ff,transparent);box-shadow:0 0 12px #00e5ff;border-radius:2px}
+.selectLine{position:absolute;left:8%;right:8%;top:50%;height:2px;z-index:3;background:linear-gradient(90deg,transparent,#00e5ff,transparent);box-shadow:0 0 12px #00e5ff;border-radius:2px}
 
 /* Panel */
 .panel{margin-top:14px;text-align:center}
@@ -252,8 +261,8 @@ input{background:#0e1730;border:1px solid rgba(255,255,255,.12);color:#fff;borde
 .msg.error{color:#ffb3c0;margin-top:4px}
 
 /* Modal */
-.modalWrap{position:fixed;inset:0;background:rgba(0,0,0,.55);display:grid;place-items:center;z-index:50}
+.modalWrap{position:fixed;inset:0;background:rgba(0,0,0,.55);display:grid;place-items:center;z-index:10}
 .modal{position:relative;width:min(420px,90vw);background:#0f1628;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:16px}
-.m-title{font-weight:800;margin:0 0 10px}
+.m-title{font-weight:900;margin:0 0 10px}
 .close{position:absolute;right:10px;top:10px;border:none;background:transparent;color:#9fb1cc;font-size:18px;cursor:pointer}
 `;
