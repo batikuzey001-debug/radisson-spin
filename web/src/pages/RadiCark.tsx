@@ -1,18 +1,33 @@
 // web/src/pages/RadiCark.tsx
 import { useEffect, useMemo, useState } from "react";
 
+/**
+ * Tek Sütun Çark (UI içinde logo, saydam kartlar, neon çerçeve + LED durum)
+ * - Arka plan LOGO: reel'in içinde (kartların arkasında) pulse
+ * - Kartlar: cam + renk tinti (daha saydam), dış çerçeve neon (dönmez)
+ * - UI çerçevesi: LED barlar -> Beklerken YEŞİL, dönerken KIRMIZI yanıp söner
+ * - Başlık: tek, güçlü tipografi (alt yazı yok)
+ * - Maskelerin koyu overlay’leri kaldırıldı (yalnızca seçici çizgi kaldı)
+ *
+ * Akış:
+ *  GET  /api/prizes
+ *  POST /api/verify-spin
+ *  POST /api/commit-spin (boş/204 olsa da crash yok)
+ */
+
 type Prize = { id: number; label: string; wheelIndex: number; imageUrl?: string | null };
 type VerifyIn = { code: string; username: string };
 type VerifyOut = { targetIndex: number; prizeLabel: string; spinToken: string; prizeImage?: string | null };
 type CommitIn = { code: string; spinToken: string };
 
 const API = import.meta.env.VITE_API_BASE_URL;
-const LOOPS = 14;
-const VISIBLE = 3;
-const ITEM_H = 96;
-const SPIN_TIME = 8.2;
 
-/* utils */
+const LOOPS = 14;         // liste tekrarı
+const VISIBLE = 3;        // görünür satır
+const ITEM_H = 96;        // satır yüksekliği
+const SPIN_TIME = 8.2;    // sn
+
+// ---------- utils ----------
 function parseAmount(label: string): number {
   const s = label.replace(/\./g, "").replace(",", ".").replace(/[^\d.]/g, "");
   const n = parseFloat(s);
@@ -25,6 +40,7 @@ function colorFromAmount(v: number): { hue: number } {
   return { hue: 280 };                  // mor
 }
 
+// ---------- page ----------
 export default function RadiCark() {
   const [code, setCode] = useState("");
   const [username, setUsername] = useState("");
@@ -39,6 +55,7 @@ export default function RadiCark() {
   const [translate, setTranslate] = useState(0);
   const [duration, setDuration] = useState(0);
 
+  // Ödülleri al
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -60,6 +77,7 @@ export default function RadiCark() {
     return () => { alive = false; };
   }, []);
 
+  // Reel içeriği: LOOPS kez tekrar
   const reelItems = useMemo(() => {
     if (!basePrizes.length) return [];
     const labels = basePrizes.map((p) => p.label);
@@ -68,6 +86,7 @@ export default function RadiCark() {
     return arr;
   }, [basePrizes]);
 
+  // Spin
   const onSpin = async () => {
     setErr(""); setResult(null);
     if (!username.trim() || !code.trim()) { setErr("Kullanıcı adı ve kod gerekli."); return; }
@@ -98,19 +117,22 @@ export default function RadiCark() {
   };
 
   return (
-    <main className="slot">
+    <main className={`slot ${spinning ? "is-spinning" : "is-idle"}`}>
       <header className="hero">
-        <div className="title">RADİ ÇARK</div>
-        <div className="sub">Tek sütun çark – şansını dene! 🎉</div>
+        <h1 className="title">
+          <span className="stroke">RADİ</span>
+          <span className="glow">ÇARK</span>
+        </h1>
       </header>
 
-      {/* REEL (logo artık bunun İÇİNDE) */}
+      {/* UI ÇERÇEVE (LED’ler) */}
+      <div className="uiFrame" aria-hidden />
+
+      {/* REEL alanı */}
       <section className="reelWrap">
-        {/* LOGO – yalnızca oyun UI içinde, kutuların arkasında */}
+        {/* LOGO – oyun UI içinde, kartların arkasında */}
         <div className="bgLogoIn" aria-hidden />
-        {/* maskeler ve picker çizgisi */}
-        <div className="mask top" />
-        <div className="mask bottom" />
+        {/* seçici çizgi */}
         <div className="selectLine" />
 
         <div
@@ -129,7 +151,7 @@ export default function RadiCark() {
                 className={`card ${isCenter ? "win" : ""}`}
                 style={{ height: ITEM_H, ["--tint" as any]: String(hue) } as any}
               >
-                {/* statik neon border */}
+                {/* statik neon border (dönmez) */}
                 <div className="neonBorder" />
                 {isCenter && <div className="winRibbon" />}
                 <span className="txt">{txt}</span>
@@ -142,12 +164,14 @@ export default function RadiCark() {
       {/* FORM */}
       <section className="panel">
         <div className="row">
-          <label className="f"><span>Kullanıcı Adı</span>
+          <label className="f">
+            <span>Kullanıcı Adı</span>
             <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="adınız" />
           </label>
         </div>
         <div className="row">
-          <label className="f"><span>Kod</span>
+          <label className="f">
+            <span>Kod</span>
             <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="ör. ABC123" />
           </label>
         </div>
@@ -159,6 +183,7 @@ export default function RadiCark() {
         {err && <div className="msg error">⚠️ {err}</div>}
       </section>
 
+      {/* MODAL */}
       {result && (
         <Modal onClose={() => setResult(null)}>
           <div className="m-title">Ödül kazandınız! 🎉</div>
@@ -199,37 +224,64 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
 
 /* styles */
 const css = `
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@800;900&display=swap');
+
 :root{ --text:#fff; --muted:#9fb1cc }
 *{box-sizing:border-box}
-.slot{max-width:720px;margin:0 auto;padding:16px;color:var(--text);position:relative}
+.slot{max-width:720px;margin:0 auto;padding:16px;color:var(--text);position:relative;font-family:'Poppins',system-ui,Segoe UI,Roboto,Arial,sans-serif}
 
+/* Başlık */
 .hero{text-align:center;margin:8px 0 12px}
-.title{font-weight:900;font-size:32px;letter-spacing:1px}
-.sub{color:var(--muted)}
+.title{margin:0;font-weight:900;font-size:40px;letter-spacing:1.5px;line-height:1}
+.title .stroke{-webkit-text-stroke:2px rgba(255,255,255,.4);color:transparent}
+.title .glow{color:#def6ff;text-shadow:0 0 18px rgba(0,229,255,.45)}
+
+/* UI çerçevesi – LED barlar (spinning=KIRMIZI, idle=YEŞİL) */
+.uiFrame{
+  position:absolute; inset:6px 0 auto 0; height:${VISIBLE * ITEM_H + 24}px;
+  margin:0 auto; max-width:720px; pointer-events:none; border-radius:18px;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.12);
+}
+.uiFrame::before,
+.uiFrame::after{
+  content:""; position:absolute; left:8px; right:8px; height:4px; border-radius:999px;
+  background:
+    radial-gradient(circle at 8px 50%, var(--led-color) 0 4px, transparent 5px) repeat-x left center / 28px 4px;
+  filter:drop-shadow(0 0 6px var(--led-glow));
+  animation:ledBlink 1.2s ease-in-out infinite;
+}
+.uiFrame::before{ top:-6px }
+.uiFrame::after { bottom:-6px }
+.slot.is-idle{ --led-color:#13ff77; --led-glow:rgba(19,255,119,.55) }
+.slot.is-spinning{ --led-color:#ff3b6b; --led-glow:rgba(255,59,107,.55) }
+@keyframes ledBlink{
+  0%,100%{opacity:.85} 50%{opacity:.35}
+}
 
 /* Reel alanı */
 .reelWrap{
   position:relative;height:${VISIBLE * ITEM_H}px;overflow:hidden;border-radius:16px;
   background:transparent;border:1px solid rgba(255,255,255,.10);
 }
-
-/* LOGO – oyun UI içinde, kutuların ARKASINDA */
+/* LOGO – oyun UI içinde, kartların ARKASINDA */
 .bgLogoIn{
   position:absolute; inset:0; z-index:0; pointer-events:none;
   background-image:url('https://cdn.prod.website-files.com/68ad80d65417514646edf3a3/68adb798dfed270f5040c714_logowhite.png');
-  background-repeat:no-repeat; background-position:center; background-size:42vmin;
-  opacity:.13; animation:logoPulse 3.6s ease-in-out infinite;
+  background-repeat:no-repeat; background-position:center; background-size:44vmin;
+  opacity:.22; animation:logoPulse 3.4s ease-in-out infinite;
 }
-@keyframes logoPulse{ 0%{transform:scale(0.95)} 50%{transform:scale(1.05)} 100%{transform:scale(0.95)} }
+@keyframes logoPulse{ 0%{transform:scale(0.94)} 50%{transform:scale(1.06)} 100%{transform:scale(0.94)} }
 
 /* Reel içerik */
 .reel{position:absolute;left:0;right:0;top:0;will-change:transform;z-index:1}
 
-/* Kart: cam + tint; dış kenarda statik neon */
+/* Kart: cam + saydam tint; dış kenarda neon (statik) */
 .card{
   margin:10px 16px;height:${ITEM_H}px;border-radius:14px;display:flex;align-items:center;justify-content:center;
   font-size:26px;font-weight:900;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.85);
-  background: linear-gradient(180deg, hsla(var(--tint,200) 95% 55% / .24), hsla(var(--tint,200) 95% 55% / .10));
+  background:
+    linear-gradient(180deg, hsla(var(--tint,200) 95% 55% / .20), hsla(var(--tint,200) 95% 55% / .08)),
+    linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.04));
   backdrop-filter: blur(3px);
   position:relative;overflow:hidden;
 }
@@ -237,9 +289,9 @@ const css = `
   content:"";position:absolute;inset:0;border-radius:14px;padding:2px;pointer-events:none;
   background:conic-gradient(
     from 0deg,
-    hsla(var(--tint,200) 98% 60% / .9) 0 90deg,
+    hsla(var(--tint,200) 98% 60% / .85) 0 90deg,
     rgba(255,255,255,.18) 90 180deg,
-    hsla(var(--tint,200) 98% 60% / .9) 180 270deg,
+    hsla(var(--tint,200) 98% 60% / .85) 180 270deg,
     rgba(255,255,255,.18) 270 360deg
   );
   -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
@@ -250,10 +302,7 @@ const css = `
 .card.win{transform:scale(1.06);box-shadow:0 0 18px rgba(0,229,255,.55)}
 .winRibbon{position:absolute;left:0;right:0;top:calc(50% - 2px);height:4px;background:linear-gradient(90deg,transparent,rgba(0,229,255,.95),transparent);box-shadow:0 0 14px rgba(0,229,255,.9)}
 
-/* Mask & Line */
-.mask{position:absolute;left:0;right:0;height:${ITEM_H}px;z-index:2;background:linear-gradient(180deg,rgba(5,10,20,.92),rgba(5,10,20,0))}
-.mask.top{top:0;transform:translateY(-40%)}
-.mask.bottom{bottom:0;transform:translateY(40%)}
+/* Sadece seçici çizgi (koyu maskeleri kaldırdık) */
 .selectLine{position:absolute;left:8%;right:8%;top:50%;height:2px;z-index:3;background:linear-gradient(90deg,transparent,#00e5ff,transparent);box-shadow:0 0 12px #00e5ff;border-radius:2px}
 
 /* Panel */
