@@ -11,27 +11,34 @@ type MatchCard = {
   leagueFlag?: string;
   home: Team;
   away: Team;
-  kickoff?: string;
+  kickoff?: string; // ISO (+00:00)
+  // Backend ileride eklerse otomatik kullanılır
+  // leagueId?: number;
 };
 type FeaturedResp = { live?: any[]; upcoming?: MatchCard[]; debug?: any };
 
-/** UEFA Nations League öncelik ID'si (gerekirse güncelleyin) */
-const NATIONS_LEAGUE_IDS = [5];
+/** Öncelikli ligler – yalnız bunlar listelenecek */
+const UCL_ID = 2;
+const UEL_ID = 3;
+const UECL_ID = 848;
+const WCQ_UEFA_IDS = [32, 29, 34, 31, 30, 33]; // A..F grupları
+
+/** İsim bazlı emniyet şeridi (backend ID göndermese de eşleştir) */
+function isPriorityByName(name: string) {
+  const n = (name || "").toLowerCase();
+  return (
+    n.includes("champions league") ||
+    n.includes("europa league") ||
+    n.includes("europa conference") ||
+    n.includes("world cup - qualification europe") ||
+    n.includes("world cup - qual. uefa")
+  );
+}
 
 export default function HeroUpcomingStrip({
-  days = 15,
-  limit = 18,
-  showAll = false,
-  includeLeagues = [
-    ...NATIONS_LEAGUE_IDS,
-    39, 140, 135, 78, 61, 203,
-    2, 3, 848, 531,
-  ],
+  limit = 24,
 }: {
-  days?: number;
   limit?: number;
-  showAll?: boolean;
-  includeLeagues?: number[];
 }) {
   const [items, setItems] = useState<MatchCard[]>([]);
   const [err, setErr] = useState<string>("");
@@ -40,30 +47,47 @@ export default function HeroUpcomingStrip({
     let alive = true;
     (async () => {
       try {
+        // Yalnızca öncelikli ligleri iste – 15 gün penceresi backend’de (gerekirse daraltırız)
+        const includeLeagues = [
+          UCL_ID,
+          UEL_ID,
+          UECL_ID,
+          ...WCQ_UEFA_IDS,
+        ];
         const q = new URLSearchParams({
-          days: String(days),
+          days: "15",
           limit: String(limit),
-          show_all: showAll ? "1" : "0",
+          show_all: "0",
+          include_leagues: includeLeagues.join(","),
         });
-        if (includeLeagues?.length) q.set("include_leagues", includeLeagues.join(","));
-
         const r = await fetch(`${API}/api/live/featured?${q.toString()}`);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const js: FeaturedResp = await r.json();
+
         const up = Array.isArray(js?.upcoming) ? js.upcoming : [];
 
-        const sorted = [...up].sort((a, b) => {
-          const an = isNationsLeague(a) ? 0 : 1;
-          const bn = isNationsLeague(b) ? 0 : 1;
-          if (an !== bn) return an - bn;
-          const ta = a.kickoff ? new Date(a.kickoff).getTime() : Number.POSITIVE_INFINITY;
-          const tb = b.kickoff ? new Date(b.kickoff).getTime() : Number.POSITIVE_INFINITY;
-          return ta - tb;
+        // ---- FE güvence: sadece yarın (UTC) + sadece öncelikli ligler ----
+        const { startUTC, endUTC } = utcTomorrowBounds();
+        const filtered = up.filter((m) => {
+          const ts = m.kickoff ? Date.parse(m.kickoff) : NaN;
+          if (!Number.isFinite(ts) || ts < startUTC || ts >= endUTC) return false;
+
+          // Eğer backend ileride leagueId gönderirse burada ID ile doğrulanır;
+          // şu an isimle emniyet şeridi de var.
+          return isPriorityByName(m.league);
+        });
+
+        // Sırala: en yakın maç önce, sonra lig önceliği (UCL > UEL > UECL > WCQ)
+        const sorted = filtered.sort((a, b) => {
+          const ta = a.kickoff ? Date.parse(a.kickoff) : Number.POSITIVE_INFINITY;
+          const tb = b.kickoff ? Date.parse(b.kickoff) : Number.POSITIVE_INFINITY;
+          if (ta !== tb) return ta - tb;
+          return priorityRank(a.league) - priorityRank(b.league);
         });
 
         if (alive) {
           setItems(sorted);
-          setErr(sorted.length ? "" : "Yakında popüler lig maçı bulunamadı");
+          setErr(sorted.length ? "" : "Yarın için öncelikli liglerde maç bulunamadı.");
         }
       } catch (e: any) {
         if (alive) {
@@ -73,12 +97,13 @@ export default function HeroUpcomingStrip({
       }
     })();
 
+    // countdown tazeleme
     const t = setInterval(() => setItems((v) => v.slice()), 30_000);
     return () => {
       alive = false;
       clearInterval(t);
     };
-  }, [days, limit, showAll, includeLeagues?.join(",")]);
+  }, [limit]);
 
   if (err && !items.length) {
     return (
@@ -86,7 +111,7 @@ export default function HeroUpcomingStrip({
         <div className="heroLane">
           <div className="laneHead">
             <span className="dot" />
-            <span className="title">YAKINDAKİ MAÇLAR</span>
+            <span className="title">YARIN – ÖNCELİKLİ MAÇLAR</span>
             <span className="sub muted">{err}</span>
           </div>
         </div>
@@ -102,8 +127,8 @@ export default function HeroUpcomingStrip({
       <div className="heroLane">
         <div className="laneHead">
           <span className="dot" />
-          <span className="title">YAKINDAKİ MAÇLAR</span>
-          <span className="sub">{days} gün içinde • ULUSLAR LİGİ ÖNCELİKLİ</span>
+          <span className="title">YARIN – ÖNCELİKLİ MAÇLAR</span>
+          <span className="sub">UCL • UEL • UECL • WC Qual. UEFA</span>
         </div>
 
         <div className="scroller" role="list">
@@ -121,7 +146,7 @@ export default function HeroUpcomingStrip({
               }
               title={`${m.league} • ${m.home.name} vs ${m.away.name}`}
             >
-              {/* Üst (satır-1): Lig logo + lig adı */}
+              {/* Üst (lig) */}
               <div className="mcard__top">
                 <div className="lg">
                   {m.leagueLogo ? (
@@ -133,14 +158,14 @@ export default function HeroUpcomingStrip({
                 </div>
               </div>
 
-              {/* Orta (satır-2): Takımlar – sabit yükseklikli blok */}
+              {/* Takımlar */}
               <div className="mcard__teams">
                 <TeamBadge name={m.home.name} logo={m.home.logo} />
                 <span className="vs">vs</span>
                 <TeamBadge name={m.away.name} logo={m.away.logo} />
               </div>
 
-              {/* Alt (satır-3 – sabit): tarih + sabit pozisyonda geri sayım */}
+              {/* Başlangıç & Geri sayım – sabit yerde */}
               <div className="mcard__meta">
                 <span className="kickVal">{fmtLocal(m.kickoff)}</span>
                 <Countdown iso={m.kickoff} />
@@ -156,9 +181,22 @@ export default function HeroUpcomingStrip({
 }
 
 /* ===== helpers ===== */
-function isNationsLeague(m: MatchCard): boolean {
-  const name = (m.league || "").toLowerCase();
-  return name.includes("nations league");
+function utcTomorrowBounds() {
+  const now = new Date();
+  const utc0 = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const start = new Date(utc0); // bugün 00:00 UTC
+  start.setUTCDate(start.getUTCDate() + 1); // yarın 00:00 UTC
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 1); // ertesi gün 00:00 UTC
+  return { startUTC: start.getTime(), endUTC: end.getTime() };
+}
+function priorityRank(leagueName: string) {
+  const n = (leagueName || "").toLowerCase();
+  if (n.includes("champions league")) return 0;
+  if (n.includes("europa league") && !n.includes("conference")) return 1;
+  if (n.includes("europa conference")) return 2;
+  if (n.includes("world cup - qualification europe") || n.includes("world cup - qual. uefa")) return 3;
+  return 9;
 }
 
 /* ===== subcomponents ===== */
@@ -232,10 +270,10 @@ const css = `
 }
 .scroller::-webkit-scrollbar{ display:none }
 
-/* === Kart: kısaltılmış yükseklik + genişlik artırıldı === */
+/* Kartlar (kompakt) */
 .mcard{
   flex:0 0 auto; width: 230px; min-height: 150px;
-  display:grid; grid-template-rows: auto 1fr auto; /* üst/orta/alt: countdown sabit */
+  display:grid; grid-template-rows: auto 1fr auto;
   gap:6px;
   text-decoration:none; color:#eaf2ff; position:relative;
   background:linear-gradient(180deg, rgba(6,10,22,.82), rgba(6,12,24,.82));
@@ -257,17 +295,17 @@ const css = `
 .mcard > *{ position:relative; z-index:1 }
 .mcard:hover{ transform: translateY(-2px); filter:brightness(1.05); box-shadow:0 10px 20px rgba(0,0,0,.30) }
 
-/* Üst: Lig bilgisi (logo önde) */
+/* Lig alanı */
 .mcard__top{ display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:22px; }
 .lg{ display:flex; align-items:center; gap:8px; min-width:0 }
 .lgImg{ width:22px; height:22px; object-fit:contain; filter: drop-shadow(0 2px 8px rgba(0,229,255,.35)); }
 .lgName{ font-size:12px; font-weight:900; color:#e7f3ff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:160px; }
 .lgPh{ width:22px; height:22px; border-radius:6px; background:rgba(255,255,255,.12) }
 
-/* Orta: Takımlar – sabit yüksekliğe yakın blok (isimler 2 satır) */
+/* Takımlar – isimler 2 satır, countdown sabit */
 .mcard__teams{
   display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:8px;
-  min-height: 68px; /* sabit alan → alttaki countdown kaymaz */
+  min-height: 68px;
 }
 .vs{ font-weight:1000; color:#cceaff; opacity:.9; }
 .tb{ display:flex; flex-direction:column; align-items:center; gap:4px; min-width:0 }
@@ -277,25 +315,25 @@ const css = `
   text-align:center; font-size:12px; font-weight:800; color:#eef4ff;
   line-height:1.15; max-height: 2.3em; /* ~2 satır */
   display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
-  overflow:hidden; text-overflow:clip; /* '...' yok */
+  overflow:hidden; text-overflow:clip;
   white-space:normal; word-break:break-word; overflow-wrap:anywhere;
 }
 
-/* Alt: Tarih + Geri sayım (her kartta aynı yerde) */
+/* Alt: tarih + countdown (sabit) */
 .mcard__meta{
   display:flex; align-items:center; justify-content:space-between; gap:8px;
   min-height: 28px;
 }
 .kickVal{ font-size:12px; font-weight:900; color:#cfe0ff; white-space:nowrap }
 
-/* Countdown badge – sabit ve belirgin */
+/* Countdown rozet */
 .cd{
   display:inline-flex; align-items:center; justify-content:center;
   height:26px; padding:0 10px; border-radius:9px;
   font-size:12px; font-weight:1000; letter-spacing:.3px; text-transform:uppercase;
   color:#001018; background:linear-gradient(90deg,#ffd36a,#ffebad);
   box-shadow: 0 6px 14px rgba(255,211,106,.26);
-  min-width: 110px; font-variant-numeric: tabular-nums; /* sayı sıçramasını azaltır */
+  min-width: 110px; font-variant-numeric: tabular-nums;
 }
 .cd.strong{ filter:saturate(1.05) }
 .cd.live{
