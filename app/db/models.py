@@ -9,7 +9,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
 
-
 # === Çekiliş Modelleri ===
 class Prize(Base):
     __tablename__ = "prizes"
@@ -19,12 +18,11 @@ class Prize(Base):
     image_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    # İLİŞKİLER
     # -> Code.prize_id ile bağlanan kodlar (asıl kazanılan ödül)
     codes = relationship(
         "Code",
         back_populates="prize",
-        foreign_keys="Code.prize_id",   # AMBIGUITY FIX
+        foreign_keys="Code.prize_id",
         cascade="save-update, merge",
     )
     # -> Code.manual_prize_id ile bağlanan kodlar (rapor/okuma)
@@ -65,7 +63,7 @@ class Code(Base):
     prize = relationship(
         "Prize",
         back_populates="codes",
-        foreign_keys=[prize_id],        # yalnızca prize_id ile bağla
+        foreign_keys=[prize_id],
     )
 
 
@@ -79,12 +77,10 @@ class Spin(Base):
     client_ip: Mapped[str | None] = mapped_column(Text, nullable=True)
     user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-
 # === Admin RBAC ===
 class AdminRole(str, enum.Enum):
     super_admin = "super_admin"
     admin = "admin"
-
 
 class AdminUser(Base):
     __tablename__ = "admin_users"
@@ -98,7 +94,6 @@ class AdminUser(Base):
 # --- FEED MODELLERİ (Turnuva + diğerleri) ---
 from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, JSON
 from datetime import datetime, timezone
-
 def _utcnow(): return datetime.now(timezone.utc)
 
 class Tournament(Base):
@@ -178,8 +173,7 @@ class Event(Base):
     accent_color = Column(String(16))
     bg_color     = Column(String(16))
     variant      = Column(String(24))
-    # YENİ: Etkinlik ödül miktarı (₺)
-    prize_amount = Column(Integer)   # <-- eklendi
+    prize_amount = Column(Integer)   # ← EKLENDİ: Etkinlik ödül miktarı (₺)
     created_at = Column(DateTime(timezone=True), default=_utcnow)
     updated_at = Column(DateTime(timezone=True), default=_utcnow)
 
@@ -206,15 +200,13 @@ class SiteConfig(Base):
 # --- DİNAMİK SEVİYELER (Admin tarafından yönetilebilir) ---
 class PrizeTier(Base):
     __tablename__ = "prize_tiers"
-    # Örn. key: "bronze", "silver-300", "custom-1"
-    key: Mapped[str] = mapped_column(String(32), primary_key=True)
-    label: Mapped[str] = mapped_column(String(100))          # Örn. "100 TL"
-    sort: Mapped[int] = mapped_column(Integer, default=0)
+    key: Mapped[str]   = mapped_column(String(32), primary_key=True)  # "bronze", "silver-300", ...
+    label: Mapped[str] = mapped_column(String(100))
+    sort: Mapped[int]  = mapped_column(Integer, default=0)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
 
-    # ilişkiler
     distributions = relationship("PrizeDistribution", back_populates="tier", cascade="all, delete-orphan")
 
 # --- ÇARK DAĞILIMI (Seviye -> Ödül -> Ağırlık) ---
@@ -222,13 +214,10 @@ class PrizeDistribution(Base):
     __tablename__ = "prize_distributions"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
-    # Dinamik seviye anahtarı: prize_tiers.key
     tier_key: Mapped[str] = mapped_column(ForeignKey("prize_tiers.key"), index=True)
-
     prize_id: Mapped[int] = mapped_column(ForeignKey("prizes.id"), index=True)
-    weight_bp: Mapped[int] = mapped_column(Integer, default=0)    # 1% = 100 basis point
+    weight_bp: Mapped[int] = mapped_column(Integer, default=0)    # 1% = 100 bp
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    # ilişkiler
     prize = relationship("Prize", back_populates="distributions")
     tier  = relationship("PrizeTier", back_populates="distributions")
