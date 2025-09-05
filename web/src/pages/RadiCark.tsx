@@ -19,10 +19,10 @@ function parseAmount(label: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 function colorFromAmount(v: number): { hue: number } {
-  if (v >= 10000) return { hue: 48 };   // altın
-  if (v >= 1000)  return { hue: 190 };  // aqua
-  if (v >= 100)   return { hue: 225 };  // mavi
-  return { hue: 280 };                  // mor
+  if (v >= 10000) return { hue: 48 };
+  if (v >= 1000)  return { hue: 190 };
+  if (v >= 100)   return { hue: 225 };
+  return { hue: 280 };
 }
 
 export default function RadiCark() {
@@ -46,9 +46,9 @@ export default function RadiCark() {
         setLoading(true);
         const r1 = await fetch(`${API}/api/prizes`);
         if (!r1.ok) throw new Error(`HTTP ${r1.status}`);
+        // SIRALAMA YOK → backend indexiyle eşleşsin
         const rows: Prize[] = await r1.json();
         if (!alive) return;
-        // Sıralama yapmıyoruz → backend indexiyle birebir
         setBasePrizes(rows || []);
         setErr("");
       } catch (e: any) {
@@ -98,7 +98,7 @@ export default function RadiCark() {
 
   return (
     <main className={`slot ${spinning ? "is-spinning" : "is-idle"}`}>
-      {/* Başlık – daha parlak/okunur */}
+      {/* Başlık */}
       <header className="hero">
         <h1 className="title">
           <span className="stroke">RADİ</span>
@@ -106,9 +106,9 @@ export default function RadiCark() {
         </h1>
       </header>
 
-      {/* Sadece kartların döndüğü bölüm – UI çerçeve ve logo bunun içinde */}
+      {/* Sadece kartların döndüğü bölüm – çerçeve ve logo bunun içinde */}
       <section className="reelWrap">
-        {/* LED düz çizgiler (üst/alt) → çerçeve gibi görünür, kartlara değmez */}
+        {/* LED düz çizgiler → kartlara değmeyecek şekilde kenara oturtuldu */}
         <div className="uiFrame" aria-hidden />
 
         {/* LOGO – oyun UI içinde, kartların ARKASINDA */}
@@ -133,9 +133,7 @@ export default function RadiCark() {
                 className={`card ${isCenter ? "win" : ""}`}
                 style={{ height: ITEM_H, ["--tint" as any]: String(hue) } as any}
               >
-                {/* Daha belirgin statik neon çerçeve */}
                 <div className="neonBorder" />
-                {/* Kazanan net rozeti */}
                 {isCenter && <div className="winBadge"><span>✓</span> KAZANDIN</div>}
                 <span className="txt">{txt}</span>
               </div>
@@ -225,7 +223,7 @@ const css = `
   background:transparent;border:1px solid rgba(255,255,255,.14);
 }
 
-/* LED düz çizgiler (üst/alt) – çerçevenin içinde, kartlara değmez */
+/* LED düz çizgiler – çerçevenin tam KENARINDA, kart üstüne taşmaz */
 .uiFrame{
   position:absolute; inset:0; border-radius:18px; pointer-events:none; z-index:1;
 }
@@ -233,11 +231,11 @@ const css = `
 .uiFrame::after{
   content:""; position:absolute; left:10px; right:10px; height:4px; border-radius:999px;
   background: var(--led-color);
-  box-shadow:0 0 10px var(--led-glow), 0 0 20px var(--led-glow);
+  box-shadow:0 0 8px var(--led-glow), 0 0 14px var(--led-glow);
   animation:ledPulse 1.15s ease-in-out infinite;
 }
-.uiFrame::before{ top:2px }      /* daha aşağı çekildi */
-.uiFrame::after { bottom:2px }   /* daha yukarı çekildi  */
+.uiFrame::before{ top:-6px }     /* ÜST çizgiyi çerçevenin DIŞINA taşı */
+.uiFrame::after { bottom:-6px }  /* ALT çizgiyi çerçevenin DIŞINA taşı */
 .slot.is-idle{ --led-color:#0dff7a; --led-glow:rgba(13,255,122,.55) }
 .slot.is-spinning{ --led-color:#ff315f; --led-glow:rgba(255,49,95,.55) }
 @keyframes ledPulse{ 0%,100%{opacity:1} 50%{opacity:.5} }
@@ -254,7 +252,7 @@ const css = `
 /* Reel içerik */
 .reel{position:absolute;left:0;right:0;top:0;will-change:transform;z-index:2}
 
-/* Kart: CAM + çok saydam tint; DIŞ kenarda neon (daha kalın ve belirgin) */
+/* Kart: cam + çok saydam tint; DIŞ kenarda neon (daha kalın ve belirgin) */
 .card{
   margin:10px 16px;height:${ITEM_H}px;border-radius:16px;display:flex;align-items:center;justify-content:center;
   font-size:24px;font-weight:900;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.85);
