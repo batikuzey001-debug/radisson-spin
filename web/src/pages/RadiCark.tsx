@@ -46,7 +46,6 @@ export default function RadiCark() {
         setLoading(true);
         const r1 = await fetch(`${API}/api/prizes`);
         if (!r1.ok) throw new Error(`HTTP ${r1.status}`);
-        // SIRALAMA YOK → backend indexiyle birebir
         const rows: Prize[] = await r1.json();
         if (!alive) return;
         setBasePrizes(rows || []);
@@ -83,7 +82,7 @@ export default function RadiCark() {
       const targetY = targetIndexInReel * ITEM_H - centerOffset;
 
       setDuration(0); setTranslate(0);
-      await raf();
+      await new Promise(r => requestAnimationFrame(() => r(null)));
       setDuration(SPIN_TIME); setTranslate(-targetY);
 
       setTimeout(async () => {
@@ -98,7 +97,6 @@ export default function RadiCark() {
 
   return (
     <main className={`slot ${spinning ? "is-spinning" : "is-idle"}`}>
-      {/* Başlık */}
       <header className="hero">
         <h1 className="title">
           <span className="stroke">RADİ</span>
@@ -106,15 +104,15 @@ export default function RadiCark() {
         </h1>
       </header>
 
-      {/* Kartların döndüğü bölüm */}
+      {/* Yalnız kartların döndüğü bölüm */}
       <section className="reelWrap">
-        {/* LED düz çizgiler – tam üst/alt, kartlara değmez */}
+        {/* LED düz çizgiler – reelWrap içine alınır */}
         <div className="uiFrame" aria-hidden />
 
         {/* LOGO – kartların arkasında */}
         <div className="bgLogoIn" aria-hidden />
 
-        {/* Seçici çizgi (düz) */}
+        {/* Seçici çizgi */}
         <div className="selectLine" />
 
         <div
@@ -142,7 +140,6 @@ export default function RadiCark() {
         </div>
       </section>
 
-      {/* FORM */}
       <section className="panel">
         <div className="row">
           <label className="f">
@@ -164,7 +161,6 @@ export default function RadiCark() {
         {err && <div className="msg error">⚠️ {err}</div>}
       </section>
 
-      {/* MODAL */}
       {result && (
         <Modal onClose={() => setResult(null)}>
           <div className="m-title">Ödül kazandınız! 🎉</div>
@@ -189,19 +185,6 @@ async function postJson<T = any>(url: string, body: any, allowEmpty = false): Pr
   }
   return (await r.json()) as T;
 }
-function raf() { return new Promise((res) => requestAnimationFrame(() => res(null))); }
-
-/* modal */
-function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
-  return (
-    <div className="modalWrap" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <button className="close" onClick={onClose}>✕</button>
-        {children}
-      </div>
-    </div>
-  );
-}
 
 /* styles */
 const css = `
@@ -211,23 +194,23 @@ const css = `
 *{box-sizing:border-box}
 .slot{max-width:720px;margin:0 auto;padding:16px;color:var(--text);position:relative;font-family:'Poppins',system-ui,Segoe UI,Roboto,Arial,sans-serif}
 
-/* Başlık – daha parlak/okunur */
 .hero{text-align:center;margin:6px 0 10px}
 .title{margin:0;font-weight:900;font-size:42px;letter-spacing:1.6px;line-height:1}
 .title .stroke{-webkit-text-stroke:2px rgba(255,255,255,.45);color:transparent}
 .title .glow{color:#e8fbff;text-shadow:0 0 26px rgba(0,229,255,.6)}
 
-/* Reel alanı – yalnızca kartların döndüğü bölüm çerçeveli */
+/* Reel alanı – LED şeritler görünür kalsın diye iç boşluk */
 .reelWrap{
   position:relative;height:${VISIBLE * ITEM_H}px;overflow:hidden;border-radius:18px;
-  background:transparent;border:1px solid rgba(255,255,255,.14); z-index:5;
-  padding:8px 0; /* LED çizgileri için iç boşluk */
+  background:transparent;border:1px solid rgba(255,255,255,.14);
+  padding:12px 0;             /* ÜST/ALT padding (LED'ler bu alanda) */
+  z-index:5;
 }
 
-/* LED düz çizgiler – çerçevenin içinde, kartlara değmez */
+/* LED düz çizgiler – padding alanının kenarında (kartlara değmez) */
 .uiFrame{
-  position:absolute; inset:8px 0; /* üst-alt iç boşluğun sınırı */
-  border-radius:18px; pointer-events:none; z-index:6;
+  position:absolute; left:0; right:0; top:0; bottom:0;
+  border-radius:18px; pointer-events:none; z-index:9;
 }
 .uiFrame::before,
 .uiFrame::after{
@@ -236,15 +219,15 @@ const css = `
   box-shadow:0 0 8px var(--led-glow), 0 0 14px var(--led-glow);
   animation:ledPulse 1.15s ease-in-out infinite;
 }
-.uiFrame::before{ top:0 }     /* tam iç kenar */
-.uiFrame::after { bottom:0 }  /* tam iç kenar */
+.uiFrame::before{ top:0 }      /* padding'in üst kenarı */
+.uiFrame::after { bottom:0 }   /* padding'in alt kenarı */
 .slot.is-idle{ --led-color:#0dff7a; --led-glow:rgba(13,255,122,.55) }
 .slot.is-spinning{ --led-color:#ff315f; --led-glow:rgba(255,49,95,.55) }
 @keyframes ledPulse{ 0%,100%{opacity:1} 50%{opacity:.5} }
 
-/* LOGO – oyun UI içinde, kartların ARKASINDA */
+/* LOGO – kartların arkasında */
 .bgLogoIn{
-  position:absolute; inset:0; z-index:5; pointer-events:none;
+  position:absolute; inset:0; z-index:6; pointer-events:none;
   background-image:url('https://cdn.prod.website-files.com/68ad80d65417514646edf3a3/68adb798dfed270f5040c714_logowhite.png');
   background-repeat:no-repeat; background-position:center; background-size:44vmin;
   opacity:.22; animation:logoPulse 3.4s ease-in-out infinite;
@@ -254,7 +237,7 @@ const css = `
 /* Reel içerik */
 .reel{position:absolute;left:0;right:0;top:0;will-change:transform;z-index:7}
 
-/* Kart: cam + çok saydam tint; DIŞ kenarda neon (daha kalın ve belirgin) */
+/* Kart – cam + saydam tint; DIŞ kenarda neon (belirgin) */
 .card{
   margin:10px 16px;height:${ITEM_H}px;border-radius:16px;display:flex;align-items:center;justify-content:center;
   font-size:24px;font-weight:900;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.85);
@@ -289,7 +272,7 @@ const css = `
 
 /* Seçici çizgi (düz) – en üstte */
 .selectLine{
-  position:absolute; left:8%; right:8%; top:50%; height:2px; z-index:8;
+  position:absolute; left:8%; right:8%; top:50%; height:2px; z-index:10;
   background:linear-gradient(90deg,transparent,#00e5ff,transparent);
   box-shadow:0 0 12px #00e5ff; border-radius:2px;
 }
@@ -302,10 +285,4 @@ const css = `
 input{background:#0e1730;border:1px solid rgba(255,255,255,.12);color:#fff;border-radius:8px;padding:8px 10px;min-width:240px}
 .btn{background:linear-gradient(90deg,#00e5ff,#4aa7ff);color:#001018;border:none;border-radius:8px;padding:10px 16px;font-weight:800;cursor:pointer;box-shadow:0 6px 16px rgba(0,229,255,.3)}
 .msg.error{color:#ffb3c0;margin-top:4px}
-
-/* Modal */
-.modalWrap{position:fixed;inset:0;background:rgba(0,0,0,.55);display:grid;place-items:center;z-index:10}
-.modal{position:relative;width:min(420px,90vw);background:#0f1628;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:16px}
-.m-title{font-weight:900;margin:0 0 10px}
-.close{position:absolute;right:10px;top:10px;border:none;background:transparent;color:#9fb1cc;font-size:18px;cursor:pointer}
 `;
