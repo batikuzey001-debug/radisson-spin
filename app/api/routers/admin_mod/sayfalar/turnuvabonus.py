@@ -162,12 +162,20 @@ def page_turnuvabonus(
         form.append(f"<option value='{s}' {sel}>{'Yayında' if s=='published' else 'Taslak'}</option>")
     form.append("</select></label>")
 
-    # Promosyon kodları için ekstra alanlar
+    # Promosyon kodları için ekstra
     if _has(Model, "cta_url"):
         form.append(f"<label class='field'><span>Buton Bağlantısı</span><input name='cta_url' value='{val('cta_url')}' placeholder='https://... veya /sayfa'></label>")
-
     if _has(Model, "coupon_code"):
         form.append(f"<label class='field'><span>Kupon Kodu</span><input name='coupon_code' value='{val('coupon_code')}' placeholder='Örn: NEON50'></label>")
+
+    # Etkinlik özel: Ödül miktarı (₺)
+    if _has(Model, "prize_amount"):
+        form.append(
+            f"<label class='field'><span>Ödül Miktarı (₺)</span>"
+            f"<input name='prize_amount' type='number' inputmode='numeric' min='0' step='1' "
+            f"value='{_e(str(getattr(editing, \"prize_amount\", \"\") or \"\"))}' placeholder='örn: 100000'>"
+            f"</label>"
+        )
 
     # Açıklamalar
     if _has(Model, "short_desc"):
@@ -201,6 +209,8 @@ def page_turnuvabonus(
         headers += "<th>Ödül</th>"
     if _has(Model, "participant_count"):
         headers += "<th>Katılımcı</th>"
+    if _has(Model, "prize_amount"):
+        headers += "<th>Etkinlik Ödülü</th>"
     headers += "<th>Görsel</th><th style='width:180px'>İşlem</th></tr>"
     t.append("<div class='table-wrap'><table>" + headers)
 
@@ -214,6 +224,7 @@ def page_turnuvabonus(
         prize_td = f"<td>{_fmt_try(getattr(r, 'prize_pool', None))}</td>" if _has(Model, "prize_pool") else ""
         part_td = f"<td>{_e(str(getattr(r, 'participant_count', '-') or '-'))}</td>" if _has(Model, "participant_count") else ""
         coupon_td = f"<td><code>{_e(getattr(r, 'coupon_code', '') or '-')}</code></td>" if _has(Model, "coupon_code") else ""
+        prize_amt_td = f"<td>{_fmt_try(getattr(r, 'prize_amount', None))}</td>" if _has(Model, "prize_amount") else ""
 
         t.append(
             f"<tr>"
@@ -225,6 +236,7 @@ def page_turnuvabonus(
             f"<td>{end_txt}</td>"
             f"{prize_td}"
             f"{part_td}"
+            f"{prize_amt_td}"
             f"<td class='img'>{img}</td>"
             f"<td class='actions'>"
             f"<a class='btn neon small' href='/admin/turnuvabonus?tab={tab}&edit={r.id}' title='Düzenle'>Düzenle</a>"
@@ -335,6 +347,10 @@ async def upsert_item(
     if _has(Model, "participant_count"):
         pc_raw = (form.get("participant_count") or "").strip()
         data["participant_count"] = int(pc_raw) if pc_raw.isdigit() else None
+    # Etkinlik: Ödül miktarı (₺)
+    if _has(Model, "prize_amount"):
+        amt_raw = (form.get("prize_amount") or "").replace(".", "").strip()
+        data["prize_amount"] = int(amt_raw) if amt_raw.isdigit() else None
 
     if id_raw:
         row = db.get(Model, int(id_raw))
