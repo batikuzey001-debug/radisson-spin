@@ -1,6 +1,6 @@
 // web/src/components/Header.tsx
 import { NavLink, useNavigate } from "react-router-dom";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 /* ===== Types & Config ===== */
 type HeaderConfig = {
@@ -29,7 +29,7 @@ function splitThousands(n: number) {
   return new Intl.NumberFormat("tr-TR").format(Math.max(0, Math.floor(n)));
 }
 
-/* ===== Header ===== */
+/* ===== Header (sol blok referans görsele uyarlandı) ===== */
 export default function Header() {
   const navigate = useNavigate();
   const [cfg, setCfg] = useState<HeaderConfig | null>(null);
@@ -55,10 +55,12 @@ export default function Header() {
         setOnline(low + Math.floor((high - low) * 0.5));
       }
     })();
-    return () => { live = false; };
+    return () => {
+      live = false;
+    };
   }, []);
 
-  // Smooth oscillation
+  // küçük dalgalanma (dış görünüm bozulmadan)
   useEffect(() => {
     const t = setInterval(() => {
       const hour = new Date().getHours();
@@ -66,7 +68,7 @@ export default function Header() {
       const max = toNum(cfg?.online_max, 6800);
       const [low, high] = calcBand(hour, min, max);
       const target = low + Math.floor(Math.random() * (high - low + 1));
-      setOnline(n => n + Math.round((target - n) * 0.2));
+      setOnline((n) => n + Math.round((target - n) * 0.2));
     }, 4000);
     return () => clearInterval(t);
   }, [cfg]);
@@ -74,24 +76,29 @@ export default function Header() {
   return (
     <header className="hdr">
       <div className="hdr__in">
+        {/* Üst bar (yükseklik sabit) */}
         <div className="top">
           <div className="left">
-            {/* Logo */}
+            {/* Logo → ana sayfa */}
             <button className="logoBtn" onClick={() => navigate("/")} title="Ana Sayfa">
               <img
-                src={cfg?.logo_url || "https://cdn.prod.website-files.com/68ad80d65417514646edf3a3/68adb798dfed270f5040c714_logowhite.png"}
+                src={
+                  cfg?.logo_url ||
+                  "https://cdn.prod.website-files.com/68ad80d65417514646edf3a3/68adb798dfed270f5040c714_logowhite.png"
+                }
                 alt="Logo"
               />
             </button>
 
-            {/* LIVE sayaç */}
+            {/* LIVE (yeşil dot + gradient 'LIVE' + sayı) */}
             <div className="live">
-              <span className="dot" />
-              <span className="txt">LIVE</span>
-              <span className="digits">{splitThousands(online)}</span>
+              <span className="liveDot" />
+              <span className="liveText">LIVE</span>
+              <span className="liveCount">{splitThousands(online)}</span>
             </div>
           </div>
 
+          {/* Sağ aksiyonlar (mevcut akış korunur) */}
           <div className="actions">
             <button className="chip ghost" title="Hızlı Bonus">
               <BellIcon />
@@ -112,6 +119,7 @@ export default function Header() {
           </div>
         </div>
 
+        {/* Menü */}
         <nav className="menu">
           <MenuLink to="/" icon={<HomeIcon />} label="Ana Sayfa" />
           <MenuLink to="/cark" icon={<WheelIcon />} label="Çark" />
@@ -120,6 +128,7 @@ export default function Header() {
           <MenuLink to="/deal-or-no-deal" icon={<BriefcaseIcon />} label="Deal or No Deal" />
         </nav>
       </div>
+
       <style>{css}</style>
     </header>
   );
@@ -128,7 +137,7 @@ export default function Header() {
 /* ===== Menü Link ===== */
 function MenuLink({ to, icon, label }: { to: string; icon: JSX.Element; label: string }) {
   return (
-    <NavLink to={to} className={({isActive}) => "mItem" + (isActive ? " active" : "")}>
+    <NavLink to={to} className={({ isActive }) => "mItem" + (isActive ? " active" : "")}>
       <span className="ico">{icon}</span>
       <span className="lab">{label}</span>
     </NavLink>
@@ -136,33 +145,136 @@ function MenuLink({ to, icon, label }: { to: string; icon: JSX.Element; label: s
 }
 
 /* ===== Icons ===== */
-function BellIcon(){ return (<svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentColor" d="M12 22a2 2 0 0 0 2-2h-4a2 2 0 0 0 2 2Zm6-6v-5a6 6 0 1 0-12 0v5l-2 2v1h16v-1l-2-2Z"/></svg>);}
-function LoginIcon(){ return (<svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentColor" d="M10 17l5-5-5-5v3H3v4h7v3z"/><path fill="currentColor" d="M20 3h-7v2h7v14h-7v2h7a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z"/></svg>);}
-function HomeIcon(){ return (<svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentColor" d="M12 3l10 9h-3v9h-6v-6H11v6H5v-9H2l10-9z"/></svg>);}
-function WheelIcon(){ return (<svg width="16" height="16" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" fill="none" strokeWidth="2"/><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M12 3v6M21 12h-6M12 21v-6M3 12h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>);}
-function TrophyIcon(){ return (<svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentColor" d="M17 3H7v2H4a2 2 0 0 0 2 2c0 3.53 2.61 6.43 6 6.92V17H9v2h6v-2h-3v-3.08c3.39-.49 6-3.39 6-6.92a2 2 0 0 0 2-2h-3V3zM6 7a4 4 0 0 1-2-3h2v3zm14-3a4 4 0 0 1-2 3V4h2z"/></svg>);}
-function LiveIcon(){ return (<svg width="16" height="16" viewBox="0 0 24 24"><rect x="3" y="5" width="14" height="14" rx="2" ry="2" stroke="currentColor" fill="none" strokeWidth="2"/><path d="M17 10l4-3v10l-4-3" fill="currentColor"/></svg>);}
-function BriefcaseIcon(){ return (<svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentColor" d="M10 4h4a2 2 0 0 1 2 2v1h4v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7h4V6a2 2 0 0 1 2-2Zm0 3V6h4v1h-4Z"/></svg>);}
+function BellIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24">
+      <path fill="currentColor" d="M12 22a2 2 0 0 0 2-2h-4a2 2 0 0 0 2 2Zm6-6v-5a6 6 0 1 0-12 0v5l-2 2v1h16v-1l-2-2Z" />
+    </svg>
+  );
+}
+function LoginIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24">
+      <path fill="currentColor" d="M10 17l5-5-5-5v3H3v4h7v3z" />
+      <path fill="currentColor" d="M20 3h-7v2h7v14h-7v2h7a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z" />
+    </svg>
+  );
+}
+function HomeIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24">
+      <path fill="currentColor" d="M12 3l10 9h-3v9h-6v-6H11v6H5v-9H2l10-9z" />
+    </svg>
+  );
+}
+function WheelIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" fill="none" strokeWidth="2" />
+      <circle cx="12" cy="12" r="2" fill="currentColor" />
+      <path d="M12 3v6M21 12h-6M12 21v-6M3 12h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+function TrophyIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24">
+      <path
+        fill="currentColor"
+        d="M17 3H7v2H4a2 2 0 0 0 2 2c0 3.53 2.61 6.43 6 6.92V17H9v2h6v-2h-3v-3.08c3.39-.49 6-3.39 6-6.92a2 2 0 0 0 2-2h-3V3zM6 7a4 4 0 0 1-2-3h2v3zm14-3a4 4 0 0 1-2 3V4h2z"
+      />
+    </svg>
+  );
+}
+function LiveIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24">
+      <rect x="3" y="5" width="14" height="14" rx="2" ry="2" stroke="currentColor" fill="none" strokeWidth="2" />
+      <path d="M17 10l4-3v10l-4-3" fill="currentColor" />
+    </svg>
+  );
+}
+function BriefcaseIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24">
+      <path fill="currentColor" d="M10 4h4a2 2 0 0 1 2 2v1h4v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7h4V6a2 2 0 0 1 2-2Zm0 3V6h4v1h-4Z" />
+    </svg>
+  );
+}
 
 /* ===== CSS ===== */
 const css = `
 :root{ --topH:64px; --menuH:48px }
-.hdr{ position:sticky; top:0; z-index:50; background:linear-gradient(180deg,#0b1224,#0e1a33); border-bottom:1px solid rgba(255,255,255,.08); }
-.hdr__in{ max-width:1200px; margin:0 auto; padding:0 16px; display:flex; flex-direction:column; gap:6px; }
-.top{ height:var(--topH); display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid rgba(255,255,255,.06); }
-.logoBtn img{ height:30px; filter:drop-shadow(0 0 10px rgba(0,229,255,.3)); }
-.live{ display:flex; align-items:center; gap:6px; font-weight:800; }
-.live .dot{ width:7px; height:7px; border-radius:50%; background:#ff2a2a; box-shadow:0 0 10px rgba(255,42,42,.85); animation:blink 1s infinite; }
-.live .txt{ font-size:12px; color:#ff5a5a; }
-.digits{ font-weight:900; color:#fff; font-size:13px; text-shadow:0 0 6px rgba(0,229,255,.3); }
+
+.hdr{
+  position:sticky; top:0; z-index:50;
+  background:linear-gradient(180deg,#0b1224,#0e1a33);
+  border-bottom:1px solid rgba(255,255,255,.08);
+}
+.hdr__in{
+  max-width:1200px; margin:0 auto; padding:0 16px;
+  display:flex; flex-direction:column; gap:6px;
+}
+
+/* ÜST BAR */
+.top{
+  height:var(--topH);
+  display:flex; align-items:center; justify-content:space-between;
+  border-bottom:1px solid rgba(255,255,255,.06);
+}
+.left{ display:flex; align-items:center; gap:10px; min-width:0 }
+.logoBtn{ display:inline-grid; place-items:center; background:transparent; border:none; cursor:pointer; padding:0 }
+.logoBtn img{ height:30px; display:block; filter:drop-shadow(0 0 10px rgba(0,229,255,.3)) }
+
+/* LIVE (referans görsele uygun) */
+.live{ display:flex; align-items:center; gap:8px; font-weight:900 }
+.live .liveDot{
+  width:10px; height:10px; border-radius:50%;
+  background:#34ff9a;
+  box-shadow:0 0 10px rgba(52,255,154,.9), 0 0 24px rgba(52,255,154,.6);
+}
+.live .liveText{
+  font-size:13px; letter-spacing:2px; font-weight:900;
+  background:linear-gradient(90deg,#ff7ad6 0%, #a5b8ff 40%, #34ff9a 100%);
+  -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+  text-transform:uppercase;
+}
+.live .liveCount{
+  font-size:14px; color:#ffffff; font-weight:900; letter-spacing:.4px;
+  text-shadow:0 0 10px rgba(0,229,255,.25);
+}
+
+/* SAĞ aksiyon butonları – köşeli */
 .actions{ display:flex; gap:10px }
-.chip{ display:flex; align-items:center; gap:6px; padding:0 12px; height:34px; border-radius:6px; font-weight:800; font-size:13px; border:1px solid rgba(255,255,255,.1); background:rgba(255,255,255,.06); color:#fff; }
+.chip{
+  display:flex; align-items:center; gap:6px;
+  padding:0 12px; height:34px; border-radius:6px;
+  font-weight:800; font-size:13px; color:#fff;
+  background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.1);
+}
 .chip svg{ width:14px; height:14px }
-.chip.ghost{ position:relative; }
-.chip.ghost .notif{ position:absolute; top:4px; right:4px; width:8px; height:8px; border-radius:50%; background:#ff4d6d; box-shadow:0 0 8px rgba(255,77,109,.6); }
-.chip.primary{ background:linear-gradient(90deg,#00e5ff,#4aa7ff); color:#001018; border-color:#0f6d8c; box-shadow:0 4px 12px rgba(0,229,255,.28); }
-.menu{ height:var(--menuH); display:flex; gap:8px; background:rgba(12,18,36,.55); border:1px solid rgba(255,255,255,.08); border-radius:8px; padding:4px 6px; }
-.mItem{ display:flex; align-items:center; gap:6px; padding:0 10px; border-radius:6px; font-size:13px; font-weight:700; color:#cfe3ff; text-decoration:none; }
+.chip:hover{ filter:brightness(1.06) }
+.chip.primary{
+  background:linear-gradient(90deg,#00e5ff,#4aa7ff); color:#001018; border-color:#0f6d8c;
+  box-shadow:0 4px 12px rgba(0,229,255,.28);
+}
+.chip.ghost{ position:relative }
+.chip.ghost .notif{
+  position:absolute; top:4px; right:4px; width:8px; height:8px; border-radius:50%;
+  background:#ff4d6d; box-shadow:0 0 8px rgba(255,77,109,.6);
+}
+
+/* ALT MENÜ */
+.menu{
+  height:var(--menuH);
+  display:flex; align-items:center; gap:8px;
+  background:rgba(12,18,36,.55); border:1px solid rgba(255,255,255,.08);
+  border-radius:8px; padding:4px 6px; margin-bottom:6px;
+}
+.mItem{
+  display:flex; align-items:center; gap:6px;
+  padding:0 10px; height:36px; border-radius:6px;
+  font-size:13px; font-weight:700; color:#cfe3ff; text-decoration:none;
+}
 .mItem.active{ background:linear-gradient(90deg,#00e5ff,#4aa7ff); color:#001018; }
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
 `;
