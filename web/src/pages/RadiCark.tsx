@@ -46,7 +46,7 @@ export default function RadiCark() {
         setLoading(true);
         const r1 = await fetch(`${API}/api/prizes`);
         if (!r1.ok) throw new Error(`HTTP ${r1.status}`);
-        // SIRALAMA YOK → backend indexiyle eşleşsin
+        // SIRALAMA YOK → backend indexiyle birebir
         const rows: Prize[] = await r1.json();
         if (!alive) return;
         setBasePrizes(rows || []);
@@ -106,15 +106,15 @@ export default function RadiCark() {
         </h1>
       </header>
 
-      {/* Sadece kartların döndüğü bölüm – çerçeve ve logo bunun içinde */}
+      {/* Kartların döndüğü bölüm */}
       <section className="reelWrap">
-        {/* LED düz çizgiler → kartlara değmeyecek şekilde kenara oturtuldu */}
+        {/* LED düz çizgiler – tam üst/alt, kartlara değmez */}
         <div className="uiFrame" aria-hidden />
 
-        {/* LOGO – oyun UI içinde, kartların ARKASINDA */}
+        {/* LOGO – kartların arkasında */}
         <div className="bgLogoIn" aria-hidden />
 
-        {/* Seçici düz çizgi */}
+        {/* Seçici çizgi (düz) */}
         <div className="selectLine" />
 
         <div
@@ -220,29 +220,31 @@ const css = `
 /* Reel alanı – yalnızca kartların döndüğü bölüm çerçeveli */
 .reelWrap{
   position:relative;height:${VISIBLE * ITEM_H}px;overflow:hidden;border-radius:18px;
-  background:transparent;border:1px solid rgba(255,255,255,.14);
+  background:transparent;border:1px solid rgba(255,255,255,.14); z-index:5;
+  padding:8px 0; /* LED çizgileri için iç boşluk */
 }
 
-/* LED düz çizgiler – çerçevenin tam KENARINDA, kart üstüne taşmaz */
+/* LED düz çizgiler – çerçevenin içinde, kartlara değmez */
 .uiFrame{
-  position:absolute; inset:0; border-radius:18px; pointer-events:none; z-index:1;
+  position:absolute; inset:8px 0; /* üst-alt iç boşluğun sınırı */
+  border-radius:18px; pointer-events:none; z-index:6;
 }
 .uiFrame::before,
 .uiFrame::after{
-  content:""; position:absolute; left:10px; right:10px; height:4px; border-radius:999px;
+  content:""; position:absolute; left:12px; right:12px; height:4px; border-radius:999px;
   background: var(--led-color);
   box-shadow:0 0 8px var(--led-glow), 0 0 14px var(--led-glow);
   animation:ledPulse 1.15s ease-in-out infinite;
 }
-.uiFrame::before{ top:-6px }     /* ÜST çizgiyi çerçevenin DIŞINA taşı */
-.uiFrame::after { bottom:-6px }  /* ALT çizgiyi çerçevenin DIŞINA taşı */
+.uiFrame::before{ top:0 }     /* tam iç kenar */
+.uiFrame::after { bottom:0 }  /* tam iç kenar */
 .slot.is-idle{ --led-color:#0dff7a; --led-glow:rgba(13,255,122,.55) }
 .slot.is-spinning{ --led-color:#ff315f; --led-glow:rgba(255,49,95,.55) }
 @keyframes ledPulse{ 0%,100%{opacity:1} 50%{opacity:.5} }
 
 /* LOGO – oyun UI içinde, kartların ARKASINDA */
 .bgLogoIn{
-  position:absolute; inset:0; z-index:0; pointer-events:none;
+  position:absolute; inset:0; z-index:5; pointer-events:none;
   background-image:url('https://cdn.prod.website-files.com/68ad80d65417514646edf3a3/68adb798dfed270f5040c714_logowhite.png');
   background-repeat:no-repeat; background-position:center; background-size:44vmin;
   opacity:.22; animation:logoPulse 3.4s ease-in-out infinite;
@@ -250,7 +252,7 @@ const css = `
 @keyframes logoPulse{ 0%{transform:scale(0.94)} 50%{transform:scale(1.06)} 100%{transform:scale(0.94)} }
 
 /* Reel içerik */
-.reel{position:absolute;left:0;right:0;top:0;will-change:transform;z-index:2}
+.reel{position:absolute;left:0;right:0;top:0;will-change:transform;z-index:7}
 
 /* Kart: cam + çok saydam tint; DIŞ kenarda neon (daha kalın ve belirgin) */
 .card{
@@ -260,7 +262,7 @@ const css = `
     linear-gradient(180deg, hsla(var(--tint,200) 95% 55% / .10), hsla(var(--tint,200) 95% 55% / .04)),
     linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.04));
   backdrop-filter: blur(3px);
-  position:relative;overflow:hidden; z-index:2;
+  position:relative;overflow:hidden; z-index:7;
 }
 .neonBorder{
   content:"";position:absolute;inset:0;border-radius:16px;padding:3.5px;pointer-events:none;
@@ -278,7 +280,7 @@ const css = `
 .txt{position:relative;z-index:2}
 .card.win{transform:scale(1.08);box-shadow:0 0 26px rgba(0,229,255,.65), 0 0 36px rgba(0,229,255,.35)}
 .winBadge{
-  position:absolute; top:8px; right:10px; z-index:3;
+  position:absolute; top:8px; right:10px; z-index:8;
   background:linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.06));
   border:1px solid rgba(0,229,255,.65); color:#e8fbff; border-radius:10px;
   padding:4px 10px; font-size:12px; font-weight:900; letter-spacing:.4px;
@@ -287,7 +289,7 @@ const css = `
 
 /* Seçici çizgi (düz) – en üstte */
 .selectLine{
-  position:absolute; left:8%; right:8%; top:50%; height:2px; z-index:4;
+  position:absolute; left:8%; right:8%; top:50%; height:2px; z-index:8;
   background:linear-gradient(90deg,transparent,#00e5ff,transparent);
   box-shadow:0 0 12px #00e5ff; border-radius:2px;
 }
