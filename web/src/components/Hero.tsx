@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 
 /**
- * HERO — Sol: otomatik kayan banner • Sağ: metrik kartları (neon şerit + sağa hizalı sayı)
+ * HERO — Sol: otomatik kayan banner • Sağ: metrik kartları (neon bordür + sağa hizalı sayı)
  * API:
  *  - GET  /api/home/banners  -> [{image_url}]
  *  - GET  /api/home/stats    -> { total_min/max, dist_min/max, part_min/max }
- * Görsel akış/istatistik mantığı aynen; sadece layout/stiller değişti.
+ * Görsel akış/istatistik mantığı aynen; sadece layout/stiller güncellendi.
  */
 
 const API = import.meta.env.VITE_API_BASE_URL;
@@ -95,34 +95,16 @@ export default function Hero() {
         <div className="shade" />
       </div>
 
-      {/* SAĞ — metrik kartları (neon bordürlü, sağa hizalı sayılar) */}
+      {/* SAĞ — metrik kartları (neon bordür + sağa hizalı sayılar) */}
       <div className="right">
-        <MetricCard tone="gold" label="Toplam Ödül" value={total} suffix=" ₺" />
-        <MetricCard tone="aqua" label="Dağıtılan Ödül" value={dist} suffix=" ₺" />
-        <MetricCard tone="vio"  label="Katılımcı" value={part} suffix="" />
+        <MetricCard tone="gold" label="Toplam Ödül"    value={total} suffix=" ₺" />
+        <MetricCard tone="aqua" label="Dağıtılan Ödül" value={dist}  suffix=" ₺" />
+        <MetricCard tone="vio"  label="Katılımcı"      value={part}  suffix=""   />
       </div>
 
       <style>{css}</style>
     </section>
   );
-}
-
-/* ------- 10 dk artış ------- */
-function useTenMinuteIncrement(
-  setValue: (u: (prev: number) => number) => void,
-  min: number,
-  max: number
-){
-  const timerRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    const step = () => {
-      const inc = 10 + Math.floor(Math.random() * 291); // 10..300
-      setValue(prev => clamp(prev + inc, min, max));
-    };
-    timerRef.current = window.setInterval(step, 600_000); // 10 dk
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [min, max, setValue]);
 }
 
 /* ------- Metric Card ------- */
@@ -144,6 +126,24 @@ function MetricCard({
       </div>
     </div>
   );
+}
+
+/* ------- 10 dk artış (TEK tanım) ------- */
+function useTenMinuteIncrement(
+  setValue: (u: (prev: number) => number) => void,
+  min: number,
+  max: number
+){
+  const timerRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    const step = () => {
+      const inc = 10 + Math.floor(Math.random() * 291);
+      setValue(prev => clamp(prev + inc, min, max));
+    };
+    timerRef.current = window.setInterval(step, 600_000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [min, max, setValue]);
 }
 
 /* ------- Fallback görseller ------- */
@@ -235,20 +235,3 @@ const css = `
   .mCard{ padding:14px 12px }
 }
 `;
-/* ---- hooks ---- */
-function useTenMinuteIncrement(
-  setValue: (u: (prev: number) => number) => void,
-  min: number,
-  max: number
-){
-  const timerRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    const step = () => {
-      const inc = 10 + Math.floor(Math.random() * 291);
-      setValue(prev => clamp(prev + inc, min, max));
-    };
-    timerRef.current = window.setInterval(step, 600_000);
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [min, max, setValue]);
-}
