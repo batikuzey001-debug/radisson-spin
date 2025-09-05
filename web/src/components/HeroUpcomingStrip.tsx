@@ -28,23 +28,35 @@ export default function HeroUpcomingStrip({ limit = 30 }: { limit?: number }) {
     async function load() {
       try {
         const safeLimit = Math.min(Math.max(limit, 1), 50);
+
+        // 1) Önce geniş featured (whitelist kapalı)
         const q = new URLSearchParams({
           limit: String(safeLimit),
-          days: "1",
-          show_all: "0",
+          show_all: "1",
         });
         const r = await fetch(`${API}/api/live/featured?${q.toString()}`);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const js: FeaturedResp = await r.json();
-        const live = Array.isArray(js?.live) ? js.live : [];
+        let live: LiveCard[] = Array.isArray(js?.live) ? js.live : [];
 
+        // 2) Boşsa /live/matches fallback
+        if (!live.length) {
+          const r2 = await fetch(`${API}/api/live/matches?limit=${safeLimit}`);
+          if (r2.ok) {
+            const js2: LiveCard[] = await r2.json();
+            live = Array.isArray(js2) ? js2 : [];
+          }
+        }
+
+        // 3) Filtre: minute >= 0 (bazı sağlayıcılar 0 döndürür)
         const normalized = live
-          .filter((m) => (m.minute ?? 0) > 0)
+          .filter((m) => (m.minute ?? -1) >= 0)
           .map((m) => ({
             ...m,
-            scoreH: typeof m.scoreH === "number" ? m.scoreH : 0,
-            scoreA: typeof m.scoreA === "number" ? m.scoreA : 0,
+            scoreH: Number.isFinite(m.scoreH as number) ? (m.scoreH as number) : 0,
+            scoreA: Number.isFinite(m.scoreA as number) ? (m.scoreA as number) : 0,
           }))
+          // Sıralama: dakika ↓, toplam gol ↓
           .sort((a, b) => {
             const mdiff = (b.minute ?? 0) - (a.minute ?? 0);
             if (mdiff !== 0) return mdiff;
