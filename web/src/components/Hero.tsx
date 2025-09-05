@@ -1,11 +1,11 @@
-// web/src/components/Hero.tsx
 import { useEffect, useRef, useState } from "react";
 
 /**
- * HERO — (final / boyutlar korunur)
- * - Sol: otomatik kayan banner (gösterge yok)
- * - Sağ: 3 metrik TEK format, TEK boy. Son 3 basamak özel DEĞİL.
- * - Artış: 10 dakikada 1 kez +10..+300 arası (tek adım). Backend uçları korunur.
+ * HERO — Sol: otomatik kayan banner • Sağ: metrik kartları (neon şerit + sağa hizalı sayı)
+ * API:
+ *  - GET  /api/home/banners  -> [{image_url}]
+ *  - GET  /api/home/stats    -> { total_min/max, dist_min/max, part_min/max }
+ * Görsel akış/istatistik mantığı aynen; sadece layout/stiller değişti.
  */
 
 const API = import.meta.env.VITE_API_BASE_URL;
@@ -35,7 +35,7 @@ export default function Hero() {
   const [dist,  setDist]  = useState(420_000);
   const [part,  setPart]  = useState(480_000);
 
-  // SOL — bannerlar
+  /* ------- sol: bannerlar ------- */
   useEffect(() => {
     fetch(`${API}/api/home/banners`)
       .then(r => r.json())
@@ -48,14 +48,13 @@ export default function Hero() {
       .catch(() => setSlides(FALLBACKS.map((src, i) => ({ id: i, image_url: src }))));
   }, []);
 
-  // Banner otomatik değişim (6 sn)
   useEffect(() => {
     if (!slides.length) return;
     const t = window.setInterval(() => setIdx(i => (i + 1) % slides.length), 6000);
     return () => window.clearInterval(t);
   }, [slides, idx]);
 
-  // min/max + başlangıç değerleri
+  /* ------- min/max + başlangıç ------- */
   useEffect(() => {
     (async () => {
       try {
@@ -77,10 +76,7 @@ export default function Hero() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /**
-   * 10 dakikada 1 kez +10..+300 artış (tek adım), max'ı geçmez.
-   * Not: Sadece sayı mantığı; boyutlar/stiller aynı kalır.
-   */
+  /* ------- 10 dakikada tek adım artış (10..300) ------- */
   useTenMinuteIncrement(setTotal, ranges.total_min, ranges.total_max);
   useTenMinuteIncrement(setDist,  ranges.dist_min,  ranges.dist_max);
   useTenMinuteIncrement(setPart,  ranges.part_min,  ranges.part_max);
@@ -99,11 +95,11 @@ export default function Hero() {
         <div className="shade" />
       </div>
 
-      {/* SAĞ — tek set metrik (boyutlar AYNI) */}
+      {/* SAĞ — metrik kartları (neon bordürlü, sağa hizalı sayılar) */}
       <div className="right">
-        <StatBlock label="Toplam Ödül"    value={total} suffix=" ₺" tone="gold" />
-        <StatBlock label="Dağıtılan Ödül" value={dist}  suffix=" ₺" tone="aqua" />
-        <StatBlock label="Katılımcı"      value={part}  suffix=""   tone="vio"  />
+        <MetricCard tone="gold" label="Toplam Ödül" value={total} suffix=" ₺" />
+        <MetricCard tone="aqua" label="Dağıtılan Ödül" value={dist} suffix=" ₺" />
+        <MetricCard tone="vio"  label="Katılımcı" value={part} suffix="" />
       </div>
 
       <style>{css}</style>
@@ -111,7 +107,7 @@ export default function Hero() {
   );
 }
 
-/* ---- 10 dakikada 1 artış ---- */
+/* ------- 10 dk artış ------- */
 function useTenMinuteIncrement(
   setValue: (u: (prev: number) => number) => void,
   min: number,
@@ -129,34 +125,41 @@ function useTenMinuteIncrement(
   }, [min, max, setValue]);
 }
 
-/* ---- Düz metinli metrik bloğu (son 3 basamak ÖZEL DEĞİL) ---- */
-function StatBlock({
-  label, value, suffix, tone,
+/* ------- Metric Card ------- */
+function MetricCard({
+  label, value, suffix, tone
 }: { label: string; value: number; suffix: string; tone: "gold"|"aqua"|"vio" }) {
   return (
-    <div className={`block ${tone}`} title={`${label}: ${fmt(value)}${suffix}`}>
-      <div className="blab">{label}</div>
-      <div className="bval">
-        <span className="num">{fmt(value)}</span>
-        <span className="suf">{suffix}</span>
+    <div className={`mCard ${tone}`} title={`${label}: ${fmt(value)}${suffix}`}>
+      {/* neon bordür */}
+      <span className="neonBar top" aria-hidden />
+      <span className="neonBar bot" aria-hidden />
+
+      <div className="row">
+        <div className="lbl">{label}</div>
+        <div className="val">
+          <span className="num">{fmt(value)}</span>
+          <span className="suf">{suffix}</span>
+        </div>
       </div>
     </div>
   );
 }
 
-/* ---- Fallback görseller ---- */
+/* ------- Fallback görseller ------- */
 const FALLBACKS = [
   "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?q=80&w=2000&auto=format&fit=crop",
   "https://images.unsplash.com/photo-1518609571773-39b7d303a87b?q=80&w=2000&auto=format&fit=crop",
   "https://images.unsplash.com/photo-1559703248-dcaaec9fab78?q=80&w=2000&auto=format&fit=crop",
 ];
 
-/* ---- Stil (İLK GÖNDERDİĞİN BOYUTLAR) ---- */
+/* ------- Stil ------- */
 const css = `
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@700;800;900&display=swap');
 
+/* Oran: görsel biraz daha büyük */
 .heroSplit{
-  display:grid; grid-template-columns: 1.1fr .9fr; gap:14px;
+  display:grid; grid-template-columns: 1.2fr .8fr; gap:14px;
   min-height:320px; border-radius:18px; overflow:hidden;
   font-family:'Poppins',system-ui,Segoe UI,Roboto,Arial,sans-serif;
 }
@@ -164,8 +167,8 @@ const css = `
   .heroSplit{ grid-template-columns: 1fr; }
 }
 
-/* Sol: Banner (gösterge yok, otomatik değişir) */
-.left{ position:relative; min-height:260px; border-radius:14px; overflow:hidden; }
+/* Sol banner */
+.left{ position:relative; min-height:320px; border-radius:14px; overflow:hidden; }
 .bg{
   position:absolute; inset:0; background-image:var(--img);
   background-size:cover; background-position:center;
@@ -178,38 +181,74 @@ const css = `
   background:linear-gradient(180deg, rgba(6,10,22,.18) 0%, rgba(6,10,22,.84) 66%, rgba(6,10,22,.92) 100%);
 }
 
-/* Sağ: Tam dolduran, çerçevesiz metrikler */
+/* Sağ metrik sütunu */
 .right{
-  display:flex; flex-direction:column; justify-content:space-evenly; gap:8px;
-  padding:8px 12px;
+  display:flex; flex-direction:column; justify-content:space-between; gap:12px;
+  padding:6px 8px;
 }
-.block{
-  display:flex; flex-direction:column; gap:6px;
-}
-.blab{
-  font-size:clamp(12px,1.8vw,14px);
-  letter-spacing:.6px; color:#a7bddb;
-  text-transform:uppercase;
-}
-.bval{
-  display:flex; align-items:flex-end; flex-wrap:wrap; gap:4px;
-  font-weight:900; color:#e9fbff;
-  text-shadow:0 0 16px rgba(0,229,255,.30);
-  font-size: clamp(28px, 6vw, 46px); /* BOYUTLAR AYNI */
-  line-height:1.06;
 
-  /* Tüm rakamlar aynı genişlikte → format tek tip */
+/* Metric Card (neon bordür + cam arka plan) */
+.mCard{
+  position:relative; border-radius:16px; overflow:hidden;
+  background: linear-gradient(180deg, rgba(12,16,28,.55), rgba(12,16,28,.35));
+  border:1px solid rgba(255,255,255,.10);
+  box-shadow: 0 10px 26px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.04);
+  padding:18px 16px;
+}
+/* üst/alt neon çizgi (tone’a göre) */
+.mCard .neonBar{
+  position:absolute; left:12px; right:12px; height:3px; border-radius:3px; filter:blur(.3px);
+  background:linear-gradient(90deg, rgba(255,255,255,0), hsla(var(--tone,190),95%,60%,1), rgba(255,255,255,0));
+}
+.mCard .neonBar.top{ top:8px }
+.mCard .neonBar.bot{ bottom:8px }
+
+/* satır yerleşimi: metin solda, sayı sağda */
+.mCard .row{
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+}
+.mCard .lbl{
+  font-size:clamp(12px,1.8vw,14px);
+  letter-spacing:.6px; color:#a7bddb; text-transform:uppercase;
+}
+.mCard .val{
+  display:flex; align-items:flex-end; flex-wrap:wrap; gap:4px;
+  color:#e9fbff; font-weight:900; line-height:1.06;
+  /* tek tip boyut – sağa hizalı büyük sayı */
+  font-size: clamp(28px, 6vw, 46px);
   font-variant-numeric: tabular-nums lining-nums;
   font-feature-settings: "tnum" 1, "lnum" 1;
+  text-shadow:0 0 16px rgba(0,229,255,.30);
+  justify-content:flex-end;
 }
-.block.gold .bval{ text-shadow:0 0 16px rgba(255,196,0,.30) }
-.block.aqua .bval{ text-shadow:0 0 16px rgba(0,229,255,.30) }
-.block.vio  .bval{ text-shadow:0 0 16px rgba(156,39,176,.28) }
+.mCard .val .num{ letter-spacing:.4px }
+.mCard .val .suf{ font-size:.6em; opacity:.95; margin-left:2px }
 
-.num{ letter-spacing:.4px }
-.suf{ font-size:.6em; opacity:.95; margin-left:2px }
+/* ton renkleri */
+.mCard.gold{ --tone: 48 }   /* altın */
+.mCard.aqua{ --tone: 190 }  /* aqua */
+.mCard.vio { --tone: 280 }  /* mor */
 
+/* Küçük ekran */
 @media(max-width:900px){
-  .right{ padding:6px 8px }
+  .left{ min-height:280px }
+  .mCard{ padding:14px 12px }
 }
 `;
+/* ---- hooks ---- */
+function useTenMinuteIncrement(
+  setValue: (u: (prev: number) => number) => void,
+  min: number,
+  max: number
+){
+  const timerRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    const step = () => {
+      const inc = 10 + Math.floor(Math.random() * 291);
+      setValue(prev => clamp(prev + inc, min, max));
+    };
+    timerRef.current = window.setInterval(step, 600_000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [min, max, setValue]);
+}
