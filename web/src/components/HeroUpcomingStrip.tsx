@@ -11,7 +11,7 @@ type MatchCard = {
   leagueFlag?: string;
   home: Team;
   away: Team;
-  kickoff?: string;
+  kickoff?: string; // ISO (+00:00)
 };
 type FeaturedResp = { live?: any[]; upcoming?: MatchCard[]; debug?: any };
 
@@ -34,7 +34,7 @@ function isWCQ_EU(name = "") {
     n.includes("world cup - qualification europe") ||
     n.includes("world cup - qual. uefa") ||
     n.includes("world cup qualification europe") ||
-    n.includes("wc qual") && n.includes("uefa")
+    (n.includes("wc qual") && n.includes("uefa"))
   );
 }
 function priorityRank(leagueName: string) {
@@ -52,10 +52,10 @@ function isPriority(name: string) {
 function utcTomorrowBounds() {
   const now = new Date();
   const utc0 = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const start = new Date(utc0); // bugün 00:00 UTC
-  start.setUTCDate(start.getUTCDate() + 1); // yarın 00:00 UTC
+  const start = new Date(utc0);
+  start.setUTCDate(start.getUTCDate() + 1);      // yarın 00:00 UTC
   const end = new Date(start);
-  end.setUTCDate(end.getUTCDate() + 1); // ertesi 00:00 UTC
+  end.setUTCDate(end.getUTCDate() + 1);          // ertesi 00:00 UTC
   return { startUTC: start.getTime(), endUTC: end.getTime() };
 }
 
@@ -67,11 +67,14 @@ export default function HeroUpcomingStrip({ limit = 24 }: { limit?: number }) {
     let alive = true;
     (async () => {
       try {
+        // Backend: /featured limit <= 50 zorunlu → burada sıkıştır.
+        const safeLimit = Math.min(Math.max(limit, 1), 50);
+
         // Geniş pencere + tüm ligler → FE tarafında kesin filtre
         const q = new URLSearchParams({
-          days: "2",           // yarın da kesin dahil olsun
-          limit: "160",        // daha fazla maç getir
-          show_all: "1",       // whitelist kapalı
+          days: "2",                 // yarın da kesin dahil
+          limit: String(safeLimit),  // 422 önler
+          show_all: "1",             // whitelist kapalı (tüm ligler)
         });
         const r = await fetch(`${API}/api/live/featured?${q.toString()}`);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -86,7 +89,7 @@ export default function HeroUpcomingStrip({ limit = 24 }: { limit?: number }) {
           return Number.isFinite(ts) && ts >= startUTC && ts < endUTC;
         });
 
-        // 2) Öncelikli ligler
+        // 2) Öncelikli ligler (UCL/UEL/UECL/WCQ UEFA)
         const prio = tomorrowAll.filter((m) => isPriority(m.league));
 
         // 3) Sıralama: kickoff ↑, sonra lig önceliği
@@ -97,11 +100,9 @@ export default function HeroUpcomingStrip({ limit = 24 }: { limit?: number }) {
           return priorityRank(a.league) - priorityRank(b.league);
         });
 
-        const sliced = base.slice(0, limit);
-
         if (alive) {
-          setItems(sliced);
-          setErr(sliced.length ? "" : "Yarın için öncelikli maç bulunamadı.");
+          setItems(base.slice(0, safeLimit));
+          setErr(base.length ? "" : "Yarın için öncelikli maç bulunamadı.");
         }
       } catch (e: any) {
         if (alive) {
@@ -323,7 +324,7 @@ const css = `
 .tbPh{ width:34px; height:34px; border-radius:999px; display:grid; place-items:center; background:rgba(255,255,255,.12); color:#001018; font-weight:1000 }
 .tbName{
   text-align:center; font-size:12px; font-weight:800; color:#eef4ff;
-  line-height:1.15; max-height: 2.3em; /* ~2 satır */
+  line-height:1.15; max-height: 2.3em;
   display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
   overflow:hidden; text-overflow:clip;
   white-space:normal; word-break:break-word; overflow-wrap:anywhere;
