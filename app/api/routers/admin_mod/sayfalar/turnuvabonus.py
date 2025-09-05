@@ -173,7 +173,7 @@ def page_turnuvabonus(
         form.append(
             f"<label class='field'><span>Ödül Miktarı (₺)</span>"
             f"<input name='prize_amount' type='number' inputmode='numeric' min='0' step='1' "
-            f"value='{_e(str(getattr(editing, \"prize_amount\", \"\") or \"\"))}' placeholder='örn: 100000'>"
+            f"value='{_e(str(getattr(editing, 'prize_amount', '') or ''))}' placeholder='örn: 100000'>"
             f"</label>"
         )
 
