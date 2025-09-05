@@ -1,12 +1,11 @@
 // web/src/components/QuickBonus.tsx
-import { useEffect, useMemo, useState } from "react";
-import { getActivePromos, type PromoActive } from "../api/promos";
+import { useEffect, useState } from "react";
+import { type PromoActive } from "../api/promos";
 
 /**
- * QuickBonus (spx tasarıma uyarlanmış)
- * - Backend aynı: /api/promos/active?limit=...&include_future=1&window_hours=48
- * - Veriler: p.title, p.image_url, p.priority (Max), p.cta_url, p.state, p.seconds_left, p.seconds_to_start
- * - Tasarım: spx-* kartları (yalnızca görsel; script yok)
+ * QuickBonus (spx tasarım, sola yaslı)
+ * - Backend aynı endpoint: /api/promos/active?limit=...&include_future=1&window_hours=48
+ * - Kartlar artık sol hizalı (justify-content:flex-start)
  */
 
 type PromoEx = PromoActive & {
@@ -17,24 +16,19 @@ type PromoEx = PromoActive & {
 export default function QuickBonus({ limit = 6 }: { limit?: number }) {
   const [rows, setRows] = useState<PromoEx[]>([]);
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
+  const [err,   setErr]   = useState("");
 
   useEffect(() => {
     let alive = true;
     setLoading(true);
     fetch(`${import.meta.env.VITE_API_BASE_URL}/api/promos/active?limit=${limit}&include_future=1&window_hours=48`)
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-      .then((arr: PromoEx[]) => {
-        if (!alive) return;
-        setRows(Array.isArray(arr) ? arr : []);
-        setErr("");
-      })
-      .catch(e => { if (alive) { setErr(e?.message ?? "Hata"); setRows([]); } })
-      .finally(() => { if (alive) setLoading(false); });
+      .then((arr: PromoEx[]) => alive && (setRows(Array.isArray(arr) ? arr : []), setErr("")))
+      .catch(e => alive && (setErr(e?.message ?? "Hata"), setRows([])))
+      .finally(() => alive && setLoading(false));
     return () => { alive = false; };
   }, [limit]);
 
-  // Geri sayım tick (yalnızca değer varsa ilerlet)
   useEffect(() => {
     if (!rows.length) return;
     const t = setInterval(() => {
@@ -158,7 +152,7 @@ function Skeleton() {
   );
 }
 
-/* ---------------- CSS (Sadece görsel) ---------------- */
+/* ---------------- CSS (sola yaslı hale getirildi) ---------------- */
 const css = `
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@700;800;900&family=Rajdhani:wght@700;800;900&display=swap');
 
@@ -174,9 +168,14 @@ const css = `
 .bonusHead h2{margin:0;font-size:18px;color:#eaf2ff}
 .muted{color:#9fb1cc;font-size:13px}
 
-/* Container */
+/* Container (SOL HİZALI) */
 .spx-wrap{
-  display:flex;flex-wrap:wrap;gap:20px;justify-content:center;
+  width:100%;
+  display:flex;
+  flex-wrap:wrap;
+  gap:20px;
+  justify-content:flex-start;    /* <<< center -> flex-start */
+  align-content:flex-start;      /* çok satırda da sola toplanır */
   font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif
 }
 
@@ -231,7 +230,7 @@ const css = `
 }
 @keyframes pulseDot{0%,100%{transform:scale(1)}50%{transform:scale(1.25)}}
 
-/* Sayaç (metin backend'den gelir) */
+/* Sayaç */
 .spx-timer{margin:2px 0 6px}
 .spx-time{
   font-family:Rajdhani,system-ui,sans-serif;font-weight:900;font-size:30px;letter-spacing:1.2px;color:#f2f7ff;
