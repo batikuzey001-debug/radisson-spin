@@ -3,11 +3,45 @@
 <html lang="tr">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>App</title>
+
+    <!-- 1) Ağ el sıkışmalarını önden yap: CDN + Google Fonts -->
+    <link rel="preconnect" href="https://cdn.prod.website-files.com" crossorigin />
+    <link rel="dns-prefetch" href="https://cdn.prod.website-files.com" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="dns-prefetch" href="https://fonts.gstatic.com" />
+
+    <!-- 2) Fonts – render’ı bloklamadan yükle -->
+    <link
+      rel="preload"
+      as="style"
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@800;900&display=swap"
+      onload="this.onload=null;this.rel='stylesheet'"
+    />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Poppins:wght@800;900&display=swap"
+      />
+    </noscript>
+
+    <!-- 3) Koyu arka plan (ilk boyamada beyaz flaşı engelle) -->
+    <style>
+      html, body, #root { height: 100%; margin: 0; }
+      body { background: #0b1224; color: #eaf2ff; }
+    </style>
+
+    <!-- (Opsiyonel) Karanlık renk şeması ipucu -->
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0b1224" />
   </head>
   <body>
     <div id="root"></div>
+    <!-- Vite giriş noktası -->
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
