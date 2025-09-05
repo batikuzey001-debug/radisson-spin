@@ -17,26 +17,3 @@ export default function Home() {
   );
 }
 
-const css = `
-.home{
-  max-width:1200px;
-  margin:0 auto;
-  padding:16px;
-}
-
-/* Hero boyutunu standartla */
-.heroSection{
-  margin-bottom:24px;
-}
-.heroSection .heroSplit{
-  min-height:300px;        /* fazla büyümeyi engeller */
-  height:auto;             /* esnek kalsın */
-  border-radius:16px;
-}
-
-@media(max-width:900px){
-  .heroSection .heroSplit{
-    min-height:240px;
-  }
-}
-`;
