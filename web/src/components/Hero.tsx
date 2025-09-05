@@ -2,12 +2,10 @@
 import { useEffect, useRef, useState } from "react";
 
 /**
- * HERO (revamp)
- * - SOL: otomatik kayan banner (gösterge yok)
- * - SAĞ: üç metrik aynı görsel ağırlıkta, eşit yükseklikte grid satırlarıyla alanı doldurur
- * - Tipografi tek ve tutarlı; tüm rakamlarda tabular-nums → boy farkı ve zıplama yok
- * - Yalnız son 3 basamak "ileri yönde dijital roll" animasyonu (taşıma hissi, hafif motion-blur)
- * - Backend uçları değişmedi: /api/home/banners ve /api/home/stats
+ * HERO — (final / boyutlar korunur)
+ * - Sol: otomatik kayan banner (gösterge yok)
+ * - Sağ: 3 metrik TEK format, TEK boy. Son 3 basamak özel DEĞİL.
+ * - Artış: 10 dakikada 1 kez +10..+300 arası (tek adım). Backend uçları korunur.
  */
 
 const API = import.meta.env.VITE_API_BASE_URL;
@@ -17,29 +15,11 @@ type HeroStats = {
   dist_min:  number; dist_max:  number;
   part_min:  number; part_max:  number;
 };
-type Banner = { id: string|number; image_url: string };
+type Banner = { id: string | number; image_url: string };
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const lerp  = (a: number, b: number, t: number)   => a + (b - a) * t;
 const fmt   = (n: number) => new Intl.NumberFormat("tr-TR").format(Math.max(0, Math.floor(n)));
-
-function splitLast3(n: number) {
-  const s = fmt(n);
-  const digits = s.replace(/\./g, "");
-  const suffix3 = digits.slice(-3) || "000";
-  const prefixDigits = digits.slice(0, Math.max(0, digits.length - 3));
-  // Prefix boşsa 0 gösterme; görsel tutarlılık için lidersiz yaz (örn. ".123")
-  const prefix = prefixDigits ? fmt(Number(prefixDigits)) : "";
-  return { prefix, suffix3 };
-}
-
-/** Yumuşak drift aralığı */
-function nextDrift(prev: number, min: number, max: number, amount = 0.015) {
-  const center = (min + max) / 2;
-  const toward = prev + (center - prev) * 0.18;
-  const jitter = (Math.random() - 0.5) * ((max - min) * amount);
-  return clamp(toward + jitter, min, max);
-}
 
 export default function Hero() {
   const [slides, setSlides] = useState<Banner[]>([]);
@@ -50,6 +30,7 @@ export default function Hero() {
     dist_min:    200_000,  dist_max:   1_200_000,
     part_min:    300_000,  part_max:     800_000,
   });
+
   const [total, setTotal] = useState(72_000_000);
   const [dist,  setDist]  = useState(420_000);
   const [part,  setPart]  = useState(480_000);
@@ -67,14 +48,14 @@ export default function Hero() {
       .catch(() => setSlides(FALLBACKS.map((src, i) => ({ id: i, image_url: src }))));
   }, []);
 
-  // Banner otomatik değişim
+  // Banner otomatik değişim (6 sn)
   useEffect(() => {
     if (!slides.length) return;
     const t = window.setInterval(() => setIdx(i => (i + 1) % slides.length), 6000);
     return () => window.clearInterval(t);
   }, [slides, idx]);
 
-  // İLK yükleme: min/max al
+  // min/max + başlangıç değerleri
   useEffect(() => {
     (async () => {
       try {
@@ -96,51 +77,33 @@ export default function Hero() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // SÜREKLİ drift (akışkan)
-  useEffect(() => {
-    const t = setInterval(() => {
-      setTotal(p => nextDrift(p, ranges.total_min, ranges.total_max, 0.010));
-      setDist (p => nextDrift(p, ranges.dist_min,  ranges.dist_max,  0.016));
-      setPart (p => nextDrift(p, ranges.part_min,  ranges.part_max,  0.008));
-    }, 5000);
-    return () => clearInterval(t);
-  }, [ranges]);
+  /**
+   * 10 dakikada 1 kez +10..+300 artış (tek adım), max'ı geçmez.
+   * Not: Sadece sayı mantığı; boyutlar/stiller aynı kalır.
+   */
+  useTenMinuteIncrement(setTotal, ranges.total_min, ranges.total_max);
+  useTenMinuteIncrement(setDist,  ranges.dist_min,  ranges.dist_max);
+  useTenMinuteIncrement(setPart,  ranges.part_min,  ranges.part_max);
 
   return (
-    <section className="hero-prem" aria-label="Hero alanı">
-      {/* SOL — Banner */}
-      <div className="hp-left">
+    <section className="heroSplit" aria-label="Hero alanı">
+      {/* SOL — banner */}
+      <div className="left">
         {slides.map((b, i) => (
           <div
             key={b.id}
-            className={`hp-bg ${i === idx ? "active" : ""}`}
+            className={`bg ${i === idx ? "active" : ""}`}
             style={{ ["--img" as any]: `url('${b.image_url}')` }}
           />
         ))}
-        <div className="hp-shade"/>
-        <div className="hp-edge" />
+        <div className="shade" />
       </div>
 
-      {/* SAĞ — Premium metrikler (eşit yükseklikte 3 satır) */}
-      <div className="hp-right">
-        <Metric
-          label="Toplam Ödül"
-          value={total}
-          suffix="₺"
-          tone="gold"
-        />
-        <Metric
-          label="Dağıtılan Ödül"
-          value={dist}
-          suffix="₺"
-          tone="aqua"
-        />
-        <Metric
-          label="Katılımcı"
-          value={part}
-          suffix=""
-          tone="vio"
-        />
+      {/* SAĞ — tek set metrik (boyutlar AYNI) */}
+      <div className="right">
+        <StatBlock label="Toplam Ödül"    value={total} suffix=" ₺" tone="gold" />
+        <StatBlock label="Dağıtılan Ödül" value={dist}  suffix=" ₺" tone="aqua" />
+        <StatBlock label="Katılımcı"      value={part}  suffix=""   tone="vio"  />
       </div>
 
       <style>{css}</style>
@@ -148,90 +111,36 @@ export default function Hero() {
   );
 }
 
-/* -------------------- METRİK BLOĞU -------------------- */
-function Metric({
+/* ---- 10 dakikada 1 artış ---- */
+function useTenMinuteIncrement(
+  setValue: (u: (prev: number) => number) => void,
+  min: number,
+  max: number
+){
+  const timerRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    const step = () => {
+      const inc = 10 + Math.floor(Math.random() * 291); // 10..300
+      setValue(prev => clamp(prev + inc, min, max));
+    };
+    timerRef.current = window.setInterval(step, 600_000); // 10 dk
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [min, max, setValue]);
+}
+
+/* ---- Düz metinli metrik bloğu (son 3 basamak ÖZEL DEĞİL) ---- */
+function StatBlock({
   label, value, suffix, tone,
 }: { label: string; value: number; suffix: string; tone: "gold"|"aqua"|"vio" }) {
-  const { prefix, suffix3 } = splitLast3(Math.max(0, Math.floor(value)));
-
   return (
-    <div className={`mtr ${tone}`} title={`${label}: ${fmt(value)} ${suffix}`}>
-      <div className="mtr-head">
-        <span className="dot" aria-hidden />
-        <span className="lbl">{label}</span>
-      </div>
-      <div className="mtr-val">
-        {/* Prefix her zaman tabular; boy zıplaması olmaz */}
-        {prefix && <span className="prefix">{prefix}.</span>}
-        <Digits3 triple={suffix3}/>
-        {suffix && <span className="suf"> {suffix}</span>}
+    <div className={`block ${tone}`} title={`${label}: ${fmt(value)}${suffix}`}>
+      <div className="blab">{label}</div>
+      <div className="bval">
+        <span className="num">{fmt(value)}</span>
+        <span className="suf">{suffix}</span>
       </div>
     </div>
-  );
-}
-
-/* Son 3 basamak: ileri yönlü, taşımalı hissiyatlı roller */
-function Digits3({ triple }: { triple: string }) {
-  const [d0, d1, d2] = triple.padStart(3, "0").split("");
-  return (
-    <span className="d3">
-      <Digit d={d0} delay={0}/>
-      <Digit d={d1} delay={60}/>
-      <Digit d={d2} delay={100}/>
-    </span>
-  );
-}
-
-/**
- * Digit — yalnız ileri yönde döner.
- * - Önceki değere göre adım sayısını ekler; geri dönmez, böylece "carry" hissi verir.
- * - Hareket sırasında hafif motion-blur ve glow.
- */
-function Digit({ d, delay = 0 }: { d: string; delay?: number }) {
-  const target = Math.max(0, Math.min(9, parseInt(d, 10)));
-  const prevRef = useRef<number>(target);
-  const turnsRef = useRef<number>(target); // başlangıç konumu
-  const [, setTick] = useState(0);
-  const movingRef = useRef<NodeJS.Timeout | null>(null);
-  const [moving, setMoving] = useState(false);
-
-  useEffect(() => {
-    const prev = prevRef.current;
-    if (prev === target) return;
-    // ileri yönde minimum adım (mod 10)
-    const step = (target - prev + 10) % 10 || 10; // aynıysa tam tur at
-    turnsRef.current += step;
-
-    // "hareket" sınıfı
-    if (movingRef.current) clearTimeout(movingRef.current);
-    setTimeout(() => { setMoving(true); }, delay);
-    movingRef.current = setTimeout(() => { setMoving(false); }, delay + 520);
-
-    // re-render (animasyonu tetikle)
-    setTimeout(() => setTick(x => x + 1), delay);
-
-    prevRef.current = target;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [target]);
-
-  const TOTAL_REPEATS = 30; // 0-9, 30 kere; uzun ömürlü
-  const cells = Array.from({ length: TOTAL_REPEATS * 10 }, (_, i) => i % 10);
-  const translatePct = -(turnsRef.current * 10);
-
-  return (
-    <span className={`digit ${moving ? "moving" : ""}`}>
-      <span
-        className="rail"
-        style={{
-          transform: `translateY(${translatePct}%)`,
-          transitionDelay: `${delay}ms`,
-        }}
-      >
-        {cells.map((n, i) => (
-          <span key={i} className="cell">{n}</span>
-        ))}
-      </span>
-    </span>
   );
 }
 
@@ -242,217 +151,65 @@ const FALLBACKS = [
   "https://images.unsplash.com/photo-1559703248-dcaaec9fab78?q=80&w=2000&auto=format&fit=crop",
 ];
 
-/* -------------------- STİL -------------------- */
+/* ---- Stil (İLK GÖNDERDİĞİN BOYUTLAR) ---- */
 const css = `
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@600;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@700;800;900&display=swap');
 
-:root {
-  --hp-bg: #090d17;
-  --hp-card: #0f1524;
-  --hp-edge: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,0));
-  --hp-brd: rgba(255,255,255,.08);
-
-  --hp-gold: #ffd057;  /* accent 1 */
-  --hp-aqua: #3be2ff;  /* accent 2 */
-  --hp-vio:  #b08cff;  /* accent 3 */
-
-  --hp-text: #e8f1ff;
-  --hp-muted:#9ab0c9;
-
-  --hp-r: 18px;
-  --hp-shadow: 0 10px 40px rgba(0,0,0,.35);
+.heroSplit{
+  display:grid; grid-template-columns: 1.1fr .9fr; gap:14px;
+  min-height:320px; border-radius:18px; overflow:hidden;
+  font-family:'Poppins',system-ui,Segoe UI,Roboto,Arial,sans-serif;
+}
+@media(max-width:900px){
+  .heroSplit{ grid-template-columns: 1fr; }
 }
 
-/* Kapsayıcı */
-.hero-prem{
-  display:grid;
-  grid-template-columns: 1.1fr .9fr;
-  gap:14px;
-  min-height: 340px;
-  border-radius: var(--hp-r);
-  position: relative;
-  isolation: isolate;
-  font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+/* Sol: Banner (gösterge yok, otomatik değişir) */
+.left{ position:relative; min-height:260px; border-radius:14px; overflow:hidden; }
+.bg{
+  position:absolute; inset:0; background-image:var(--img);
+  background-size:cover; background-position:center;
+  opacity:0; transform:scale(1.04); filter:blur(2px) brightness(.96);
+  transition:opacity 800ms ease, transform 800ms ease, filter 800ms ease;
 }
-@media (max-width: 900px){
-  .hero-prem{ grid-template-columns: 1fr; min-height: 580px; }
-}
-
-/* SOL — Banner */
-.hp-left{
-  position:relative;
-  min-height: 280px;
-  border-radius: calc(var(--hp-r) - 2px);
-  overflow:hidden;
-  background: #0b1020;
-  box-shadow: var(--hp-shadow);
-}
-.hp-bg{
+.bg.active{ opacity:1; transform:scale(1.01); filter:blur(0px) brightness(1) }
+.shade{
   position:absolute; inset:0;
-  background-image: var(--img);
-  background-position: center;
-  background-size: cover;
-  opacity: 0;
-  transform: scale(1.05);
-  filter: saturate(1) brightness(.9) contrast(1.02);
-  transition: opacity 700ms ease, transform 900ms ease, filter 900ms ease;
-  will-change: opacity, transform, filter;
-}
-.hp-bg.active{
-  opacity: 1;
-  transform: scale(1.015);
-  filter: saturate(1.05) brightness(1) contrast(1.05);
-}
-.hp-shade{
-  position:absolute; inset:0;
-  background:
-    radial-gradient(80% 60% at 70% 20%, rgba(0,0,0,.15) 0%, rgba(0,0,0,0) 60%),
-    linear-gradient(180deg, rgba(6,10,22,.10), rgba(6,10,22,.86) 68%, rgba(6,10,22,.92));
-  pointer-events:none;
-}
-.hp-edge{
-  position:absolute; inset:0;
-  border: 1px solid var(--hp-brd);
-  border-radius: calc(var(--hp-r) - 2px);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.04);
-  pointer-events:none;
+  background:linear-gradient(180deg, rgba(6,10,22,.18) 0%, rgba(6,10,22,.84) 66%, rgba(6,10,22,.92) 100%);
 }
 
-/* SAĞ — Metrikler: 3 eşit satır */
-.hp-right{
-  display:grid;
-  grid-template-rows: 1fr 1fr 1fr;
-  gap:10px;
-  min-height: 100%;
+/* Sağ: Tam dolduran, çerçevesiz metrikler */
+.right{
+  display:flex; flex-direction:column; justify-content:space-evenly; gap:8px;
+  padding:8px 12px;
 }
+.block{
+  display:flex; flex-direction:column; gap:6px;
+}
+.blab{
+  font-size:clamp(12px,1.8vw,14px);
+  letter-spacing:.6px; color:#a7bddb;
+  text-transform:uppercase;
+}
+.bval{
+  display:flex; align-items:flex-end; flex-wrap:wrap; gap:4px;
+  font-weight:900; color:#e9fbff;
+  text-shadow:0 0 16px rgba(0,229,255,.30);
+  font-size: clamp(28px, 6vw, 46px); /* BOYUTLAR AYNI */
+  line-height:1.06;
 
-/* Metrik kart (çerçevesiz cam + gradient çizgi) */
-.mtr{
-  position: relative;
-  display:flex;
-  flex-direction:column;
-  justify-content: center; /* satırın ortasını doldur */
-  gap:10px;
-  padding: 14px 16px;
-  background:
-    linear-gradient(180deg, rgba(15,21,36,.9), rgba(15,21,36,.65)),
-    radial-gradient(120% 120% at -10% -10%, rgba(255,255,255,.06), rgba(255,255,255,0));
-  border-radius: 14px;
-  box-shadow: var(--hp-shadow);
-  outline: 1px solid rgba(255,255,255,.06);
-  overflow: hidden;
-}
-.mtr::after{
-  /* köşede premium edge */
-  content:"";
-  position:absolute; inset:0;
-  border-radius: 14px;
-  pointer-events:none;
-  background:
-    linear-gradient(90deg, rgba(255,255,255,.10), rgba(255,255,255,0) 40%) top left / 100% 1px no-repeat,
-    linear-gradient(0deg, rgba(255,255,255,.10), rgba(255,255,255,0) 40%) top left / 1px 100% no-repeat;
-  opacity: .5;
-}
-
-.mtr-head{
-  display:flex; align-items:center; gap:10px;
-  letter-spacing:.4px;
-}
-.mtr-head .dot{
-  width:8px; height:8px; border-radius:50%;
-  background: currentColor;
-  filter: drop-shadow(0 0 6px currentColor);
-  opacity:.9;
-}
-.mtr .lbl{
-  color: var(--hp-muted);
-  font-size: clamp(12px, 1.5vw, 14px);
-  text-transform: uppercase;
-}
-
-/* Değer alanı — tek tip boy; tüm kartlarda aynı */
-.mtr-val{
-  display:flex; align-items:flex-end; gap:6px; flex-wrap:wrap;
-  color: var(--hp-text);
-  font-weight: 900;
-  /* Tüm rakamlar eş-genişlikli → zıplama yok */
+  /* Tüm rakamlar aynı genişlikte → format tek tip */
   font-variant-numeric: tabular-nums lining-nums;
   font-feature-settings: "tnum" 1, "lnum" 1;
-  text-shadow: 0 0 28px rgba(59,226,255,.18);
-  line-height: 1;
-  /* tek bir boy belirleyip her kartta aynısını kullan */
-  font-size: clamp(32px, 5.4vw, 48px);
 }
-.mtr.gold .mtr-val{ text-shadow: 0 0 28px rgba(255,208,87,.26); }
-.mtr.aqua .mtr-val{ text-shadow: 0 0 28px rgba(59,226,255,.26); }
-.mtr.vio  .mtr-val{ text-shadow: 0 0 28px rgba(176,140,255,.26); }
+.block.gold .bval{ text-shadow:0 0 16px rgba(255,196,0,.30) }
+.block.aqua .bval{ text-shadow:0 0 16px rgba(0,229,255,.30) }
+.block.vio  .bval{ text-shadow:0 0 16px rgba(156,39,176,.28) }
 
-.prefix{
-  opacity:.95;
-  letter-spacing:.6px;
-}
-.suf{
-  font-size: .52em;
-  opacity:.96;
-  margin-left: 2px;
-  padding-bottom: 2px;
-}
+.num{ letter-spacing:.4px }
+.suf{ font-size:.6em; opacity:.95; margin-left:2px }
 
-/* Son 3 basamak kapsayıcı */
-.d3{
-  display:inline-flex; gap:4px;
-}
-
-/* Tek hanelik roller */
-.digit{
-  position: relative;
-  width: 18px; height: 26px;
-  overflow: hidden; display:inline-block;
-  border-radius: 6px;
-  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
-  box-shadow:
-    inset 0 0 0 1px rgba(255,255,255,.08),
-    0 4px 10px rgba(0,0,0,.35);
-  will-change: transform;
-}
-@media (max-width: 900px){
-  .digit{ width: 16px; height: 24px; }
-}
-
-/* Ray: ileri yönlü, yumuşak */
-.rail{
-  display:flex;
-  flex-direction:column;
-  transition: transform 520ms cubic-bezier(.17,.9,.18,1);
-  will-change: transform;
-}
-.cell{
-  height: 26px;
-  line-height: 26px;
-  text-align: center;
-  font-size: 18px;
-  color: #f2fbff;
-  text-shadow: 0 0 8px rgba(255,255,255,.16);
-}
-@media (max-width: 900px){
-  .cell{ height: 24px; line-height: 24px; font-size: 16px; }
-}
-
-/* Hareket sırasında hafif motion blur + glow */
-.digit.moving{
-  filter: drop-shadow(0 0 10px rgba(255,255,255,.12)) saturate(1.05);
-}
-.digit.moving .rail{
-  transition-timing-function: cubic-bezier(.18,.8,.15,1);
-}
-
-/* Tonlara küçük vurgu çizgisi (üst kenar) */
-.mtr.gold{ outline-color: rgba(255,208,87,.28); }
-.mtr.aqua{ outline-color: rgba(59,226,255,.28); }
-.mtr.vio { outline-color: rgba(176,140,255,.28); }
-
-@media (max-width: 900px){
-  .hp-right{ gap:8px; }
-  .mtr{ padding: 12px 14px; }
+@media(max-width:900px){
+  .right{ padding:6px 8px }
 }
 `;
