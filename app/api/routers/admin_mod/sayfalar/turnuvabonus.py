@@ -5,7 +5,7 @@ from html import escape as _e
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import case, desc  # <-- eklendi
+from sqlalchemy import case, desc  # <<< EKLENDİ
 
 from app.db.session import get_db
 from app.db.models import AdminUser, AdminRole, Tournament, DailyBonus, PromoCode, Event
@@ -78,14 +78,12 @@ def page_turnuvabonus(
 
     Model: Type = KIND_MAP[tab]["model"]
 
-    # --- NULLS LAST taşınabilir sıralama (CASE ile) ---
+    # --- NULLS LAST kullanmadan taşınabilir sıralama ---
+    # start_at varsa: önce start_at NULL olanlar sona, sonra start_at DESC; daima id DESC de uygula
     order_cols = []
     if _has(Model, "start_at"):
-        # önce start_at IS NULL olanları sona at
         order_cols.append(desc(case((Model.start_at == None, 1), else_=0)))  # noqa: E711
-        # sonra start_at DESC
         order_cols.append(desc(Model.start_at))
-    # her zaman id DESC ile ikincil sıralama
     order_cols.append(desc(Model.id))
 
     rows = db.query(Model).order_by(*order_cols).all()
