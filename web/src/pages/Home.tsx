@@ -7,9 +7,13 @@ import EventsGrid from "../components/EventsGrid";
 export default function Home() {
   return (
     <main>
-      <Hero />
-      {/* Hero üstünde yatay şerit – yakındaki maçlar */}
+      {/* Header'ın hemen altında, Hero'nun üzerinde canlı maç şeridi */}
       <HeroUpcomingStrip />
+
+      {/* Ana görsel/hero */}
+      <Hero />
+
+      {/* Diğer bölümler */}
       <QuickBonus />
       <EventsGrid />
     </main>
