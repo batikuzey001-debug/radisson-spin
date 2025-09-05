@@ -28,18 +28,29 @@ export default function HeroUpcomingStrip({ limit = 30 }: { limit?: number }) {
     async function load() {
       try {
         const safeLimit = Math.min(Math.max(limit, 1), 50);
+
+        // 1) ÖNCE featured (geniş: show_all=1)
         const q = new URLSearchParams({
           limit: String(safeLimit),
-          days: "1",
-          show_all: "0",
+          show_all: "1",
         });
         const r = await fetch(`${API}/api/live/featured?${q.toString()}`);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const js: FeaturedResp = await r.json();
-        const live = Array.isArray(js?.live) ? js.live : [];
+        let live = Array.isArray(js?.live) ? js.live : [];
 
+        // 2) Eğer boşsa FALLBACK: /api/live/matches
+        if (!live.length) {
+          const r2 = await fetch(`${API}/api/live/matches?limit=${safeLimit}`);
+          if (r2.ok) {
+            const js2: LiveCard[] = await r2.json();
+            live = Array.isArray(js2) ? js2 : [];
+          }
+        }
+
+        // 3) Filtre + sıralama (minute >= 0)
         const normalized = live
-          .filter((m) => (m.minute ?? 0) > 0)
+          .filter((m) => (m.minute ?? 0) >= 0) // canlıda bazı kaynaklar 0 döndürebilir
           .map((m) => ({
             ...m,
             scoreH: typeof m.scoreH === "number" ? m.scoreH : 0,
@@ -89,6 +100,7 @@ export default function HeroUpcomingStrip({ limit = 30 }: { limit?: number }) {
   }
   if (!items.length) return null;
 
+  // Sonsuz akış için içerik iki kez basılır
   const loopItems = [...items, ...items];
 
   return (
@@ -104,7 +116,7 @@ export default function HeroUpcomingStrip({ limit = 30 }: { limit?: number }) {
             {loopItems.map((m, idx) => (
               <a
                 key={`${m.id}-${idx}`}
-                className="mcard"
+                className={`mcard ${m.leagueFlag ? "hasFlag" : ""}`}
                 href="#"
                 role="listitem"
                 onClick={(e) => e.preventDefault()}
@@ -196,11 +208,11 @@ const css = `
 .scroller:hover .track{ animation-play-state: paused; }
 @keyframes slide-left{ 0%{transform:translateX(0)} 100%{transform:translateX(-50%)} }
 
-/* Kartlar – daha kısa */
+/* Kartlar – kısa ve kibar */
 .mcard{
   flex:0 0 auto;
   width: 178px;
-  min-height: 106px;         /* biraz daha kısaltıldı */
+  min-height: 106px;
   display:grid;
   grid-template-rows: auto 1fr;
   gap:4px;
@@ -215,7 +227,8 @@ const css = `
   transition: transform .15s ease, box-shadow .2s ease, filter .2s ease;
   overflow:hidden;
 }
-.mcard::before{
+/* Bayrak sadece varsa görünür */
+.mcard.hasFlag::before{
   content:"";
   position:absolute;
   inset:0;
@@ -232,29 +245,29 @@ const css = `
 }
 .mcard > *{ position:relative; z-index:1 }
 
-/* Lig alanı – daha küçük tipografi */
+/* Lig alanı – küçük tipografi ve satır */
 .mcard__top{
   display:flex;
   align-items:center;
   gap:5px;
-  min-height:14px;           /* satır inceldi */
+  min-height:14px;
 }
 .lg{ display:flex; align-items:center; gap:5px; min-width:0 }
 .lgImg{ width:15px; height:15px; object-fit:contain; filter: drop-shadow(0 1px 4px rgba(0,229,255,.22)); }
 .lgName{
-  font-size:9px;             /* küçültüldü */
-  font-weight:800;           /* biraz daha hafif */
+  font-size:9px;
+  font-weight:800;
   color:#e7f3ff;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   max-width: 135px;
 }
 .lgPh{ width:15px; height:15px; border-radius:4px; background:rgba(255,255,255,.12) }
 
-/* Takımlar + skor – hizalama düzeltildi */
+/* Takımlar + skor – hizalama */
 .mcard__teams{
   display:grid;
   grid-template-columns:1fr auto 1fr;
-  align-items:center;        /* yukarıdaki flex-start yerine merkezde */
+  align-items:center;
   gap:6px;
   padding-top:0;
 }
@@ -275,7 +288,7 @@ const css = `
 /* Skor – dengeli boy */
 .score{
   display:flex; align-items:center; gap:5px;
-  font-size:15px;            /* bir tık küçültüldü */
+  font-size:15px;
   font-weight:900;
   color:#fff; text-shadow:0 0 6px rgba(255,255,255,.2), 0 0 10px rgba(160,220,255,.18);
 }
