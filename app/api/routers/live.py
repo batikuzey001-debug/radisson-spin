@@ -53,6 +53,11 @@ def _excluded_league_name(name: str) -> bool:
     bad = ("u17","u18","u19","u20","u21","u23","women","kadın","youth","reserve","friendly youth")
     return any(b in n for b in bad)
 
+def _current_season_for_eu(dt: Optional[datetime] = None) -> int:
+    """Neden: API-Football çoğu ligde sezonu 'yıl' ile ister. Avrupa takvimi: Tem/Temmuz sonrası yeni sezon."""
+    d = dt or _now_utc()
+    return d.year if d.month >= 7 else (d.year - 1)
+
 
 # ------------ live matches ------------
 @router.get("/matches")
@@ -164,12 +169,12 @@ def _parse_odds_response(js: Dict, market: int) -> Dict[str, Optional[float]]:
     return result
 
 
-# ------------ featured (live + upcoming 7 gün) ------------
+# ------------ featured (live + upcoming 15 gün) ------------
 @router.get("/featured")
 async def featured_matches(
     db: Annotated[Session, Depends(get_db)],
     limit: int = Query(12, ge=1, le=50),
-    days: int = Query(7, ge=1, le=30),
+    days: int = Query(15, ge=1, le=30),
     include_leagues: Optional[str] = Query(None),
     show_all: int = Query(0, ge=0, le=1),
     debug: int = Query(0, ge=0, le=1),
@@ -184,10 +189,20 @@ async def featured_matches(
     live_scored = sorted(live_cards, key=lambda x: x["_score"], reverse=True)
     live_out = [strip_score(x) for x in live_scored[:limit]]
 
-    # YAKINDA (her zaman döndür – güvenilir olmak için next=500 + 7 gün filtre)
-    up_cards, dbg_up = await _fetch_upcoming_next_filter(headers, weights, days=days, show_all=bool(show_all))
+    # YAKINDA (lig+sezon bazlı; boşsa eski yönteme fallback)
+    up_cards, dbg_up = await _fetch_upcoming_by_leagues(headers, weights, days=days, show_all=bool(show_all))
     if not up_cards:
-        up_cards, dbg_up = await _fetch_upcoming_next_filter(headers, weights, days=days, show_all=True)
+        # fallback – bazı durumlarda sağlayıcıdan boş dönüyorsa
+        up_cards, dbg_up = await _fetch_upcoming_next_filter(headers, weights, days=days, show_all=bool(show_all))
+    if not up_cards:
+        # en son çare: show_all ile dene
+        tmp, dbg2 = await _fetch_upcoming_by_leagues(headers, weights, days=days, show_all=True)
+        if tmp: 
+            up_cards, dbg_up = tmp, dbg2
+        else:
+            tmp2, dbg3 = await _fetch_upcoming_next_filter(headers, weights, days=days, show_all=True)
+            up_cards, dbg_up = tmp2, (dbg3 or dbg_up)
+
     up_sorted = sorted(up_cards, key=lambda x: (x.get("_kick_ts", 0), -x.get("_score", 0.0)))
     upcoming_out = [strip_score(x) for x in up_sorted[:limit]]
 
@@ -275,10 +290,80 @@ async def _fetch_live(headers: Dict[str,str], weights: Dict[int,float], show_all
         }); kept += 1
     return out, {"raw": raw, "filtered": kept}
 
+async def _fetch_upcoming_by_leagues(headers: Dict[str,str], weights: Dict[int,float], days:int=15, show_all:bool=False) -> Tuple[List[Dict], Dict[str,int]]:
+    """
+    Neden: Sağlayıcı global 'next' ve 'from/to' çağrılarını bağlamsız kısıtlayabiliyor.
+    Çözüm: Önemli ligler seti üzerinden league+season bazlı 'NS' maçlarını çekeriz.
+    """
+    now = _now_utc()
+    season = _current_season_for_eu(now)
+    date_from = (now.date()).strftime("%Y-%m-%d")
+    date_to = (now + timedelta(days=days)).date().strftime("%Y-%m-%d")
+
+    league_ids = list(weights.keys())
+    # show_all=False ise zaten weights whitelist'i kullanıyoruz; True ise yine bu set yeterli.
+    out: List[Dict] = []
+    raw_total = 0
+    kept_total = 0
+    tried: List[int] = []
+
+    for lid in league_ids:
+        tried.append(lid)
+        params = {
+            "league": str(lid),
+            "season": str(season),
+            "status": "NS",
+            "from": date_from,
+            "to": date_to,
+        }
+        try:
+            js = await _fetch_json(f"{API_BASE}/fixtures", headers, params)
+        except HTTPException:
+            # bazı ligler o sezonda yoksa → sessiz geç
+            continue
+
+        rows = js.get("response", []) or []
+        raw_total += len(rows)
+
+        for it in rows:
+            fixture = it.get("fixture") or {}; league = it.get("league") or {}; teams = it.get("teams") or {}
+            lname = league.get("name") or ""
+            if _excluded_league_name(lname):  # neden: alt yaş/rezerv istemiyoruz
+                continue
+
+            dt_str = fixture.get("date")
+            try:
+                kick = datetime.fromisoformat((dt_str or "").replace("Z","+00:00"))
+                kick_ts = int(kick.timestamp())
+            except Exception:
+                continue
+            if kick < now or kick > (now + timedelta(days=days)):
+                continue
+
+            hours_to_kick = max(0.0, (kick - now).total_seconds()/3600.0)
+            time_score = max(0.0, 24.0 - hours_to_kick) / 24.0
+            h = teams.get("home") or {}; a = teams.get("away") or {}
+
+            out.append({
+                "id": str(fixture.get("id") or ""),
+                "league": lname,
+                "leagueLogo": league.get("logo") or "",
+                "leagueFlag": league.get("flag") or "",
+                "home": {"name": h.get("name") or "Home", "logo": h.get("logo") or ""},
+                "away": {"name": a.get("name") or "Away", "logo": a.get("logo") or ""},
+                "minute": 0, "scoreH": 0, "scoreA": 0,
+                "kickoff": dt_str or "",
+                "_score": weights.get(lid, 0.5) + time_score,
+                "_kick_ts": kick_ts,
+            })
+            kept_total += 1
+
+    return out, {"raw": raw_total, "filtered": kept_total, "leagues_tried": len(tried)}
+
 async def _fetch_upcoming_next_filter(headers: Dict[str,str], weights: Dict[int,float], days:int=7, show_all:bool=False) -> Tuple[List[Dict], Dict[str,int]]:
     """
-    Why: Sağlayıcı 'from/to' bazı durumlarda boş döndüğü için daha güvenilir.
-    next=500 ile geniş pencere alıp, 7 güne kendimiz filtreliyoruz.
+    Eski yöntem (fallback): global 'next=500' + 7/15 gün penceresi. 
+    Bazı sağlayıcı yanıtlarında boş dönebilir; o yüzden sadece yedek olarak tutulur.
     """
     now = _now_utc(); until_ts = int((now + timedelta(days=days)).timestamp())
     js = await _fetch_json(f"{API_BASE}/fixtures", headers, {"next": 500})
@@ -300,7 +385,6 @@ async def _fetch_upcoming_next_filter(headers: Dict[str,str], weights: Dict[int,
         except Exception:
             continue
 
-        # 7 gün penceresi
         if not (now.timestamp() <= kick_ts <= until_ts):
             continue
 
