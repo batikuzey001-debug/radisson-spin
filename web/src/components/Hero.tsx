@@ -153,11 +153,12 @@ const FALLBACKS = [
   "https://images.unsplash.com/photo-1559703248-dcaaec9fab78?q=80&w=2000&auto=format&fit=crop",
 ];
 
+/* ... (kodun üst kısmı aynı kalacak, sadece style kısmı güncellendi) */
+
 /* ------- Stil ------- */
 const css = `
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&display=swap');
 
-/* Oran: görsel biraz daha büyük */
 .heroSplit{
   display:grid; grid-template-columns: 1.2fr .8fr; gap:14px;
   min-height:320px; border-radius:18px; overflow:hidden;
@@ -195,7 +196,6 @@ const css = `
   box-shadow: 0 10px 26px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.04);
   padding:18px 16px;
 }
-/* üst/alt neon çizgi (tone’a göre) */
 .mCard .neonBar{
   position:absolute; left:12px; right:12px; height:3px; border-radius:3px; filter:blur(.3px);
   background:linear-gradient(90deg, rgba(255,255,255,0), hsla(var(--tone,190),95%,60%,1), rgba(255,255,255,0));
@@ -203,7 +203,7 @@ const css = `
 .mCard .neonBar.top{ top:8px }
 .mCard .neonBar.bot{ bottom:8px }
 
-/* satır yerleşimi: metin solda, sayı sağda */
+/* satır yerleşimi */
 .mCard .row{
   display:flex; align-items:center; justify-content:space-between; gap:10px;
 }
@@ -214,22 +214,23 @@ const css = `
 .mCard .val{
   display:flex; align-items:flex-end; flex-wrap:wrap; gap:4px;
   color:#e9fbff; font-weight:900; line-height:1.06;
-  /* tek tip boyut – sağa hizalı büyük sayı */
   font-size: clamp(28px, 6vw, 46px);
   font-variant-numeric: tabular-nums lining-nums;
   font-feature-settings: "tnum" 1, "lnum" 1;
   text-shadow:0 0 16px rgba(0,229,255,.30);
   justify-content:flex-end;
+
+  /* Dijital font sadece sayılar için */
+  font-family:'Orbitron', monospace;
 }
 .mCard .val .num{ letter-spacing:.4px }
 .mCard .val .suf{ font-size:.6em; opacity:.95; margin-left:2px }
 
 /* ton renkleri */
-.mCard.gold{ --tone: 48 }   /* altın */
-.mCard.aqua{ --tone: 190 }  /* aqua */
-.mCard.vio { --tone: 280 }  /* mor */
+.mCard.gold{ --tone: 48 }
+.mCard.aqua{ --tone: 190 }
+.mCard.vio { --tone: 280 }
 
-/* Küçük ekran */
 @media(max-width:900px){
   .left{ min-height:280px }
   .mCard{ padding:14px 12px }
