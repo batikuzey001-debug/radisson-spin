@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-/** API veri tipi (events/active) */
+/** API veri tipi (events/active) – prize_amount eklendi */
 type EventCard = {
   id: number | string;
   title: string;
@@ -15,15 +15,13 @@ type EventCard = {
   bg_color?: string | null;
   priority?: number | null;
   is_pinned?: boolean;
+  prize_amount?: number | null;      // <— YENİ
 };
 
 const API = import.meta.env.VITE_API_BASE_URL;
 
 /* --- Kategori -> renk eşleşmesi (hue) --- */
-const CAT: Record<
-  string,
-  { hue: number; label: string }
-> = {
+const CAT: Record<string, { hue: number; label: string }> = {
   "sports": { hue: 150, label: "SPOR" },
   "live-casino": { hue: 10, label: "CANLI" },
   "slots": { hue: 48, label: "SLOT" },
@@ -34,13 +32,10 @@ const CAT: Record<
 function colorOf(ev: EventCard) {
   const key = (ev.category || "other").toLowerCase();
   const m = CAT[key] || CAT["other"];
-  // Admin'den accent_color gelmişse onu kullan
   const hue = ev.accent_color ? tryHue(ev.accent_color, m.hue) : m.hue;
   return { hue, catLabel: m.label };
 }
 function tryHue(val: string, fallback: number) {
-  // #RRGGBB -> hue hesaplamak yerine sabit fallback kullanmak daha stabil
-  // admin accent_color “#..” ise küçük bir sapma uygulayalım
   if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(val)) return fallback;
   const n = parseInt(val, 10);
   return Number.isFinite(n) ? (n % 360) : fallback;
@@ -58,9 +53,13 @@ function fmtDate(dt?: string | null) {
       minute: "2-digit",
     });
   } catch {
-    return dt;
+    return dt || "";
   }
 }
+
+/* Tutar gösterimi */
+const fmtTL = (n: number) =>
+  new Intl.NumberFormat("tr-TR").format(Math.max(0, Math.floor(n))) + " ₺";
 
 export default function EventsGrid() {
   const [items, setItems] = useState<EventCard[]>([]);
@@ -84,11 +83,21 @@ export default function EventsGrid() {
   }, []);
 
   if (err && !items.length) {
-    return <div className="eventsWrap"><div className="msg">{err}</div><style>{css}</style></div>;
+    return (
+      <div className="eventsWrap">
+        <div className="msg">{err}</div>
+        <style>{css}</style>
+      </div>
+    );
   }
 
   if (!items.length) {
-    return <div className="eventsWrap"><div className="msg muted">Şu an listelenecek etkinlik yok.</div><style>{css}</style></div>;
+    return (
+      <div className="eventsWrap">
+        <div className="msg muted">Şu an listelenecek etkinlik yok.</div>
+        <style>{css}</style>
+      </div>
+    );
   }
 
   return (
@@ -98,20 +107,15 @@ export default function EventsGrid() {
           const { hue, catLabel } = colorOf(ev);
           const stateLab = ev.state === "active" ? "AKTİF" : "YAKINDA";
           const subTxt =
-            ev.state === "active"
-              ? "Devam ediyor"
-              : `Başlangıç: ${fmtDate(ev.start_at)}`;
+            ev.state === "active" ? "Devam ediyor" : `Başlangıç: ${fmtDate(ev.start_at)}`;
+          const amountText =
+            typeof ev.prize_amount === "number" ? fmtTL(ev.prize_amount) : null;
 
           return (
             <article
               key={ev.id}
               className="card"
-              style={
-                {
-                  // tüm neon/parıltı aynı ton
-                  ["--tone" as any]: String(hue),
-                } as React.CSSProperties
-              }
+              style={{ ["--tone" as any]: String(hue) } as React.CSSProperties}
             >
               {/* Sol dikey neon şerit */}
               <span className="neonLeft" aria-hidden />
@@ -134,6 +138,14 @@ export default function EventsGrid() {
 
               {/* Başlık */}
               <h3 className="title" title={ev.title}>{ev.title}</h3>
+
+              {/* ÖDÜL MİKTARI – varsa belirgin şekilde göster */}
+              {amountText && (
+                <div className="amount" title={`Ödül: ${amountText}`}>
+                  <span className="label">ÖDÜL</span>
+                  <span className="value">{amountText}</span>
+                </div>
+              )}
 
               {/* Alt bilgi */}
               <div className="meta">{subTxt}</div>
@@ -227,6 +239,19 @@ const css = `
   margin:10px 12px 4px; font-size:18px; font-weight:900; color:#eaf2ff;
   text-shadow:0 2px 12px rgba(0,0,0,.45);
   min-height: 44px;
+}
+
+/* ÖDÜL satırı – belirgin */
+.card .amount{
+  margin:4px 12px 2px;
+  display:flex; align-items:baseline; gap:8px;
+  font-weight:900;
+}
+.card .amount .label{
+  color:#a7bddb; font-size:12px; letter-spacing:.6px;
+}
+.card .amount .value{
+  font-size:20px; color:#f7fbff; text-shadow:0 0 14px rgba(0,229,255,.30);
 }
 
 /* alt bilgi */
