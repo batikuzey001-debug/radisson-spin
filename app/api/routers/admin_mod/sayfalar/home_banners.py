@@ -1,6 +1,8 @@
 # app/api/routers/admin_mod/sayfalar/home_banners.py
-from typing import Annotated
+from typing import Annotated, Dict, Any
 from html import escape as _e
+import json
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
@@ -34,6 +36,19 @@ def _set_conf(db: Session, key: str, val: str | None) -> None:
         db.add(SiteConfig(key=key, value_text=val or None))
 
 
+def _get_json_conf(db: Session, key: str, defaults: Dict[str, Any]) -> Dict[str, Any]:
+    raw = _get_conf(db, key, "")
+    if not raw:
+        return defaults.copy()
+    try:
+        obj = json.loads(raw)
+        out = defaults.copy()
+        out.update(obj if isinstance(obj, dict) else {})
+        return out
+    except Exception:
+        return defaults.copy()
+
+
 @router.get("/admin/home-banners", response_class=HTMLResponse)
 def page(
     request: Request,
@@ -46,10 +61,18 @@ def page(
         "logo_url",
         "https://cdn.prod.website-files.com/68ad80d65417514646edf3a3/68adb798dfed270f5040c714_logowhite.png",
     )
-    login_text = _get_conf(db, "login_cta_text", "Radissonbet Giriş")
+    login_text = _get_conf(db, "login_cta_text", "Giriş")
     login_url = _get_conf(db, "login_cta_url", "/")
     online_min = _get_conf(db, "online_min", "")  # örn: 4800
     online_max = _get_conf(db, "online_max", "")  # örn: 6800
+
+    # --- HERO İstatistikleri (min/max) için defaults + mevcut ---
+    HERO_DEFAULTS = {
+        "total_min": 60000000, "total_max": 95000000,
+        "dist_min":  200000,   "dist_max":  1200000,
+        "part_min":  300000,   "part_max":  800000,
+    }
+    hero_cfg = _get_json_conf(db, "hero_stats", HERO_DEFAULTS)
 
     # --- Banner listesi ---
     rows = db.query(HomeBanner).order_by(HomeBanner.order.asc(), HomeBanner.id.desc()).all()
@@ -92,6 +115,43 @@ def page(
         </div>
         <div class='form-actions'>
           <button class='btn primary' type='submit'>Kaydet</button>
+        </div>
+      </form>
+    </div>
+    """
+
+    # ===== HERO • İstatistik Aralıkları (min/max) – yeni kart =====
+    hero_form = f"""
+    <div class='card'>
+      <h1>Hero İstatistikleri (min/max)</h1>
+      <form method='post' action='/admin/home-banners/hero-stats'>
+        <div class='grid'>
+          <label class='field'><span>Toplam Ödül Min (₺)</span>
+            <input name='total_min' type='number' inputmode='numeric' min='0' value='{_e(str(hero_cfg["total_min"]))}'>
+          </label>
+          <label class='field'><span>Toplam Ödül Max (₺)</span>
+            <input name='total_max' type='number' inputmode='numeric' min='0' value='{_e(str(hero_cfg["total_max"]))}'>
+          </label>
+
+          <label class='field'><span>Dağıtılan Ödül Min (₺)</span>
+            <input name='dist_min' type='number' inputmode='numeric' min='0' value='{_e(str(hero_cfg["dist_min"]))}'>
+          </label>
+          <label class='field'><span>Dağıtılan Ödül Max (₺)</span>
+            <input name='dist_max' type='number' inputmode='numeric' min='0' value='{_e(str(hero_cfg["dist_max"]))}'>
+          </label>
+
+          <label class='field'><span>Katılımcı Min (adet)</span>
+            <input name='part_min' type='number' inputmode='numeric' min='0' value='{_e(str(hero_cfg["part_min"]))}'>
+          </label>
+          <label class='field'><span>Katılımcı Max (adet)</span>
+            <input name='part_max' type='number' inputmode='numeric' min='0' value='{_e(str(hero_cfg["part_max"]))}'>
+          </label>
+        </div>
+        <div class='form-actions'>
+          <button class='btn primary' type='submit'>Kaydet</button>
+        </div>
+        <div class='muted' style='margin-top:6px'>
+          Not: Frontend hero sol blokta bu aralıkları kullanarak küçük salınım (drift) uygular; değerler bu aralıkları aşmaz.
         </div>
       </form>
     </div>
@@ -175,7 +235,7 @@ def page(
     """
 
     html = _layout(
-        style + fb + cms_form + "".join(t) + form,
+        style + fb + cms_form + hero_form + "".join(t) + form,
         title="CMS",
         active="home"
     )
@@ -203,6 +263,51 @@ async def save_site_config(
 
     db.commit()
     flash(request, "Site ayarları kaydedildi.", "success")
+    return RedirectResponse("/admin/home-banners", status_code=303)
+
+
+@router.post("/admin/home-banners/hero-stats")
+async def save_hero_stats(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    current: Annotated[AdminUser, Depends(require_role(AdminRole.admin))],
+):
+    form = await request.form()
+
+    def num(name: str, default: int) -> int:
+        raw = (form.get(name) or "").strip()
+        try:
+            v = int(raw)
+            return max(0, v)
+        except Exception:
+            return default
+
+    # defaults ile güvenli parse
+    HERO_DEFAULTS = {
+        "total_min": 60000000, "total_max": 95000000,
+        "dist_min":  200000,   "dist_max":  1200000,
+        "part_min":  300000,   "part_max":  800000,
+    }
+    total_min = num("total_min", HERO_DEFAULTS["total_min"])
+    total_max = num("total_max", HERO_DEFAULTS["total_max"])
+    dist_min  = num("dist_min",  HERO_DEFAULTS["dist_min"])
+    dist_max  = num("dist_max",  HERO_DEFAULTS["dist_max"])
+    part_min  = num("part_min",  HERO_DEFAULTS["part_min"])
+    part_max  = num("part_max",  HERO_DEFAULTS["part_max"])
+
+    # min<=max doğrulama
+    if not (total_min <= total_max and dist_min <= dist_max and part_min <= part_max):
+        flash(request, "Min değerleri max değerlerinden küçük/eşit olmalı.", "error")
+        return RedirectResponse("/admin/home-banners", status_code=303)
+
+    payload = {
+        "total_min": total_min, "total_max": total_max,
+        "dist_min":  dist_min,  "dist_max":  dist_max,
+        "part_min":  part_min,  "part_max":  part_max,
+    }
+    _set_conf(db, "hero_stats", json.dumps(payload, ensure_ascii=False))
+    db.commit()
+    flash(request, "Hero istatistik aralıkları kaydedildi.", "success")
     return RedirectResponse("/admin/home-banners", status_code=303)
 
 
