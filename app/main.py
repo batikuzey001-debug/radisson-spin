@@ -140,6 +140,7 @@ def on_startup() -> None:
                 END IF;
             END $$;
             """))
+
             # admin_users.password_hash kolonu yoksa ekle
             conn.execute(text("""
             DO $$
@@ -152,6 +153,7 @@ def on_startup() -> None:
                 END IF;
             END $$;
             """))
+
             # prizes.image_url kolonu yoksa ekle
             conn.execute(text("""
             DO $$
@@ -169,21 +171,28 @@ def on_startup() -> None:
                 END IF;
             END $$;
             """))
-            # promo_codes.coupon_code / cta_url kolonları yoksa ekle
+
+            # promo_codes.coupon_code / cta_url kolonu yoksa ekle
             conn.execute(text("""
             DO $$
             BEGIN
                 IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='promo_codes') THEN
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='promo_codes' AND column_name='coupon_code') THEN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name='promo_codes' AND column_name='coupon_code'
+                    ) THEN
                         EXECUTE 'ALTER TABLE promo_codes ADD COLUMN coupon_code VARCHAR(64)';
                     END IF;
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='promo_codes' AND column_name='cta_url') THEN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name='promo_codes' AND column_name='cta_url'
+                    ) THEN
                         EXECUTE 'ALTER TABLE promo_codes ADD COLUMN cta_url VARCHAR(512)';
                     END IF;
                 END IF;
             END $$;
             """))
-            # --- Çark için idempotent migrationlar ---
+
             # prizes.enabled kolonu yoksa ekle
             conn.execute(text("""
             DO $$
@@ -195,7 +204,8 @@ def on_startup() -> None:
                 END IF;
             END $$;
             """))
-            # codes.tier_key, manual_prize_id, used_at kolonu yoksa ekle; prize_id'ı nullable yap
+
+            # codes.* kolonu yoksa ekle; prize_id nullable olsun
             conn.execute(text("""
             DO $$
             BEGIN
@@ -209,27 +219,24 @@ def on_startup() -> None:
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='codes' AND column_name='used_at') THEN
                         EXECUTE 'ALTER TABLE codes ADD COLUMN used_at TIMESTAMPTZ';
                     END IF;
-                    -- prize_id'ı nullable yap (spin sonrası dolacak)
-                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='codes' AND column_name='prize_id' AND is_nullable='NO') THEN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name='codes' AND column_name='prize_id' AND is_nullable='NO'
+                    ) THEN
                         EXECUTE 'ALTER TABLE codes ALTER COLUMN prize_id DROP NOT NULL';
                     END IF;
                 END IF;
             END $$;
             """))
 
-            # --- events.prize_amount kolonu yoksa ekle (idempotent) ---
+            # --- ÖNEMLİ DÜZELTME ---
+            # events.prize_amount kolonu: PL/pgSQL yerine plain SQL (Postgres 9.6+)
             conn.execute(text("""
-            DO $$
-            BEGIN
-                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='events') THEN
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='events' AND column_name='prize_amount') THEN
-                        EXECUTE 'ALTER TABLE events ADD COLUMN prize_amount INTEGER';
-                    END IF;
-                END IF;
-            END $$;
+                ALTER TABLE IF EXISTS events
+                ADD COLUMN IF NOT EXISTS prize_amount INTEGER;
             """))
 
-            # --- prize_tiers: tablo + seed (plain SQL) ---
+            # prize_tiers (plain SQL)
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS prize_tiers (
                     key VARCHAR(32) PRIMARY KEY,
@@ -257,7 +264,7 @@ def on_startup() -> None:
                 "ON CONFLICT (key) DO NOTHING;"
             ))
 
-            # prize_distributions tablosu yoksa oluştur + indexler
+            # prize_distributions tablosu + indexler
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS prize_distributions (
                     id SERIAL PRIMARY KEY,
@@ -270,7 +277,7 @@ def on_startup() -> None:
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_prize_distributions_tier ON prize_distributions(tier_key);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_prize_distributions_prize ON prize_distributions(prize_id);"))
 
-            # FK: prize_distributions.tier_key -> prize_tiers.key  (varsa sessiz geç)
+            # FK: prize_distributions.tier_key -> prize_tiers.key (varsa sessiz geç)
             try:
                 conn.execute(text("""
                     ALTER TABLE prize_distributions
@@ -299,7 +306,7 @@ def on_startup() -> None:
             ])
             db.commit()
 
-    # ---- prize_distributions için otomatik başlangıç verisi ----
+    # prize_distributions için otomatik başlangıç verisi
     with engine.begin() as conn:
         has_prize = conn.execute(text("SELECT EXISTS(SELECT 1 FROM prizes)")).scalar()
         if has_prize:
