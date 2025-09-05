@@ -2,9 +2,9 @@
 FROM node:20-alpine AS web
 WORKDIR /web
 
-# lock dosyaları ile hızlı cache
-COPY web/package.json web/package-lock.json ./
-RUN npm ci --no-audit --no-fund
+# lock varsa npm ci, yoksa npm install
+COPY web/package*.json ./
+RUN if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
 
 # tüm web kodu ve build
 COPY web/ ./
@@ -17,19 +17,19 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# psycopg2 için sistem bağımlılıkları
+# psycopg2 için sistem kütüphanesi
 RUN apt-get update \
  && apt-get install -y --no-install-recommends libpq-dev curl \
  && rm -rf /var/lib/apt/lists/*
 
-# bağımlılıkları yükle
+# Python bağımlılıkları
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# backend kodu
+# Backend kodu
 COPY app/ ./app
 
-# Vite çıktısını FastAPI'nin statik dizinine kopyala
+# Web çıktısı -> FastAPI static
 COPY --from=web /web/dist /app/static
 
 EXPOSE 8000
