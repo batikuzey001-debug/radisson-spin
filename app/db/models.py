@@ -220,7 +220,7 @@ class PrizeTier(Base):
 # --- ÇARK DAĞILIMI (Seviye -> Ödül -> Ağırlık) ---
 class PrizeDistribution(Base):
     __tablename__ = "prize_distributions"
-    id: Mapped[int] = mapped_column(Integer, primary key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
     # Dinamik seviye anahtarı: prize_tiers.key
     tier_key: Mapped[str] = mapped_column(ForeignKey("prize_tiers.key"), index=True)
