@@ -8,10 +8,11 @@ type CommitIn = { code: string; spinToken: string };
 
 const API = import.meta.env.VITE_API_BASE_URL;
 
-const LOOPS = 14;
-const VISIBLE = 3;
-const ITEM_H = 90;
-const SPIN_TIME = 7.5;
+/* === PARAMETRELER === */
+const LOOPS   = 14;  // liste tekrarı (uzun dönüş)
+const VISIBLE = 5;   // >>> 5 SATIR GÖRÜNÜR <<<
+const ITEM_H  = 86;  // her satır yüksekliği (5 satır için biraz küçültüldü)
+const SPIN_TIME = 7.5; // sn
 
 export default function RadiCark() {
   const [code, setCode] = useState("");
@@ -26,7 +27,7 @@ export default function RadiCark() {
   const [translate, setTranslate] = useState(0);
   const [duration, setDuration] = useState(0);
 
-  // merkezin piksel konumu
+  // merkezin piksel konumu (her zaman ortadaki satır)
   const centerOffset = (VISIBLE * ITEM_H) / 2 - ITEM_H / 2;
 
   useEffect(() => {
@@ -34,18 +35,16 @@ export default function RadiCark() {
       try {
         setLoading(true);
         const r = await fetch(`${API}/api/prizes`);
-        // backend sırası = wheelIndex sırası olsun (her ihtimale karşı sıralayalım)
         const rows: Prize[] = await r.json();
-        setPrizes(rows.sort((a, b) => a.wheelIndex - b.wheelIndex));
+        // backend sırasını koruyalım ama wheelIndex'e göre garanti sırala
+        setPrizes((rows || []).slice().sort((a,b) => a.wheelIndex - b.wheelIndex));
       } catch (e: any) {
         setErr(e?.message ?? "Ödüller alınamadı");
-      } finally {
-        setLoading(false);
-      }
+      } finally { setLoading(false); }
     })();
   }, []);
 
-  // uzun reeli üret
+  // uzun reel
   const reelItems = useMemo(() => {
     if (!prizes.length) return [];
     const labels = prizes.map((p) => p.label);
@@ -54,12 +53,11 @@ export default function RadiCark() {
     return arr;
   }, [prizes]);
 
-  // mevcut merkez index (her render’da doğru öğe parlayacak)
-  const centerIndex = useMemo(() => {
-    // translate negatifse yukarı kayar; merkezdeki öğenin reel indexi:
-    // yakın tamsayıya yuvarlayarak hassasiyeti arttırıyoruz
-    return Math.round((centerOffset - translate) / ITEM_H);
-  }, [translate, centerOffset]);
+  // o an merkezde kalan index (vurguyu bu belirler)
+  const centerIndex = useMemo(
+    () => Math.round((centerOffset - translate) / ITEM_H),
+    [translate, centerOffset]
+  );
 
   const onSpin = async () => {
     setErr(""); setResult(null);
@@ -73,7 +71,7 @@ export default function RadiCark() {
 
       const n = prizes.length;
       const safeIndex = (vr.targetIndex >= 0 && vr.targetIndex < n) ? vr.targetIndex : 0;
-      const targetIndexInReel = (LOOPS - 2) * n + safeIndex;
+      const targetIndexInReel = (LOOPS - 2) * n + safeIndex;  // uzun dönüş
       const targetY = targetIndexInReel * ITEM_H - centerOffset;
 
       setDuration(0); setTranslate(0);
@@ -100,12 +98,11 @@ export default function RadiCark() {
       </header>
 
       <section className="reelWrap">
-        {/* LED üst/alt – çerçeve görünümü */}
+        {/* LED üst/alt */}
         <div className="uiFrame" />
-        {/* arka plan logo */}
+        {/* UI içi logo */}
         <div className="bgLogoIn" />
-
-        {/* Merkez seçici çizgi */}
+        {/* merkez seçici */}
         <div className="selectLine" />
 
         <div
@@ -113,11 +110,7 @@ export default function RadiCark() {
           style={{ transform: `translateY(${translate}px)`, transition: `transform ${duration}s cubic-bezier(.12,.9,.06,1)` }}
         >
           {reelItems.map((txt, i) => (
-            <div
-              key={i}
-              className={`item ${i === centerIndex ? "win" : ""}`}
-              style={{ height: ITEM_H }}
-            >
+            <div key={i} className={`item ${i === centerIndex ? "win" : ""}`} style={{ height: ITEM_H }}>
               {txt}
             </div>
           ))}
@@ -139,6 +132,7 @@ export default function RadiCark() {
   );
 }
 
+/* --- helpers --- */
 async function postJson<T = any>(url: string, body: any, allowEmpty = false): Promise<T> {
   const r = await fetch(url, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
@@ -151,24 +145,25 @@ async function postJson<T = any>(url: string, body: any, allowEmpty = false): Pr
   return (await r.json()) as T;
 }
 
-/* ---------------- styles ---------------- */
+/* --- styles --- */
 const css = `
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@800;900&display=swap');
 
 :root{ --text:#fff; --muted:#9fb1cc }
 *{box-sizing:border-box}
 .slot{max-width:600px;margin:0 auto;padding:16px;text-align:center;color:var(--text)}
+
 .hero .title{font-size:42px;font-weight:900;margin:6px 0 12px}
 .stroke{-webkit-text-stroke:2px rgba(255,255,255,.45);color:transparent}
 .glow{color:#e8fbff;text-shadow:0 0 26px rgba(0,229,255,.6)}
 
-/* Reel alanı: LED ler görünür kalsın diye iç boşluk verildi */
+/* Reel alanı: LED görünür kalsın diye padding */
 .reelWrap{
   position:relative;height:${VISIBLE * ITEM_H}px;overflow:hidden;margin:10px 0;border-radius:16px;
   border:1px solid rgba(255,255,255,.16); padding:12px 0; z-index:5;
 }
 
-/* LED düz çizgiler – padding sınırında, kartlara değmez */
+/* LED çizgiler – padding kenarı */
 .uiFrame{position:absolute; inset:12px 0; pointer-events:none; z-index:7}
 .uiFrame::before,.uiFrame::after{
   content:""; position:absolute; left:12px; right:12px; height:4px; border-radius:99px;
@@ -181,7 +176,7 @@ const css = `
 .slot.is-spinning{ --led-color:#ff315f; --led-glow:rgba(255,49,95,.55) }
 @keyframes ledPulse{ 0%,100%{opacity:1} 50%{opacity:.5} }
 
-/* Logo arka plan (UI içinde) */
+/* Logo (UI içinde) */
 .bgLogoIn{
   position:absolute; inset:0; z-index:6; pointer-events:none;
   background:url('https://cdn.prod.website-files.com/68ad80d65417514646edf3a3/68adb798dfed270f5040c714_logowhite.png') no-repeat center/40%;
@@ -190,7 +185,7 @@ const css = `
 }
 @keyframes logoPulse{ 0%{transform:scale(0.95)} 50%{transform:scale(1.05)} 100%{transform:scale(0.95)} }
 
-/* Merkez seçici çizgi – her zaman üstte */
+/* Merkez seçici çizgi */
 .selectLine{
   position:absolute; left:8%; right:8%; top:calc(50% - 1px); height:2px; z-index:10;
   background:linear-gradient(90deg,transparent,#00e5ff,transparent);
@@ -203,7 +198,7 @@ const css = `
 /* Sade item (kart yok) */
 .item{
   display:flex; align-items:center; justify-content:center;
-  font-size:28px; font-weight:900; letter-spacing:.4px; color:#eaf7ff;
+  font-size:26px; font-weight:900; letter-spacing:.3px; color:#eaf7ff;
   height:${ITEM_H}px;
 }
 .item.win{ color:#00e5ff; text-shadow:0 0 20px #00e5ff }
