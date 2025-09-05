@@ -28,29 +28,18 @@ export default function HeroUpcomingStrip({ limit = 30 }: { limit?: number }) {
     async function load() {
       try {
         const safeLimit = Math.min(Math.max(limit, 1), 50);
-
-        // 1) ÖNCE featured (geniş: show_all=1)
         const q = new URLSearchParams({
           limit: String(safeLimit),
-          show_all: "1",
+          days: "1",
+          show_all: "0",
         });
         const r = await fetch(`${API}/api/live/featured?${q.toString()}`);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const js: FeaturedResp = await r.json();
-        let live = Array.isArray(js?.live) ? js.live : [];
+        const live = Array.isArray(js?.live) ? js.live : [];
 
-        // 2) Eğer boşsa FALLBACK: /api/live/matches
-        if (!live.length) {
-          const r2 = await fetch(`${API}/api/live/matches?limit=${safeLimit}`);
-          if (r2.ok) {
-            const js2: LiveCard[] = await r2.json();
-            live = Array.isArray(js2) ? js2 : [];
-          }
-        }
-
-        // 3) Filtre + sıralama (minute >= 0)
         const normalized = live
-          .filter((m) => (m.minute ?? 0) >= 0) // canlıda bazı kaynaklar 0 döndürebilir
+          .filter((m) => (m.minute ?? 0) > 0)
           .map((m) => ({
             ...m,
             scoreH: typeof m.scoreH === "number" ? m.scoreH : 0,
@@ -100,7 +89,7 @@ export default function HeroUpcomingStrip({ limit = 30 }: { limit?: number }) {
   }
   if (!items.length) return null;
 
-  // Sonsuz akış için içerik iki kez basılır
+  // Sonsuz akış için içerik iki kez basılır (loop etkisi)
   const loopItems = [...items, ...items];
 
   return (
@@ -109,6 +98,7 @@ export default function HeroUpcomingStrip({ limit = 30 }: { limit?: number }) {
         <div className="laneHead">
           <span className="dot" />
           <span className="title">CANLI MAÇLAR</span>
+          {/* alt yazı kaldırıldı */}
         </div>
 
         <div className="scroller" role="list">
@@ -116,7 +106,7 @@ export default function HeroUpcomingStrip({ limit = 30 }: { limit?: number }) {
             {loopItems.map((m, idx) => (
               <a
                 key={`${m.id}-${idx}`}
-                className={`mcard ${m.leagueFlag ? "hasFlag" : ""}`}
+                className="mcard"
                 href="#"
                 role="listitem"
                 onClick={(e) => e.preventDefault()}
@@ -208,27 +198,35 @@ const css = `
 .scroller:hover .track{ animation-play-state: paused; }
 @keyframes slide-left{ 0%{transform:translateX(0)} 100%{transform:translateX(-50%)} }
 
-/* Kartlar – kısa ve kibar */
+/* Kartlar – daha küçük */
+/* Kartlar – daha kısa */
 .mcard{
+  flex:0 0 auto; width: 188px; min-height: 122px;
+  display:grid; grid-template-rows: auto 1fr;
   flex:0 0 auto;
-  width: 178px;
-  min-height: 106px;
+  width: 180px;          /* biraz daraldı */
+  min-height: 110px;     /* daha kısa hale getirildi */
   display:grid;
   grid-template-rows: auto 1fr;
   gap:4px;
+  text-decoration:none; color:#eaf2ff; position:relative;
   text-decoration:none;
   color:#eaf2ff;
   position:relative;
   background:linear-gradient(180deg, rgba(6,10,22,.82), rgba(6,12,24,.82));
   border:1px solid rgba(255,255,255,.08);
+  border-radius:10px; padding:6px 8px;
+  box-shadow: 0 5px 10px rgba(0,0,0,.20);
   border-radius:10px;
-  padding:6px;
+  padding:6px;           /* iç boşluk azaltıldı */
   box-shadow: 0 4px 8px rgba(0,0,0,.18);
   transition: transform .15s ease, box-shadow .2s ease, filter .2s ease;
   overflow:hidden;
 }
-/* Bayrak sadece varsa görünür */
-.mcard.hasFlag::before{
+.mcard::before{
+  content:""; position:absolute; inset:0;
+  background-image: var(--bgimg); background-size:cover; background-position:center;
+  filter: saturate(1.05) contrast(1.05) opacity(.26);
   content:"";
   position:absolute;
   inset:0;
@@ -238,66 +236,65 @@ const css = `
   filter: saturate(1.05) contrast(1.05) opacity(.24);
 }
 .mcard::after{
+  content:""; position:absolute; inset:0;
+  background: radial-gradient(60% 50% at 50% 0%, rgba(4,8,18,.30), rgba(4,8,18,.55));
   content:"";
   position:absolute;
   inset:0;
   background: radial-gradient(60% 50% at 50% 0%, rgba(4,8,18,.25), rgba(4,8,18,.5));
 }
 .mcard > *{ position:relative; z-index:1 }
+.mcard:hover{ transform: translateY(-1px); filter:brightness(1.05); box-shadow:0 6px 14px rgba(0,0,0,.24) }
 
-/* Lig alanı – küçük tipografi ve satır */
+/* Lig alanı */
+.mcard__top{ display:flex; align-items:center; gap:6px; min-height:18px; }
+.lg{ display:flex; align-items:center; gap:6px; min-width:0 }
+.lgImg{ width:18px; height:18px; object-fit:contain; filter: drop-shadow(0 1px 4px rgba(0,229,255,.25)); }
+.lgName{ font-size:10px; font-weight:900; color:#e7f3ff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:140px; }
+.lgPh{ width:18px; height:18px; border-radius:6px; background:rgba(255,255,255,.12) }
 .mcard__top{
   display:flex;
   align-items:center;
   gap:5px;
-  min-height:14px;
+  min-height:16px;       /* lig satırı da inceltildi */
 }
-.lg{ display:flex; align-items:center; gap:5px; min-width:0 }
-.lgImg{ width:15px; height:15px; object-fit:contain; filter: drop-shadow(0 1px 4px rgba(0,229,255,.22)); }
-.lgName{
-  font-size:9px;
-  font-weight:800;
-  color:#e7f3ff;
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-  max-width: 135px;
-}
-.lgPh{ width:15px; height:15px; border-radius:4px; background:rgba(255,255,255,.12) }
+.lgImg{ width:16px; height:16px; }
 
-/* Takımlar + skor – hizalama */
+/* Takımlar + skor (yukarı hizalı) */
+/* Takımlar + skor yukarıya daha yakın */
 .mcard__teams{
+  display:grid; grid-template-columns:1fr auto 1fr;
+  align-items:flex-start; gap:6px; padding-top:4px;
   display:grid;
   grid-template-columns:1fr auto 1fr;
-  align-items:center;
-  gap:6px;
-  padding-top:0;
+  align-items:flex-start;
+  gap:5px;
+  padding-top:2px;
 }
 .tb{ display:flex; flex-direction:column; align-items:center; gap:3px; min-width:0 }
-.tbImg{ width:26px; height:26px; border-radius:999px; object-fit:cover; box-shadow:0 4px 8px rgba(0,0,0,.18) }
-.tbPh{ width:26px; height:26px; border-radius:999px; display:grid; place-items:center; background:rgba(255,255,255,.12); color:#001018; font-weight:1000 }
+.tbImg{ width:28px; height:28px; border-radius:999px; object-fit:cover; box-shadow:0 4px 8px rgba(0,0,0,.18) }
+.tbPh{ width:28px; height:28px; border-radius:999px; display:grid; place-items:center; background:rgba(255,255,255,.12); color:#001018; font-weight:1000 }
+.tbImg{ width:26px; height:26px; }
 .tbName{
-  text-align:center;
+  text-align:center; font-size:10px; font-weight:700; color:#eef4ff;
+  line-height:1.1; max-height:2.2em;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+  overflow:hidden; text-overflow:clip; white-space:normal; word-break:break-word;
   font-size:10px;
   font-weight:700;
-  line-height:1.08;
-  max-height:2.16em;         /* ~2 satır */
-  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
-  overflow:hidden; text-overflow:clip;
-  white-space:normal; word-break:break-word; overflow-wrap:anywhere;
+  line-height:1.05;
+  max-height:2.1em;      /* 2 satırla sınırlı */
 }
 
-/* Skor – dengeli boy */
+/* Skor */
+/* Skor daha kibar */
 .score{
   display:flex; align-items:center; gap:5px;
+  font-weight:1000; font-size:16px;
+  color:#fff; text-shadow:0 0 6px rgba(255,255,255,.2), 0 0 10px rgba(160,220,255,.18);
   font-size:15px;
   font-weight:900;
-  color:#fff; text-shadow:0 0 6px rgba(255,255,255,.2), 0 0 10px rgba(160,220,255,.18);
+};
 }
 .score .sep{ opacity:.9 }
 .score .h{ color:#b9f0ff; text-shadow:0 0 8px rgba(120,220,255,.35) }
-.score .a{ color:#ffd9d9; text-shadow:0 0 8px rgba(255,120,120,.35) }
-
-@media (max-width: 520px){
-  .mcard{ width: 170px; min-height: 100px; }
-  .lgName{ max-width: 112px; }
-}
-`;
