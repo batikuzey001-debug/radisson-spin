@@ -53,7 +53,9 @@ export default function RadiCark() {
         setErr("");
       } catch (e: any) {
         if (alive) { setErr(e?.message ?? "Ödüller alınamadı"); setBasePrizes([]); }
-      } finally { alive && setLoading(false); }
+      } finally {
+        alive && setLoading(false);
+      }
     })();
     return () => { alive = false; };
   }, []);
@@ -75,6 +77,7 @@ export default function RadiCark() {
     try {
       setSpinning(true);
       const vr: VerifyOut = await postJson(`${API}/api/verify-spin`, { code: code.trim(), username: username.trim() } as VerifyIn);
+
       const baseLen = basePrizes.length;
       const targetIndexInReel = (LOOPS - 2) * baseLen + (vr.targetIndex % baseLen);
       const centerOffset = (VISIBLE * ITEM_H) / 2 - ITEM_H / 2;
@@ -96,19 +99,20 @@ export default function RadiCark() {
 
   return (
     <main className="slot">
-      {/* SADECE LOGO – SABİT ve pulse */}
-      <div className="bgLogo" aria-hidden />
-
       <header className="hero">
         <div className="title">RADİ ÇARK</div>
         <div className="sub">Tek sütun çark – şansını dene! 🎉</div>
       </header>
 
-      {/* REEL */}
+      {/* REEL (logo artık bunun İÇİNDE) */}
       <section className="reelWrap">
+        {/* LOGO – yalnızca oyun UI içinde, kutuların arkasında */}
+        <div className="bgLogoIn" aria-hidden />
+        {/* maskeler ve picker çizgisi */}
         <div className="mask top" />
         <div className="mask bottom" />
         <div className="selectLine" />
+
         <div
           className="reel"
           style={{ transform: `translateY(${translate}px)`, transition: `transform ${duration}s cubic-bezier(.12,.9,.06,1)` }}
@@ -125,7 +129,7 @@ export default function RadiCark() {
                 className={`card ${isCenter ? "win" : ""}`}
                 style={{ height: ITEM_H, ["--tint" as any]: String(hue) } as any}
               >
-                {/* statik neon çerçeve (dönmez) */}
+                {/* statik neon border */}
                 <div className="neonBorder" />
                 {isCenter && <div className="winRibbon" />}
                 <span className="txt">{txt}</span>
@@ -197,29 +201,31 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
 const css = `
 :root{ --text:#fff; --muted:#9fb1cc }
 *{box-sizing:border-box}
-.slot{max-width:720px;margin:0 auto;padding:16px;color:var(--text);position:relative;z-index:1}
-
-/* LOGO background – SADECE logo (sabit), pulse */
-.bgLogo{
-  position:fixed; inset:0; z-index:0; pointer-events:none;
-  background-image:url('https://cdn.prod.website-files.com/68ad80d65417514646edf3a3/68adb798dfed270f5040c714_logowhite.png');
-  background-repeat:no-repeat; background-position:center; background-size:42vmin;
-  opacity:.14; animation:logoPulse 3.6s ease-in-out infinite;
-}
-@keyframes logoPulse{ 0%{transform:scale(0.95)} 50%{transform:scale(1.05)} 100%{transform:scale(0.95)} }
+.slot{max-width:720px;margin:0 auto;padding:16px;color:var(--text);position:relative}
 
 .hero{text-align:center;margin:8px 0 12px}
 .title{font-weight:900;font-size:32px;letter-spacing:1px}
 .sub{color:var(--muted)}
 
-/* Reel */
+/* Reel alanı */
 .reelWrap{
   position:relative;height:${VISIBLE * ITEM_H}px;overflow:hidden;border-radius:16px;
   background:transparent;border:1px solid rgba(255,255,255,.10);
 }
+
+/* LOGO – oyun UI içinde, kutuların ARKASINDA */
+.bgLogoIn{
+  position:absolute; inset:0; z-index:0; pointer-events:none;
+  background-image:url('https://cdn.prod.website-files.com/68ad80d65417514646edf3a3/68adb798dfed270f5040c714_logowhite.png');
+  background-repeat:no-repeat; background-position:center; background-size:42vmin;
+  opacity:.13; animation:logoPulse 3.6s ease-in-out infinite;
+}
+@keyframes logoPulse{ 0%{transform:scale(0.95)} 50%{transform:scale(1.05)} 100%{transform:scale(0.95)} }
+
+/* Reel içerik */
 .reel{position:absolute;left:0;right:0;top:0;will-change:transform;z-index:1}
 
-/* Kart: cam + tint; dış çerçeve neon AMA dönmez */
+/* Kart: cam + tint; dış kenarda statik neon */
 .card{
   margin:10px 16px;height:${ITEM_H}px;border-radius:14px;display:flex;align-items:center;justify-content:center;
   font-size:26px;font-weight:900;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.85);
@@ -227,7 +233,6 @@ const css = `
   backdrop-filter: blur(3px);
   position:relative;overflow:hidden;
 }
-/* dış çerçeve neon – statik (animasyon yok) */
 .neonBorder{
   content:"";position:absolute;inset:0;border-radius:14px;padding:2px;pointer-events:none;
   background:conic-gradient(
