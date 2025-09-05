@@ -1,11 +1,8 @@
-from pydantic import BaseModel, Field
-
+# app/schemas/prize.py (Pydantic v2)
+from pydantic import BaseModel, Field, ConfigDict
 class PrizeOut(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, ser_json_timedelta="iso8601")
     id: int
     label: str
-    wheelIndex: int = Field(..., alias="wheel_index")
-    imageUrl: str | None = Field(None, alias="image_url")
-
-    class Config:
-        orm_mode = True
-        allow_population_by_field_name = True
+    wheel_index: int = Field(alias="wheelIndex", serialization_alias="wheelIndex")
+    image_url: str | None = Field(default=None, alias="imageUrl", serialization_alias="imageUrl")
