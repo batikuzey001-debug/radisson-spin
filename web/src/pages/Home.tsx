@@ -33,5 +33,10 @@ const css = `
   height:auto;             /* esnek kalsın */
   border-radius:16px;
 }
+
 @media(max-width:900px){
-  .heroSection .heroSplit{ min-height:240px; }
+  .heroSection .heroSplit{
+    min-height:240px;
+  }
+}
+`;
