@@ -89,7 +89,6 @@ export default function HeroUpcomingStrip({ limit = 30 }: { limit?: number }) {
   }
   if (!items.length) return null;
 
-  // Sonsuz akış için içerik iki kez basılır (loop etkisi)
   const loopItems = [...items, ...items];
 
   return (
@@ -98,7 +97,6 @@ export default function HeroUpcomingStrip({ limit = 30 }: { limit?: number }) {
         <div className="laneHead">
           <span className="dot" />
           <span className="title">CANLI MAÇLAR</span>
-          {/* alt yazı kaldırıldı */}
         </div>
 
         <div className="scroller" role="list">
@@ -201,8 +199,8 @@ const css = `
 /* Kartlar – daha kısa */
 .mcard{
   flex:0 0 auto;
-  width: 180px;          /* biraz daraldı */
-  min-height: 110px;     /* daha kısa hale getirildi */
+  width: 178px;
+  min-height: 106px;         /* biraz daha kısaltıldı */
   display:grid;
   grid-template-rows: auto 1fr;
   gap:4px;
@@ -212,7 +210,7 @@ const css = `
   background:linear-gradient(180deg, rgba(6,10,22,.82), rgba(6,12,24,.82));
   border:1px solid rgba(255,255,255,.08);
   border-radius:10px;
-  padding:6px;           /* iç boşluk azaltıldı */
+  padding:6px;
   box-shadow: 0 4px 8px rgba(0,0,0,.18);
   transition: transform .15s ease, box-shadow .2s ease, filter .2s ease;
   overflow:hidden;
@@ -234,43 +232,59 @@ const css = `
 }
 .mcard > *{ position:relative; z-index:1 }
 
-/* Lig alanı */
+/* Lig alanı – daha küçük tipografi */
 .mcard__top{
   display:flex;
   align-items:center;
   gap:5px;
-  min-height:16px;       /* lig satırı da inceltildi */
+  min-height:14px;           /* satır inceldi */
 }
-.lgImg{ width:16px; height:16px; }
+.lg{ display:flex; align-items:center; gap:5px; min-width:0 }
+.lgImg{ width:15px; height:15px; object-fit:contain; filter: drop-shadow(0 1px 4px rgba(0,229,255,.22)); }
+.lgName{
+  font-size:9px;             /* küçültüldü */
+  font-weight:800;           /* biraz daha hafif */
+  color:#e7f3ff;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  max-width: 135px;
+}
+.lgPh{ width:15px; height:15px; border-radius:4px; background:rgba(255,255,255,.12) }
 
-/* Takımlar + skor yukarıya daha yakın */
+/* Takımlar + skor – hizalama düzeltildi */
 .mcard__teams{
   display:grid;
   grid-template-columns:1fr auto 1fr;
-  align-items:flex-start;
-  gap:5px;
-  padding-top:2px;
+  align-items:center;        /* yukarıdaki flex-start yerine merkezde */
+  gap:6px;
+  padding-top:0;
 }
-.tbImg{ width:26px; height:26px; }
+.tb{ display:flex; flex-direction:column; align-items:center; gap:3px; min-width:0 }
+.tbImg{ width:26px; height:26px; border-radius:999px; object-fit:cover; box-shadow:0 4px 8px rgba(0,0,0,.18) }
+.tbPh{ width:26px; height:26px; border-radius:999px; display:grid; place-items:center; background:rgba(255,255,255,.12); color:#001018; font-weight:1000 }
 .tbName{
+  text-align:center;
   font-size:10px;
   font-weight:700;
-  line-height:1.05;
-  max-height:2.1em;      /* 2 satırla sınırlı */
+  line-height:1.08;
+  max-height:2.16em;         /* ~2 satır */
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+  overflow:hidden; text-overflow:clip;
+  white-space:normal; word-break:break-word; overflow-wrap:anywhere;
 }
 
-/* Skor daha kibar */
+/* Skor – dengeli boy */
 .score{
-  font-size:15px;
+  display:flex; align-items:center; gap:5px;
+  font-size:15px;            /* bir tık küçültüldü */
   font-weight:900;
-};
+  color:#fff; text-shadow:0 0 6px rgba(255,255,255,.2), 0 0 10px rgba(160,220,255,.18);
 }
 .score .sep{ opacity:.9 }
 .score .h{ color:#b9f0ff; text-shadow:0 0 8px rgba(120,220,255,.35) }
 .score .a{ color:#ffd9d9; text-shadow:0 0 8px rgba(255,120,120,.35) }
 
 @media (max-width: 520px){
-  .mcard{ width: 172px; min-height: 116px; }
-  .lgName{ max-width: 110px; }
+  .mcard{ width: 170px; min-height: 100px; }
+  .lgName{ max-width: 112px; }
 }
 `;
