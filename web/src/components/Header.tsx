@@ -2,15 +2,18 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 
-/* ================== Types & Config ================== */
+/* ============== Types & Config ============== */
 type HeaderConfig = {
   logo_url?: string | null;
-  live_base?: number; // opsiyonel: backend canlı başlangıç değeri
+  login_cta_text?: string | null;
+  login_cta_url?: string | null;
+  online_min?: number | string;
+  online_max?: number | string;
 };
 
 const API = import.meta.env.VITE_API_BASE_URL;
 
-/* ================== Utils ================== */
+/* ================= Utils ================= */
 function toNum(v: unknown, def: number) {
   if (v === null || v === undefined) return def;
   const n = typeof v === "string" ? parseInt(v, 10) : (v as number);
@@ -20,7 +23,7 @@ function splitThousands(n: number) {
   return new Intl.NumberFormat("tr-TR").format(Math.max(0, Math.floor(n)));
 }
 
-/* ================== Animated digits (tek sayı gösterimi) ================== */
+/* ====== Animated digits (dijital saat stili; KUTUSUZ) ====== */
 function AnimatedDigits({ value }: { value: number }) {
   const str = useMemo(() => splitThousands(value), [value]);
   return (
@@ -39,10 +42,7 @@ function Digit({ d }: { d: string }) {
   const target = Math.max(0, Math.min(9, parseInt(d, 10)));
   return (
     <span className="digit" aria-hidden>
-      <span
-        className="rail"
-        style={{ transform: `translateY(-${target * 10}%)` }}
-      >
+      <span className="rail" style={{ transform: `translateY(-${target * 10}%)` }}>
         {Array.from({ length: 10 }).map((_, i) => (
           <span key={i} className="cell">{i}</span>
         ))}
@@ -51,39 +51,41 @@ function Digit({ d }: { d: string }) {
   );
 }
 
-/* ================== Header ================== */
+/* ================= Header ================= */
 export default function Header() {
   const navigate = useNavigate();
   const [cfg, setCfg] = useState<HeaderConfig | null>(null);
-  const [online, setOnline] = useState<number>(4271);
+  const [online, setOnline] = useState<number>(4500);
 
-  /* --- Config yükle (bozulursa fallback) --- */
+  /* Config yükle — LOGO doğru endpointten: /api/site/header */
   useEffect(() => {
+    let live = true;
     (async () => {
       try {
-        const r = await fetch(`${API}/api/site`);
-        if (r.ok) {
-          const js = await r.json();
-          setCfg({
-            logo_url: js?.logo_url ?? js?.header_logo ?? null,
-            live_base: toNum(js?.live_base, online),
-          });
-          if (toNum(js?.live_base, -1) > 0) setOnline(toNum(js?.live_base, online));
-        }
+        const r = await fetch(`${API}/api/site/header`);
+        if (!r.ok) throw new Error(String(r.status));
+        const js: HeaderConfig = await r.json();
+        if (!live) return;
+        setCfg(js);
+
+        // online başlangıç
+        const min = toNum(js.online_min, 4800);
+        const max = toNum(js.online_max, 6800);
+        const mid = Math.round((min + max) / 2);
+        setOnline(mid);
       } catch {
-        /* sessiz fallback */
+        // fallback bırak
       }
     })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      live = false;
+    };
   }, []);
 
-  /* --- Küçük dalgalanma: her 5sn ±(0..3) artış; gece saatlerinde daha sakin --- */
+  /* Küçük dalgalanma (her 5sn) */
   useEffect(() => {
     const t = setInterval(() => {
-      const hour = new Date().getHours();
-      const maxJitter = hour >= 1 && hour <= 7 ? 1 : 3;
-      const inc = Math.floor(Math.random() * (maxJitter + 1)); // 0..maxJitter
-      setOnline(v => v + inc);
+      setOnline((v) => v + Math.floor(Math.random() * 3)); // 0..2
     }, 5000);
     return () => clearInterval(t);
   }, []);
@@ -94,19 +96,19 @@ export default function Header() {
         {/* Üst bar */}
         <div className="top">
           <div className="left">
-            {/* Logo */}
+            {/* Logo (SABİT yükseklik; sayfayla birlikte büyüyüp küçülmez) */}
             <button className="logoBtn" onClick={() => navigate("/")} title="Ana Sayfa">
               <img
                 src={
-                  cfg?.logo_url ||
-                  "https://dummyimage.com/120x30/0ea5e9/ffffff&text=SPORTOTO"
+                  (cfg?.logo_url || "").trim() ||
+                  "https://cdn.prod.website-files.com/68ad80d65417514646edf3a3/68adb798dfed270f5040c714_logowhite.png"
                 }
                 alt="Logo"
               />
             </button>
 
-            {/* LIVE — tek sayı (DUPLICATE YOK) */}
-            <div className="livePill" aria-label="Canlı kullanıcı">
+            {/* LIVE — kırmızı, nokta kırmızı (yanıp sönen), KUTUSUZ dijital sayı */}
+            <div className="livePill" aria-label="Canlı oyuncu">
               <span className="pulseDot" />
               <span className="liveWord">
                 <LiveIcon />
@@ -118,16 +120,21 @@ export default function Header() {
 
           {/* Sağ aksiyonlar */}
           <div className="actions">
-            <button className="chip ghost" title="Bildirimler">
+            <button className="chip ghost" title="Hızlı Bonus">
               <BellIcon />
               <span className="notif" />
             </button>
-            <button className="chip ghost" title="Yardım">
-              <HelpIcon />
-            </button>
-            <button className="chip primary" title="Giriş / Üye Ol">
+
+            <button
+              className="chip primary"
+              title={cfg?.login_cta_text || "Giriş"}
+              onClick={() => {
+                const href = (cfg?.login_cta_url || "/").trim();
+                if (href) window.location.assign(href);
+              }}
+            >
               <UserIcon />
-              Giriş Yap
+              <span>{cfg?.login_cta_text || "Giriş"}</span>
             </button>
           </div>
         </div>
@@ -147,7 +154,7 @@ export default function Header() {
   );
 }
 
-/* ================== MenuLink ================== */
+/* ================= MenuLink ================= */
 function MenuLink({ to, icon, label }: { to: string; icon: JSX.Element; label: string }) {
   return (
     <NavLink to={to} className={({ isActive }) => "mItem" + (isActive ? " active" : "")}>
@@ -157,7 +164,7 @@ function MenuLink({ to, icon, label }: { to: string; icon: JSX.Element; label: s
   );
 }
 
-/* ================== Icon Set (temiz, premium) ================== */
+/* ================= Icons ================= */
 function LiveIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -216,15 +223,6 @@ function BellIcon() {
     </svg>
   );
 }
-function HelpIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden>
-      <path d="M12 2a10 10 0 1 0 .001 20.001A10 10 0 0 0 12 2Z" stroke="currentColor" strokeWidth="2" fill="none"/>
-      <path d="M9.5 9a2.5 2.5 0 1 1 3.4 2.3c-.9.4-1.4 1-1.4 1.7V14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-      <circle cx="12" cy="17" r="1" fill="currentColor"/>
-    </svg>
-  );
-}
 function UserIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden>
@@ -234,13 +232,10 @@ function UserIcon() {
   );
 }
 
-/* ================== Styles ================== */
+/* ================= Styles ================= */
 const css = `
 .hdr{ position:sticky; top:0; z-index:30; background:transparent }
-.hdr__in{
-  backdrop-filter: saturate(1.1);
-  padding: 10px 14px 0;
-}
+.hdr__in{ padding: 10px 14px 0 }
 
 /* Üst bar */
 .top{
@@ -249,22 +244,21 @@ const css = `
 }
 .left{ display:flex; align-items:center; gap:14px }
 
+/* Logo: sabit yükseklik (sayfayla scale olmasın) */
 .logoBtn{ display:inline-grid; place-items:center; background:transparent; border:none; cursor:pointer; padding:0 }
-.logoBtn img{ height:30px; display:block; filter:drop-shadow(0 0 10px rgba(0,229,255,.3)) }
+.logoBtn img{ height:30px; width:auto; display:block; object-fit:contain; flex:0 0 auto }
 
-/* === LIVE PILL (tek sayı) === */
+/* LIVE: kırmızı; nokta kırmızı (yanıp sönsün); SAYI KUTUSUZ */
 .livePill{
   display:flex; align-items:center; gap:10px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, rgba(255,46,68,.15), rgba(255,46,68,.06));
-  outline: 1px solid rgba(255,46,68,.28);
-  box-shadow: 0 6px 16px rgba(0,0,0,.25), inset 0 0 0 1px rgba(255,255,255,.04);
+  padding:6px 10px; border-radius:999px;
+  background:linear-gradient(90deg, rgba(255,46,68,.15), rgba(255,46,68,.06));
+  outline:1px solid rgba(255,46,68,.28);
+  box-shadow:0 6px 16px rgba(0,0,0,.25), inset 0 0 0 1px rgba(255,255,255,.04);
 }
 .pulseDot{
   width:10px; height:10px; border-radius:50%;
-  background:#ff2a2a;
-  box-shadow:0 0 10px rgba(255,42,42,.9), 0 0 18px rgba(255,42,42,.65);
+  background:#ff2a2a; box-shadow:0 0 10px rgba(255,42,42,.9), 0 0 18px rgba(255,42,42,.65);
   position:relative;
 }
 .pulseDot::after{
@@ -277,25 +271,16 @@ const css = `
   text-shadow:0 0 8px rgba(255,42,42,.35);
   font-size:12px;
 }
+
+/* Dijital sayı — KUTUSUZ */
 .digits{
-  font-weight:900; color:#ffffff; font-size:14px; letter-spacing:.4px;
+  display:inline-flex; gap:1px; font-weight:900; color:#ffffff; font-size:14px; letter-spacing:.4px;
   text-shadow:0 0 10px rgba(0,229,255,.25);
-  display:inline-flex; gap:1px;
 }
 .sep{ margin:0 2px; opacity:.75 }
-.digit{
-  width:12px; height:16px; overflow:hidden; display:inline-block;
-  background:rgba(255,255,255,.06); border-radius:3px;
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);
-}
-.rail{
-  display:flex; flex-direction:column;
-  transition: transform .55s cubic-bezier(.18,.7,.2,1);
-}
-.cell{
-  height:16px; line-height:16px; text-align:center; font-size:12px;
-  color:#e9f6ff; text-shadow:0 0 6px rgba(0,229,255,.35);
-}
+.digit{ width:12px; height:16px; overflow:hidden; display:inline-block; }
+.rail{ display:flex; flex-direction:column; transition: transform .55s cubic-bezier(.18,.7,.2,1) }
+.cell{ height:16px; line-height:16px; text-align:center; font-size:12px; color:#e9f6ff; }
 
 /* Sağ aksiyonlar */
 .actions{ display:flex; gap:10px }
