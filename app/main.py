@@ -22,7 +22,7 @@ from app.api.routers.live import router as live_router
 from app.api.routers.schedule import router as schedule_router
 from app.api.routers.promos import router as promos_router
 from app.api.routers.events import router as events_router
-from app.api.routers.hero import router as hero_router           # <-- eklendi
+from app.api.routers.hero import router as hero_router  # /api/hero/stats
 from app.api.routers.admin_mod import admin_router
 from app.db.session import SessionLocal, engine
 from app.db.models import Base, Prize, Code
@@ -86,7 +86,7 @@ app.include_router(live_router,      prefix="/api")
 app.include_router(schedule_router,  prefix="/api")
 app.include_router(promos_router,    prefix="/api")
 app.include_router(events_router,    prefix="/api")
-app.include_router(hero_router,      prefix="/api")  # <-- eklendi (/api/hero/stats)
+app.include_router(hero_router,      prefix="/api")  # /api/hero/stats
 app.include_router(admin_router)
 
 # -----------------------------
@@ -217,6 +217,18 @@ def on_startup() -> None:
             END $$;
             """))
 
+            # --- events.prize_amount kolonu yoksa ekle (idempotent) ---
+            conn.execute(text("""
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='events') THEN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='events' AND column_name='prize_amount') THEN
+                        EXECUTE 'ALTER TABLE events ADD COLUMN prize_amount INTEGER';
+                    END IF;
+                END IF;
+            END $$;
+            """))
+
             # --- prize_tiers: tablo + seed (plain SQL) ---
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS prize_tiers (
@@ -307,10 +319,10 @@ def on_startup() -> None:
 # Lokal çalıştırma kolaylığı
 # -----------------------------
 if __name__ == "__main__":
-  import uvicorn
-  uvicorn.run(
-      "app.main:app",
-      host="0.0.0.0",
-      port=int(os.getenv("PORT", "8000")),
-      reload=True,
-  )
+    import uvicorn
+    uvicorn.run(
+        "app.main:app",
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", "8000")),
+        reload=True,
+    )
