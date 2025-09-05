@@ -23,7 +23,7 @@ function splitThousands(n: number) {
   return new Intl.NumberFormat("tr-TR").format(Math.max(0, Math.floor(n)));
 }
 
-/* ====== Animated digits (dijital saat stili; KUTUSUZ) ====== */
+/* ====== Animated digits (dijital saat stili; kutusuz) ====== */
 function AnimatedDigits({ value }: { value: number }) {
   const str = useMemo(() => splitThousands(value), [value]);
   return (
@@ -57,7 +57,7 @@ export default function Header() {
   const [cfg, setCfg] = useState<HeaderConfig | null>(null);
   const [online, setOnline] = useState<number>(4500);
 
-  /* Config yükle — LOGO doğru endpointten: /api/site/header */
+  // Config – LOGO /api/site/header
   useEffect(() => {
     let live = true;
     (async () => {
@@ -68,21 +68,17 @@ export default function Header() {
         if (!live) return;
         setCfg(js);
 
-        // online başlangıç
         const min = toNum(js.online_min, 4800);
         const max = toNum(js.online_max, 6800);
-        const mid = Math.round((min + max) / 2);
-        setOnline(mid);
+        setOnline(Math.round((min + max) / 2));
       } catch {
-        // fallback bırak
+        /* fallback */
       }
     })();
-    return () => {
-      live = false;
-    };
+    return () => { live = false; };
   }, []);
 
-  /* Küçük dalgalanma (her 5sn) */
+  // Küçük dalgalanma (5 sn)
   useEffect(() => {
     const t = setInterval(() => {
       setOnline((v) => v + Math.floor(Math.random() * 3)); // 0..2
@@ -96,7 +92,7 @@ export default function Header() {
         {/* Üst bar */}
         <div className="top">
           <div className="left">
-            {/* Logo (SABİT yükseklik; sayfayla birlikte büyüyüp küçülmez) */}
+            {/* Logo (sabit yükseklik) */}
             <button className="logoBtn" onClick={() => navigate("/")} title="Ana Sayfa">
               <img
                 src={
@@ -107,13 +103,10 @@ export default function Header() {
               />
             </button>
 
-            {/* LIVE — kırmızı, nokta kırmızı (yanıp sönen), KUTUSUZ dijital sayı */}
-            <div className="livePill" aria-label="Canlı oyuncu">
+            {/* LIVE — kırmızı; nokta kırmızı; KUTUSUZ dijital sayı */}
+            <div className="liveInline" aria-label="Canlı oyuncu">
               <span className="pulseDot" />
-              <span className="liveWord">
-                <LiveIcon />
-                LIVE
-              </span>
+              <span className="liveWord">LIVE</span>
               <AnimatedDigits value={online} />
             </div>
           </div>
@@ -122,6 +115,7 @@ export default function Header() {
           <div className="actions">
             <button className="chip ghost" title="Hızlı Bonus">
               <BellIcon />
+              <span>Hızlı Bonus</span>
               <span className="notif" />
             </button>
 
@@ -165,14 +159,6 @@ function MenuLink({ to, icon, label }: { to: string; icon: JSX.Element; label: s
 }
 
 /* ================= Icons ================= */
-function LiveIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path d="M3 12a9 9 0 0 1 18 0" stroke="currentColor" strokeOpacity=".75" strokeWidth="2" strokeLinecap="round"/>
-      <circle cx="12" cy="12" r="4" fill="currentColor" />
-    </svg>
-  );
-}
 function HomeIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden>
@@ -244,17 +230,13 @@ const css = `
 }
 .left{ display:flex; align-items:center; gap:14px }
 
-/* Logo: sabit yükseklik (sayfayla scale olmasın) */
+/* Logo */
 .logoBtn{ display:inline-grid; place-items:center; background:transparent; border:none; cursor:pointer; padding:0 }
 .logoBtn img{ height:30px; width:auto; display:block; object-fit:contain; flex:0 0 auto }
 
-/* LIVE: kırmızı; nokta kırmızı (yanıp sönsün); SAYI KUTUSUZ */
-.livePill{
+/* LIVE — inline, çerçevesiz */
+.liveInline{
   display:flex; align-items:center; gap:10px;
-  padding:6px 10px; border-radius:999px;
-  background:linear-gradient(90deg, rgba(255,46,68,.15), rgba(255,46,68,.06));
-  outline:1px solid rgba(255,46,68,.28);
-  box-shadow:0 6px 16px rgba(0,0,0,.25), inset 0 0 0 1px rgba(255,255,255,.04);
 }
 .pulseDot{
   width:10px; height:10px; border-radius:50%;
@@ -266,21 +248,17 @@ const css = `
   border:2px solid rgba(255,42,42,.35); animation:pulse 1.6s infinite;
 }
 .liveWord{
-  display:flex; align-items:center; gap:6px;
   color:#ff4d4d; font-weight:900; letter-spacing:1.4px; text-transform:uppercase;
   text-shadow:0 0 8px rgba(255,42,42,.35);
   font-size:12px;
 }
 
-/* Dijital sayı — KUTUSUZ */
-.digits{
-  display:inline-flex; gap:1px; font-weight:900; color:#ffffff; font-size:14px; letter-spacing:.4px;
-  text-shadow:0 0 10px rgba(0,229,255,.25);
-}
+/* Dijital sayı — kutusuz */
+.digits{ display:inline-flex; gap:1px; font-weight:900; color:#ffffff; font-size:14px; letter-spacing:.4px; text-shadow:0 0 10px rgba(0,229,255,.25) }
 .sep{ margin:0 2px; opacity:.75 }
-.digit{ width:12px; height:16px; overflow:hidden; display:inline-block; }
+.digit{ width:12px; height:16px; overflow:hidden; display:inline-block }
 .rail{ display:flex; flex-direction:column; transition: transform .55s cubic-bezier(.18,.7,.2,1) }
-.cell{ height:16px; line-height:16px; text-align:center; font-size:12px; color:#e9f6ff; }
+.cell{ height:16px; line-height:16px; text-align:center; font-size:12px; color:#e9f6ff }
 
 /* Sağ aksiyonlar */
 .actions{ display:flex; gap:10px }
