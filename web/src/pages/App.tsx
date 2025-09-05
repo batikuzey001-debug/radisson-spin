@@ -1,17 +1,15 @@
 // web/src/pages/App.tsx
 import { Routes, Route } from "react-router-dom";
-import Header from "../components/Header";
-import SubNav from "../components/SubNav";
+
+// Sadece sayfa bileşenleri:
 import Home from "./Home";
 import RadiCark from "./RadiCark";
-import Turnuvalar from "./Turnuvalar";
+import Turnuvalar from "./Turnuvalar"; // gerekiyorsa açık kalsın
 
 export default function App() {
   return (
     <div className="app">
-      <Header />
-      <SubNav />
-
+      {/* Global Header/SubNav yok; sayfalar kendi içinde eklenir */}
       <div className="page">
         <Routes>
           <Route path="/" element={<Home />} />
@@ -26,11 +24,11 @@ export default function App() {
 }
 
 const css = `
-/* -------- GLOBAL RESET (beyaz kenar çizgilerini engeller) -------- */
+/* -------- GLOBAL RESET -------- */
 *{box-sizing:border-box}
 html, body, #root{height:100%; margin:0; background:#0b1224}
 
-/* Sayfa zemin */
+/* Sayfa zemini */
 .app{
   min-height:100%;
   background:linear-gradient(180deg,#0b1224,#0e1a33);
@@ -44,7 +42,7 @@ html, body, #root{height:100%; margin:0; background:#0b1224}
   padding:16px;
 }
 
-/* İlk çocukların üst marjını sıfırla (h1 margin-collapse) */
+/* İlk çocukların üst marjını sıfırla (h1 margin-collapse olmaması için) */
 .page > *:first-child{ margin-top:0; }
 .page h1, .page h2{ margin-top:0; }
 
