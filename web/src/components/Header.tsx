@@ -1,6 +1,6 @@
 // web/src/components/Header.tsx
 import { NavLink, useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 /* ===== Types & Config ===== */
 type HeaderConfig = {
@@ -12,7 +12,7 @@ type HeaderConfig = {
 };
 const API = import.meta.env.VITE_API_BASE_URL;
 
-/* ===== Helpers ===== */
+/* ===== Small utils ===== */
 function toNum(v: unknown, def: number) {
   if (v === null || v === undefined) return def;
   const n = typeof v === "string" ? parseInt(v, 10) : (v as number);
@@ -29,7 +29,41 @@ function splitThousands(n: number) {
   return new Intl.NumberFormat("tr-TR").format(Math.max(0, Math.floor(n)));
 }
 
-/* ===== Header (sol blok referans görsele uyarlandı) ===== */
+/* ===== Animated digital-number (dijital saat stili) ===== */
+function AnimatedDigits({ value }: { value: number }) {
+  const str = useMemo(() => splitThousands(value), [value]);
+  return (
+    <span className="digits">
+      {str.split("").map((ch, i) =>
+        ch === "." ? (
+          <span key={`sep-${i}`} className="sep">.</span>
+        ) : (
+          <Digit key={`d-${i}`} d={ch} />
+        )
+      )}
+    </span>
+  );
+}
+function Digit({ d }: { d: string }) {
+  const target = Math.max(0, Math.min(9, parseInt(d, 10)));
+  return (
+    <span className="digit">
+      <span
+        className="rail"
+        // her değişimde translateY değişir ve CSS transition ile "roll" animasyonu olur
+        style={{ transform: `translateY(-${target * 10}%)` }}
+      >
+        {Array.from({ length: 10 }).map((_, i) => (
+          <span key={i} className="cell">
+            {i}
+          </span>
+        ))}
+      </span>
+    </span>
+  );
+}
+
+/* ===== Header ===== */
 export default function Header() {
   const navigate = useNavigate();
   const [cfg, setCfg] = useState<HeaderConfig | null>(null);
@@ -60,7 +94,7 @@ export default function Header() {
     };
   }, []);
 
-  // küçük dalgalanma (dış görünüm bozulmadan)
+  // küçük dalgalanma
   useEffect(() => {
     const t = setInterval(() => {
       const hour = new Date().getHours();
@@ -76,10 +110,9 @@ export default function Header() {
   return (
     <header className="hdr">
       <div className="hdr__in">
-        {/* Üst bar (yükseklik sabit) */}
         <div className="top">
           <div className="left">
-            {/* Logo → ana sayfa */}
+            {/* Logo */}
             <button className="logoBtn" onClick={() => navigate("/")} title="Ana Sayfa">
               <img
                 src={
@@ -90,15 +123,14 @@ export default function Header() {
               />
             </button>
 
-            {/* LIVE (yeşil dot + gradient 'LIVE' + sayı) */}
+            {/* LIVE (kırmızı, nokta kırmızı - yanıp sönüyor, sayıda dijital animasyon) */}
             <div className="live">
               <span className="liveDot" />
               <span className="liveText">LIVE</span>
-              <span className="liveCount">{splitThousands(online)}</span>
+              <AnimatedDigits value={online} />
             </div>
           </div>
 
-          {/* Sağ aksiyonlar (mevcut akış korunur) */}
           <div className="actions">
             <button className="chip ghost" title="Hızlı Bonus">
               <BellIcon />
@@ -119,7 +151,6 @@ export default function Header() {
           </div>
         </div>
 
-        {/* Menü */}
         <nav className="menu">
           <MenuLink to="/" icon={<HomeIcon />} label="Ana Sayfa" />
           <MenuLink to="/cark" icon={<WheelIcon />} label="Çark" />
@@ -134,7 +165,7 @@ export default function Header() {
   );
 }
 
-/* ===== Menü Link ===== */
+/* ===== MenuLink ===== */
 function MenuLink({ to, icon, label }: { to: string; icon: JSX.Element; label: string }) {
   return (
     <NavLink to={to} className={({ isActive }) => "mItem" + (isActive ? " active" : "")}>
@@ -226,25 +257,40 @@ const css = `
 .logoBtn{ display:inline-grid; place-items:center; background:transparent; border:none; cursor:pointer; padding:0 }
 .logoBtn img{ height:30px; display:block; filter:drop-shadow(0 0 10px rgba(0,229,255,.3)) }
 
-/* LIVE (referans görsele uygun) */
+/* === LIVE BLOK (KIRMIZI) === */
 .live{ display:flex; align-items:center; gap:8px; font-weight:900 }
 .live .liveDot{
   width:10px; height:10px; border-radius:50%;
-  background:#34ff9a;
-  box-shadow:0 0 10px rgba(52,255,154,.9), 0 0 24px rgba(52,255,154,.6);
+  background:#ff2a2a;
+  box-shadow:0 0 10px rgba(255,42,42,.9), 0 0 18px rgba(255,42,42,.65);
+  animation:blink 1s infinite;
 }
 .live .liveText{
-  font-size:13px; letter-spacing:2px; font-weight:900;
-  background:linear-gradient(90deg,#ff7ad6 0%, #a5b8ff 40%, #34ff9a 100%);
-  -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
-  text-transform:uppercase;
+  font-size:13px; font-weight:900; letter-spacing:2px; text-transform:uppercase;
+  color:#ff4d4d;  /* düz kırmızı görünürlük */
+  text-shadow:0 0 8px rgba(255,42,42,.45);
 }
-.live .liveCount{
-  font-size:14px; color:#ffffff; font-weight:900; letter-spacing:.4px;
+.live .digits{
+  font-weight:900; color:#ffffff; font-size:14px; letter-spacing:.4px;
   text-shadow:0 0 10px rgba(0,229,255,.25);
+  display:inline-flex; gap:1px;
 }
+.digit{
+  width:12px; height:16px; overflow:hidden; display:inline-block;
+  background:rgba(255,255,255,.06); border-radius:3px;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);
+}
+.rail{
+  display:flex; flex-direction:column;
+  transition: transform .55s cubic-bezier(.18,.7,.2,1); /* dijital roll */
+}
+.cell{
+  height:16px; line-height:16px; text-align:center; font-size:12px;
+  color:#e9f6ff; text-shadow:0 0 6px rgba(0,229,255,.35);
+}
+.sep{ margin:0 2px; opacity:.75 }
 
-/* SAĞ aksiyon butonları – köşeli */
+/* SAĞ AKSİYONLAR */
 .actions{ display:flex; gap:10px }
 .chip{
   display:flex; align-items:center; gap:6px;
@@ -254,17 +300,17 @@ const css = `
 }
 .chip svg{ width:14px; height:14px }
 .chip:hover{ filter:brightness(1.06) }
-.chip.primary{
-  background:linear-gradient(90deg,#00e5ff,#4aa7ff); color:#001018; border-color:#0f6d8c;
-  box-shadow:0 4px 12px rgba(0,229,255,.28);
-}
 .chip.ghost{ position:relative }
 .chip.ghost .notif{
   position:absolute; top:4px; right:4px; width:8px; height:8px; border-radius:50%;
   background:#ff4d6d; box-shadow:0 0 8px rgba(255,77,109,.6);
 }
+.chip.primary{
+  background:linear-gradient(90deg,#00e5ff,#4aa7ff); color:#001018; border-color:#0f6d8c;
+  box-shadow:0 4px 12px rgba(0,229,255,.28);
+}
 
-/* ALT MENÜ */
+/* MENÜ */
 .menu{
   height:var(--menuH);
   display:flex; align-items:center; gap:8px;
@@ -277,4 +323,6 @@ const css = `
   font-size:13px; font-weight:700; color:#cfe3ff; text-decoration:none;
 }
 .mItem.active{ background:linear-gradient(90deg,#00e5ff,#4aa7ff); color:#001018; }
+
+@keyframes blink{ 0%,100%{ opacity:1 } 50%{ opacity:.35 } }
 `;
