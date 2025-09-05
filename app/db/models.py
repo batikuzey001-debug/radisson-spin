@@ -178,6 +178,8 @@ class Event(Base):
     accent_color = Column(String(16))
     bg_color     = Column(String(16))
     variant      = Column(String(24))
+    # YENİ: Etkinlik ödül miktarı (₺)
+    prize_amount = Column(Integer)   # <-- eklendi
     created_at = Column(DateTime(timezone=True), default=_utcnow)
     updated_at = Column(DateTime(timezone=True), default=_utcnow)
 
@@ -218,7 +220,7 @@ class PrizeTier(Base):
 # --- ÇARK DAĞILIMI (Seviye -> Ödül -> Ağırlık) ---
 class PrizeDistribution(Base):
     __tablename__ = "prize_distributions"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary key=True, autoincrement=True)
 
     # Dinamik seviye anahtarı: prize_tiers.key
     tier_key: Mapped[str] = mapped_column(ForeignKey("prize_tiers.key"), index=True)
