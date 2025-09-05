@@ -5,15 +5,10 @@ import EventsGrid from "../components/EventsGrid";
 
 export default function Home() {
   return (
-    <main className="home">
-      <section className="heroSection">
-        <Hero />
-      </section>
+    <main>
+      <Hero />
       <QuickBonus />
       <EventsGrid />
-
-      <style>{css}</style>
     </main>
   );
 }
-
