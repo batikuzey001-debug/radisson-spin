@@ -9,9 +9,11 @@ from sqlalchemy import and_
 
 from app.db.models import Code, Prize, Spin, PrizeDistribution
 from app.db.session import get_db
-from app.schemas.spin import VerifyIn, VerifyOut, CommitIn
-from app.schemas.prize import PrizeOut
-from app.services.spin import RESERVED, new_token  # RESERVED: dict[code] -> token (mevcut yapı)
+# Şemalar type-hint için kalabilir ama response_model KULLANMIYORUZ
+from app.schemas.spin import VerifyIn, CommitIn  # VerifyOut yerine dict döneceğiz
+from app.schemas.prize import PrizeOut  # sadece referans
+
+from app.services.spin import RESERVED, new_token  # RESERVED: dict[code] -> token
 
 router = APIRouter()
 
@@ -30,14 +32,13 @@ def raise_err(code: str, http_status: int) -> None:
 
 # -------------------- helpers --------------------
 def _abs_url(request: Request, u: Optional[str]) -> Optional[str]:
-    """Reverse proxy arkasında http/https ve host doğru kalsın."""
     if not u:
         return None
     if u.startswith(("data:", "http://", "https://")):
         return u
     if u.startswith("//"):
         return "https:" + u
-    # proxy header'ları saygıla
+    # reverse-proxy header'larına saygı
     scheme = request.headers.get("x-forwarded-proto") or request.url.scheme
     host = request.headers.get("x-forwarded-host") or request.url.netloc
     base = f"{scheme}://{host}"
@@ -52,28 +53,29 @@ def _utcnow() -> datetime:
 CHOSEN: dict[str, Tuple[int, int]] = {}
 
 # =========================================================
-# 1) PRİZELER: /api/prizes
+# 1) PRİZELER: /api/prizes  (FE camelCase bekliyor)
 # =========================================================
-@router.get("/prizes", response_model=List[PrizeOut], response_model_exclude_none=True)
+@router.get("/prizes")
 def list_prizes(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
 ):
     rows = db.query(Prize).order_by(Prize.wheel_index).all()
+    # FE tipi: { id, label, wheelIndex, imageUrl }
     return [
-        PrizeOut(
-            id=p.id,
-            label=p.label,
-            wheelIndex=p.wheel_index,
-            imageUrl=_abs_url(request, getattr(p, "image_url", None)),
-        )
+        {
+            "id": p.id,
+            "label": p.label,
+            "wheelIndex": int(p.wheel_index),
+            "imageUrl": _abs_url(request, getattr(p, "image_url", None)),
+        }
         for p in rows
     ]
 
 # =========================================================
-# 2) DOĞRULAMA + ÖDÜL SEÇİMİ (AĞIRLIKLI): /api/verify-spin
+# 2) DOĞRULAMA + ÖDÜL SEÇİMİ: /api/verify-spin (camelCase)
 # =========================================================
-@router.post("/verify-spin", response_model=VerifyOut, response_model_exclude_none=True)
+@router.post("/verify-spin")
 def verify_spin(
     payload: VerifyIn,
     db: Annotated[Session, Depends(get_db)],
@@ -97,9 +99,10 @@ def verify_spin(
 
     # 1) Manuel ödül
     if getattr(row, "manual_prize_id", None):
-        prize = db.get(Prize, row.manual_prize_id)
-        if not prize or getattr(prize, "enabled", True) is False:
+        pr = db.get(Prize, row.manual_prize_id)
+        if not pr or getattr(pr, "enabled", True) is False:
             raise_err("E1004", 400)
+        prize = pr
 
     # 2) Otomatik dağılım
     if prize is None:
@@ -127,7 +130,7 @@ def verify_spin(
                 raise_err("E1004", 400)
 
             total = sum(int(pd.weight_bp or 0) for pd, _ in items)
-            pick = secrets.randbelow(total)  # 0..total-1
+            pick = secrets.randbelow(total)
             acc = 0
             chosen: Optional[Prize] = None
             for pd, pr in items:
@@ -142,15 +145,16 @@ def verify_spin(
 
     # Front animasyonu için token-kayıt
     token = new_token()
-    RESERVED[code] = token               # mevcut yapı: code -> token
+    RESERVED[code] = token
     CHOSEN[token] = (prize.id, prize.wheel_index)
 
-    # SADE: VerifyOut şemanızda ne varsa onu döndürün (extra alan YOK!)
-    return VerifyOut(
-        targetIndex=prize.wheel_index,
-        prizeLabel=prize.label,
-        spinToken=token,
-    )
+    # FE beklediği camelCase alanları döndürüyoruz
+    return {
+        "targetIndex": int(prize.wheel_index),
+        "prizeLabel": prize.label,
+        "spinToken": token,
+        # "prizeImage": _abs_url(request, getattr(prize, "image_url", None)),  # FE kullanıyorsa aç
+    }
 
 # =========================================================
 # 3) KULLANIMI TAMAMLA (KAYDET): /api/commit-spin
@@ -167,6 +171,8 @@ def commit_spin(
     row = db.get(Code, code)
     if not row:
         raise_err("E1001", 400)
+
+    # İdempotent
     if row.status == "used":
         return {"ok": True}
 
@@ -189,7 +195,7 @@ def commit_spin(
     db.add(row)
 
     spin = Spin(
-        id=token,  # token uuid
+        id=token,
         code=code,
         username=row.username or "",
         prize_id=prize_id,
@@ -204,27 +210,25 @@ def commit_spin(
     return {"ok": True}
 
 # =========================================================
-# 4) UYUMLULUK KISAYOLLARI
+# 4) UYUMLULUK KISAYOLLARI (opsiyonel)
 # =========================================================
-@router.get("/spin/prizes", response_model=List[PrizeOut], response_model_exclude_none=True)
+@router.get("/spin/prizes")
 def list_prizes_alias(request: Request, db: Annotated[Session, Depends(get_db)]):
-    return list_prizes(request, db)
+  return list_prizes(request, db)
 
 class RedeemIn(VerifyIn):
-    pass
+  pass
 
 @router.post("/spin/redeem")
-def redeem_one_step(
-    payload: RedeemIn,
-    request: Request,
-    db: Annotated[Session, Depends(get_db)],
-):
-    try:
-        vo = verify_spin(payload, db, request)
-    except HTTPException as e:
-        return {"status": str(e.detail)}
-    try:
-        commit_spin(CommitIn(code=payload.code, spinToken=vo.spinToken), request, db)
-    except HTTPException as e:
-        return {"status": str(e.detail)}
-    return {"status": "Tebrikler!", "prize": vo.prizeLabel}
+def redeem_one_step(payload: RedeemIn, request: Request, db: Annotated[Session, Depends(get_db)]):
+  # verify
+  try:
+    vo = verify_spin(payload, db, request)
+  except HTTPException as e:
+    return {"status": str(e.detail)}
+  # commit
+  try:
+    commit_spin(CommitIn(code=payload.code, spinToken=vo["spinToken"]), request, db)
+  except HTTPException as e:
+    return {"status": str(e.detail)}
+  return {"status": "Tebrikler!", "prize": vo["prizeLabel"]}
