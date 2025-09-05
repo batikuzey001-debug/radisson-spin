@@ -105,8 +105,8 @@ export default function EventsGrid() {
       <div className="grid">
         {items.map((ev) => {
           const { hue, catLabel } = colorOf(ev);
-          const stateLab = ev.state === "active" ? "AKTİF" : "YAKINDA";
-          // Aktifte “Devam ediyor” istemiyorsun → boş bırakıyoruz
+          // TV stili rozet metinleri
+          const stateLab = ev.state === "active" ? "LIVE" : "BEKLEMEDE";
           const subTxt = ev.state === "active" ? "" : `Başlangıç: ${fmtDate(ev.start_at)}`;
           const amountText =
             typeof ev.prize_amount === "number" ? fmtTL(ev.prize_amount) : null;
@@ -132,8 +132,11 @@ export default function EventsGrid() {
                 role="img"
                 aria-label={ev.title}
               >
-                {/* sol-üst state pill */}
-                <span className={`pill ${ev.state}`}>{stateLab}</span>
+                {/* sol-üst TV tarzı rozet */}
+                <span className={`pill ${ev.state}`}>
+                  <span className="dot" aria-hidden />
+                  {stateLab}
+                </span>
               </div>
 
               {/* ÖDÜL MİKTARI – en öne, büyük ve dikkat çekici */}
@@ -206,11 +209,27 @@ const css = `
     hsla(var(--tone,190), 95%, 55%, .90));
   box-shadow:0 6px 18px hsla(var(--tone,190), 95%, 60%, .55);
   display:grid; place-items:center;
+  overflow:hidden;
+}
+.card .ribbon::before, .card .ribbon::after{
+  /* küçük parlama/şerit dokusu – okunurluğu artırır */
+  content:""; position:absolute; inset:0;
+  background:
+    linear-gradient(0deg, rgba(255,255,255,.12), rgba(255,255,255,0) 40%),
+    repeating-linear-gradient(90deg, rgba(255,255,255,.07) 0 2px, rgba(0,0,0,0) 2px 6px);
+  pointer-events:none;
 }
 .card .ribbon .ribTxt{
-  transform: rotate(-45deg) skewX(-10deg);
-  color:#001018; font-weight:1000; font-size:12px; letter-spacing:.8px;
-  text-transform:uppercase; opacity:.95;
+  /* Kurdele ile aynı açı – artık düz değil */
+  transform: skewX(-8deg);
+  font-weight:1000; font-size:12px; letter-spacing:1px;
+  text-transform:uppercase;
+  color:#001018;
+  /* kontur + kabartma – karmaşık görsel zeminlerde okunurluk */
+  -webkit-text-stroke: 0.6px rgba(0,0,0,.25);
+  text-shadow:
+    0 1px 0 rgba(255,255,255,.35),
+    0 2px 10px rgba(0,0,0,.25);
 }
 
 /* üst görsel */
@@ -223,16 +242,49 @@ const css = `
   background:linear-gradient(180deg, rgba(0,0,0,.0) 0%, rgba(0,0,0,.55) 75%, rgba(0,0,0,.75) 100%);
 }
 
-/* state pill */
+/* TV tarzı rozet (LIVE/BEKLEMEDE) */
 .pill{
   position:absolute; left:10px; top:10px; z-index:4;
-  display:inline-flex; align-items:center; gap:6px;
-  height:22px; padding:0 10px; border-radius:999px;
-  font-size:12px; font-weight:900; letter-spacing:.3px;
-  color:#001018; background:linear-gradient(90deg, #34ff9a, #a8ffcf);
-  box-shadow:0 4px 14px rgba(52,255,154,.45);
+  display:inline-flex; align-items:center; gap:8px;
+  height:24px; padding:0 12px; border-radius:6px;
+  font-size:12px; font-weight:1000; letter-spacing:.4px;
+  color:#ffffff; text-transform:uppercase;
+  box-shadow: 0 6px 18px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.2);
+  backdrop-filter: blur(2px);
 }
-.pill.upcoming{ background:linear-gradient(90deg, #ffd36a, #ffe7a1); box-shadow:0 4px 14px rgba(255,211,106,.42) }
+.pill .dot{
+  width:8px; height:8px; border-radius:50%;
+  box-shadow:0 0 0 2px rgba(0,0,0,.25), 0 0 8px currentColor;
+}
+
+/* ACTIVE -> Kırmızı LIVE rozeti + nabız efekti */
+.pill.active{
+  background:linear-gradient(90deg, #ff3b3b, #ff6b6b);
+}
+.pill.active .dot{
+  color:#ffdddd; background:#fff;
+  position:relative;
+}
+.pill.active .dot::after{
+  /* nabız sadece 'active'de */
+  content:""; position:absolute; inset:-6px; border-radius:50%;
+  border:2px solid #ffb3b3;
+  opacity:.7; animation:pulse 1.6s ease-out infinite;
+}
+@keyframes pulse{
+  0%{ transform:scale(.6); opacity:.7 }
+  70%{ transform:scale(1.6); opacity:0 }
+  100%{ transform:scale(1.6); opacity:0 }
+}
+
+/* UPCOMING -> Kehribar beklemede */
+.pill.upcoming{
+  color:#001018;
+  background:linear-gradient(90deg, #ffd36a, #ffebad);
+}
+.pill.upcoming .dot{
+  background:#a86c00; color:#ffd36a;
+}
 
 /* ÖDÜL – en üstte, büyük ve neon vurgulu */
 .card .amount{
