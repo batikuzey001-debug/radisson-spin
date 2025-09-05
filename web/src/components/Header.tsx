@@ -88,8 +88,8 @@ export default function Header() {
 
   return (
     <header className="hdr">
-      <div className="hdr__in">
-        {/* Üst bar */}
+      {/* Tek kapsül: top + menu birlikte */}
+      <div className="hdrShell">
         <div className="top">
           <div className="left">
             {/* Logo (sabit yükseklik) */}
@@ -133,13 +133,12 @@ export default function Header() {
           </div>
         </div>
 
-        {/* Menü */}
-        <nav className="menu">
-          <MenuLink to="/" icon={<HomeIcon />} label="Ana Sayfa" />
+        {/* Menü – üst bar ile bütünleşik */}
+        <nav className="menu" aria-label="Ana menü">
           <MenuLink to="/cark" icon={<WheelIcon />} label="Çark" />
           <MenuLink to="/turnuvalar" icon={<TrophyIcon />} label="Turnuvalar" />
-          <MenuLink to="/etkinlikler" icon={<TicketIcon />} label="Etkinlikler" />
-          <MenuLink to="/promos" icon={<GiftIcon />} label="Promosyonlar" />
+          <MenuLink to="/bulten" icon={<BulletinIcon />} label="İddaa Bülteni" />
+          <MenuLink to="/deal" icon={<BriefcaseIcon />} label="Deal Or No Deal" />
         </nav>
       </div>
 
@@ -151,7 +150,10 @@ export default function Header() {
 /* ================= MenuLink ================= */
 function MenuLink({ to, icon, label }: { to: string; icon: JSX.Element; label: string }) {
   return (
-    <NavLink to={to} className={({ isActive }) => "mItem" + (isActive ? " active" : "")}>
+    <NavLink
+      to={to}
+      className={({ isActive }) => "mItem" + (isActive ? " active" : "")}
+    >
       <span className="ico">{icon}</span>
       <span className="txt">{label}</span>
     </NavLink>
@@ -181,6 +183,26 @@ function TrophyIcon() {
       <path d="M5 4h14v2a5 5 0 0 1-5 5H10A5 5 0 0 1 5 6V4Z" fill="currentColor"/>
       <path d="M7 20h10M9 20v-3h6v3" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
       <path d="M5 6H3a4 4 0 0 0 4 4M19 6h2a4 4 0 0 1-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+    </svg>
+  );
+}
+function BulletinIcon() {
+  // Liste + futbol topu
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden>
+      <rect x="4" y="3" width="12" height="18" rx="2" ry="2" stroke="currentColor" strokeWidth="2" fill="none"/>
+      <path d="M7 8h6M7 12h6M7 16h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+      <circle cx="19" cy="17" r="4" stroke="currentColor" strokeWidth="2" fill="none"/>
+      <path d="M19 13l-2 2 2 1.2L21 15l-2-2Zm0 8l2-2-2-1.2L17 19l2 2Z" fill="currentColor"/>
+    </svg>
+  );
+}
+function BriefcaseIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden>
+      <path d="M9 6h6a2 2 0 0 1 2 2v2H7V8a2 2 0 0 1 2-2Z" stroke="currentColor" strokeWidth="2" fill="none"/>
+      <rect x="3" y="10" width="18" height="10" rx="2" ry="2" stroke="currentColor" strokeWidth="2" fill="none"/>
+      <path d="M3 14h18" stroke="currentColor" strokeWidth="2"/>
     </svg>
   );
 }
@@ -220,13 +242,24 @@ function UserIcon() {
 
 /* ================= Styles ================= */
 const css = `
-.hdr{ position:sticky; top:0; z-index:30; background:transparent }
-.hdr__in{ padding: 10px 14px 0 }
+/* Genel header – arka planı transparan; kapsül içeride */
+.hdr{ position:sticky; top:0; z-index:30; background:linear-gradient(180deg, rgba(8,12,24,.85), rgba(8,12,24,.35) 70%, transparent); backdrop-filter:saturate(1.1) blur(2px) }
+.hdrShell{
+  margin: 8px 12px 0;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(19,28,48,.78), rgba(19,28,48,.58));
+  border:1px solid rgba(255,255,255,.08);
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,.03),
+    0 10px 30px rgba(0,0,0,.35);
+  overflow:hidden; /* menü ile tek parça */
+}
 
 /* Üst bar */
 .top{
-  height:var(--topH, 52px);
+  height:var(--topH, 56px);
   display:flex; align-items:center; justify-content:space-between;
+  padding: 8px 14px;
 }
 .left{ display:flex; align-items:center; gap:14px }
 
@@ -236,7 +269,8 @@ const css = `
 
 /* LIVE — inline, çerçevesiz */
 .liveInline{
-  display:flex; align-items:center; gap:10px;
+  display:flex; align-items:center; gap:10px; padding-left:6px;
+  border-left:1px solid rgba(255,255,255,.08);
 }
 .pulseDot{
   width:10px; height:10px; border-radius:50%;
@@ -264,7 +298,7 @@ const css = `
 .actions{ display:flex; gap:10px }
 .chip{
   display:flex; align-items:center; gap:6px;
-  height:30px; padding:0 10px; border-radius:8px;
+  height:32px; padding:0 12px; border-radius:10px;
   font-size:12px; font-weight:800; letter-spacing:.2px;
   color:#cfe3ff; background:rgba(255,255,255,.06);
   border:1px solid rgba(255,255,255,.08);
@@ -281,21 +315,44 @@ const css = `
   box-shadow:0 4px 12px rgba(0,229,255,.28);
 }
 
-/* Menü */
+/* Menü – header kapsülünün parçası */
 .menu{
-  height:var(--menuH, 44px);
-  display:flex; align-items:center; gap:8px;
-  padding: 6px 0 10px;
+  display:flex; align-items:center; gap:6px;
+  padding: 6px;
+  background: linear-gradient(180deg, rgba(19,28,48,.58), rgba(19,28,48,.52));
+  border-top:1px solid rgba(255,255,255,.06);
 }
 .mItem{
+  position:relative;
   display:inline-flex; align-items:center; gap:8px;
-  height:34px; padding:0 12px; border-radius:10px;
-  background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.06);
-  font-size:13px; font-weight:700; color:#cfe3ff; text-decoration:none;
+  height:36px; padding:0 14px; border-radius:10px;
+  background:rgba(255,255,255,.04);
+  border:1px solid rgba(255,255,255,.06);
+  font-size:13px; font-weight:800; color:#cfe3ff; text-decoration:none;
+  transition: transform .15s ease, box-shadow .2s ease, background .2s ease;
 }
 .mItem .ico{ display:grid; place-items:center }
-.mItem.active{ background:linear-gradient(90deg,#00e5ff,#4aa7ff); color:#001018; }
+.mItem:hover{ filter:brightness(1.06) }
+.mItem.active{
+  color:#001018;
+  background:linear-gradient(90deg,#00e5ff,#4aa7ff);
+  border-color:#148ab6;
+  box-shadow:0 6px 16px rgba(0,229,255,.28);
+}
+.mItem.active::after{
+  /* tek parça algısı için alt çizgi */
+  content:""; position:absolute; left:8px; right:8px; bottom:-6px; height:3px; border-radius:3px;
+  background:linear-gradient(90deg,#00e5ff,#4aa7ff);
+  box-shadow:0 4px 10px rgba(0,229,255,.35);
+}
 
+/* Küçük ekran – menü satırı kaydırılabilir */
+@media (max-width: 640px){
+  .menu{ overflow:auto; scrollbar-width:none }
+  .menu::-webkit-scrollbar{ display:none }
+}
+
+/* Animasyon */
 @keyframes pulse {
   0% { transform: scale(0.8); opacity:.7 }
   70% { transform: scale(1.25); opacity:0 }
