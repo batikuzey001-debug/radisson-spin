@@ -1,17 +1,16 @@
 // web/src/components/Hero.tsx
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
- * HERO — Banner (sol) + İstatistikler (sağ)
- * - Banner arkada akarken SAYILAR banner ÜSTÜNDE DEĞİL, sağ sütunda gösterilir.
- * - 3 metrik: Toplam Ödül, Dağıtılan Ödül, Katılımcı
- * - Sadece SON 3 BASAMAK (yüzler) dijital şekilde "roll" animasyonuyla değişir.
- * - Veriler: /api/home/stats (min/max). Frontend küçük drift uygular.
+ * HERO — Sol: otomatik kayan banner (gösterge yok) • Sağ: tam dolduran metrikler
+ * - Sol taraftaki görsel otomatik değişir (ok/nokta/progress yok)
+ * - Sağ tarafta üç metrik aynı fontla, bölümü tamamen dolduracak şekilde yerleşir
+ * - Yalnız SON 3 BASAMAK "dijital roll" animasyonu yapar, geri kalanı sabit
+ * - Veriler /api/home/stats (min/max) -> küçük drift ile akıcı görünüm
  */
 
 const API = import.meta.env.VITE_API_BASE_URL;
 
-/* -------------------- Types -------------------- */
 type HeroStats = {
   total_min: number; total_max: number;
   dist_min:  number; dist_max:  number;
@@ -19,15 +18,12 @@ type HeroStats = {
 };
 type Banner = { id: string|number; image_url: string };
 
-/* -------------------- Utils -------------------- */
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const lerp  = (a: number, b: number, t: number)   => a + (b - a) * t;
 const fmt   = (n: number) => new Intl.NumberFormat("tr-TR").format(Math.max(0, Math.floor(n)));
 
-// sayıyı "prefix" (ilk kısım) + "suffix" (son 3 basamak) olarak ayır
 function splitLast3(n: number) {
   const s = fmt(n);
-  // sayının sadece rakamlarını al, gruplama için tekrardan formatlayacağız
   const digits = s.replace(/\./g, "");
   const suffix3 = digits.slice(-3) || "000";
   const prefixDigits = digits.slice(0, Math.max(0, digits.length - 3));
@@ -42,14 +38,11 @@ function nextDrift(prev: number, min: number, max: number, amount = 0.015) {
   return clamp(toward + jitter, min, max);
 }
 
-/* -------------------- Component -------------------- */
 export default function Hero() {
-  // BG banners (sol taraf)
   const [slides, setSlides] = useState<Banner[]>([]);
   const [idx, setIdx] = useState(0);
-  const progRef = useRef<HTMLDivElement | null>(null);
+  const progRef = useRef<HTMLDivElement | null>(null); // kullanılmıyor ama kalsın (ileride gerekirse)
 
-  // ranges & visible values
   const [ranges, setRanges] = useState<HeroStats>({
     total_min: 60_000_000, total_max: 95_000_000,
     dist_min:    200_000,  dist_max:   1_200_000,
@@ -59,7 +52,7 @@ export default function Hero() {
   const [dist,  setDist]  = useState(420_000);
   const [part,  setPart]  = useState(480_000);
 
-  /* --- fetch banners (sol, sadece görsel) --- */
+  // sol bannerlar
   useEffect(() => {
     fetch(`${API}/api/home/banners`)
       .then(r => r.json())
@@ -72,19 +65,14 @@ export default function Hero() {
       .catch(()=> setSlides(FALLBACKS.map((src, i)=> ({ id: i, image_url: src }))));
   }, []);
 
-  /* --- autoplay --- */
+  // otomatik değişim (6 sn)
   useEffect(() => {
     if (!slides.length) return;
     const t = window.setInterval(() => setIdx(i => (i + 1) % slides.length), 6000);
-    if (progRef.current) {
-      progRef.current.style.animation = "none";
-      void progRef.current.offsetWidth;
-      progRef.current.style.animation = "prog 6s linear forwards";
-    }
     return () => window.clearInterval(t);
   }, [slides, idx]);
 
-  /* --- fetch ranges --- */
+  // min/max aralıkları
   useEffect(() => {
     (async () => {
       try {
@@ -101,12 +89,12 @@ export default function Hero() {
           setDist (lerp(merged.dist_min,  merged.dist_max,  0.5));
           setPart (lerp(merged.part_min,  merged.part_max,  0.5));
         }
-      } catch {/* fallback */}
+      } catch { /* fallback */ }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* --- gentle drift (son 3 basamak animasyonunu tetikler) --- */
+  // yumuşak drift
   useEffect(() => {
     const t = setInterval(() => {
       setTotal(p => nextDrift(p, ranges.total_min, ranges.total_max, 0.010));
@@ -117,9 +105,9 @@ export default function Hero() {
   }, [ranges]);
 
   return (
-    <section className="heroWrap" aria-label="Hero alanı">
-      {/* Sol: Banner */}
-      <div className="heroLeft">
+    <section className="heroSplit" aria-label="Hero alanı">
+      {/* SOL — banner */}
+      <div className="left">
         {slides.map((b, i) => (
           <div
             key={b.id}
@@ -128,19 +116,13 @@ export default function Hero() {
           />
         ))}
         <div className="shade"/>
-        <div className="dots">
-          {slides.map((_, i)=>(
-            <button key={i} className={`dot ${i===idx?"active":""}`} onClick={()=>setIdx(i)} />
-          ))}
-        </div>
-        <div className="progress"><div ref={progRef} className="bar" /></div>
       </div>
 
-      {/* Sağ: Sadece metrikler */}
-      <div className="heroRight">
-        <StatLine label="Toplam Ödül" value={total} suffix="₺" tone="gold"/>
-        <StatLine label="Dağıtılan Ödül" value={dist} suffix="₺" tone="aqua"/>
-        <StatLine label="Katılımcı" value={part} suffix="" tone="vio"/>
+      {/* SAĞ — tam dolduran metrikler */}
+      <div className="right">
+        <StatBlock label="Toplam Ödül" value={total} suffix=" ₺" tone="gold" />
+        <StatBlock label="Dağıtılan Ödül" value={dist} suffix=" ₺" tone="aqua" />
+        <StatBlock label="Katılımcı" value={part} suffix="" tone="vio" />
       </div>
 
       <style>{css}</style>
@@ -148,24 +130,23 @@ export default function Hero() {
   );
 }
 
-/* -------------------- StatLine (yalnız son 3 basamak animasyonlu) -------------------- */
-function StatLine({ label, value, suffix, tone }:{
+/* ---- Dolduran metrik bloğu (çerçeve yok, tek tip font, son 3 basamak animasyon) ---- */
+function StatBlock({ label, value, suffix, tone }:{
   label: string; value: number; suffix: string; tone: "gold"|"aqua"|"vio"
 }) {
   const { prefix, suffix3 } = splitLast3(Math.max(0, Math.floor(value)));
   return (
-    <div className={`line ${tone}`} title={`${label}: ${fmt(value)} ${suffix}`.trim()}>
-      <div className="lab">{label}</div>
-      <div className="val">
+    <div className={`block ${tone}`} title={`${label}: ${fmt(value)}${suffix}`}>
+      <div className="blab">{label}</div>
+      <div className="bval">
         <span className="prefix">{prefix}{prefix === "0" ? "" : "."}</span>
         <Digits3 triple={suffix3}/>
-        {suffix && <span className="suf"> {suffix}</span>}
+        <span className="suf">{suffix}</span>
       </div>
     </div>
   );
 }
 
-/* ---- yalnız son 3 basamak roll animasyonu ---- */
 function Digits3({ triple }: { triple: string }) {
   const [d0, d1, d2] = triple.padStart(3, "0").split("");
   return (
@@ -185,25 +166,28 @@ function Digit({ d }: { d: string }) {
   );
 }
 
-/* -------------------- Fallback BG -------------------- */
+/* ---- Fallback görseller ---- */
 const FALLBACKS = [
   "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?q=80&w=2000&auto=format&fit=crop",
   "https://images.unsplash.com/photo-1518609571773-39b7d303a87b?q=80&w=2000&auto=format&fit=crop",
   "https://images.unsplash.com/photo-1559703248-dcaaec9fab78?q=80&w=2000&auto=format&fit=crop",
 ];
 
-/* -------------------- Styles -------------------- */
+/* ---- Stil ---- */
 const css = `
-.heroWrap{
-  display:grid; grid-template-columns: 1.1fr .9fr; gap:12px;
-  min-height:300px; border-radius:18px; overflow:hidden;
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@700;800;900&display=swap');
+
+.heroSplit{
+  display:grid; grid-template-columns: 1.1fr .9fr; gap:14px;
+  min-height:320px; border-radius:18px; overflow:hidden;
+  font-family:'Poppins',system-ui,Segoe UI,Roboto,Arial,sans-serif;
 }
 @media(max-width:900px){
-  .heroWrap{ grid-template-columns: 1fr; }
+  .heroSplit{ grid-template-columns: 1fr; }
 }
 
-/* ----- Sol: Banner ----- */
-.heroLeft{ position:relative; min-height:260px; border-radius:14px; overflow:hidden; }
+/* Sol: Banner (gösterge yok, otomatik değişir) */
+.left{ position:relative; min-height:260px; border-radius:14px; overflow:hidden; }
 .bg{
   position:absolute; inset:0; background-image:var(--img);
   background-size:cover; background-position:center;
@@ -215,58 +199,49 @@ const css = `
   position:absolute; inset:0;
   background:linear-gradient(180deg, rgba(6,10,22,.18) 0%, rgba(6,10,22,.84) 66%, rgba(6,10,22,.92) 100%);
 }
-.dots{ position:absolute; left:10px; bottom:10px; display:flex; gap:6px; z-index:2 }
-.dot{ width:8px;height:8px;border-radius:50%;border:none;background:rgba(255,255,255,.35);cursor:pointer }
-.dot.active{ background:#00e5ff; box-shadow:0 0 10px rgba(0,229,255,.5) }
-.progress{ position:absolute; left:10px; right:10px; bottom:4px; height:3px; background:rgba(255,255,255,.15); border-radius:999px; overflow:hidden }
-.bar{ width:0%; height:100%; background:linear-gradient(90deg,#00e5ff,#4aa7ff); box-shadow:0 0 12px rgba(0,229,255,.45) }
-@keyframes prog{ from{ width:0% } to{ width:100% } }
 
-/* ----- Sağ: İstatistikler ----- */
-.heroRight{
-  display:flex; flex-direction:column; gap:10px; justify-content:center;
-  border-radius:14px; padding:12px;
-  background:linear-gradient(180deg, rgba(12,16,28,.45), rgba(12,16,28,.30));
-  border:1px solid rgba(255,255,255,.10);
-  backdrop-filter: blur(6px);
+/* Sağ: Tam dolduran, çerçevesiz metrikler */
+.right{
+  display:flex; flex-direction:column; justify-content:space-evenly; gap:8px;
+  padding:8px 12px;
 }
+.block{
+  display:flex; flex-direction:column; gap:6px;
+  /* ÇERÇEVE YOK, sadece tipografi & glow */
+}
+.blab{
+  font-size:clamp(12px,1.8vw,14px);
+  letter-spacing:.6px; color:#a7bddb;
+  text-transform:uppercase;
+}
+.bval{
+  display:flex; align-items:flex-end; flex-wrap:wrap; gap:4px;
+  font-weight:900; color:#e9fbff;
+  text-shadow:0 0 16px rgba(0,229,255,.30);
+  font-size: clamp(28px, 6vw, 46px);
+  line-height:1.06;
+}
+.prefix{ opacity:.95; letter-spacing:.6px }
+.suf{ font-size:.6em; opacity:.95; margin-left:2px }
 
-.line{
-  display:flex; align-items:center; justify-content:space-between; gap:12px;
-  border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:10px 12px;
-  background:linear-gradient(180deg, rgba(10,16,30,.55), rgba(10,16,30,.35));
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,.05);
-}
-.line.gold{  border-color: rgba(255,196,0,.45) }
-.line.aqua{  border-color: rgba(0,229,255,.45) }
-.line.vio{   border-color: rgba(156,39,176,.40) }
-
-.lab{
-  font-size:12px; letter-spacing:.6px; color:#a7bddb; white-space:nowrap;
-}
-.val{
-  display:flex; align-items:flex-end; gap:0;
-  font-weight:1000; color:#e9fbff;
-  text-shadow:0 0 14px rgba(0,229,255,.3);
-  font-size: clamp(18px, 4.6vw, 28px);
-}
-.prefix{ opacity:.95; letter-spacing:.5px; }
-.suf{ font-size:.8em; opacity:.95; margin-left:4px }
-
-/* son 3 basamak */
+/* son 3 basamak sadece */
 .d3{ display:inline-flex; gap:2px; margin-left:2px }
 .digit{
-  width:14px; height:20px; overflow:hidden; display:inline-block;
-  background:rgba(255,255,255,.06); border-radius:4px;
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);
+  width:16px; height:22px; overflow:hidden; display:inline-block;
+  background:rgba(255,255,255,.08); border-radius:4px;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.10);
 }
 .rail{ display:flex; flex-direction:column; transition: transform .55s cubic-bezier(.18,.7,.2,1) }
-.cell{ height:20px; line-height:20px; text-align:center; font-size:14px; color:#f2fbff; }
+.cell{ height:22px; line-height:22px; text-align:center; font-size:14px; color:#f2fbff; }
+
+/* tonlara ufak renk vurgusu (tipografi glow) */
+.block.gold .bval{ text-shadow:0 0 16px rgba(255,196,0,.30) }
+.block.aqua .bval{ text-shadow:0 0 16px rgba(0,229,255,.30) }
+.block.vio  .bval{ text-shadow:0 0 16px rgba(156,39,176,.28) }
 
 @media(max-width:900px){
-  .heroRight{ padding:10px }
-  .line{ padding:9px 10px }
-  .digit{ width:13px; height:18px }
-  .cell{ height:18px; line-height:18px; font-size:13px }
+  .right{ padding:6px 8px }
+  .digit{ width:15px; height:20px }
+  .cell{ height:20px; line-height:20px; font-size:13px }
 }
 `;
