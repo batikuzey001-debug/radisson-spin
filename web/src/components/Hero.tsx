@@ -1,11 +1,11 @@
+// web/src/components/Hero.tsx
 import { useEffect, useRef, useState } from "react";
 
 /**
- * HERO — Sol: otomatik kayan banner • Sağ: metrik kartları (neon bordür + sağa hizalı sayı)
+ * HERO — Sol: otomatik kayan banner • Sağ: metrik kartları (LED neon çerçeve + sağa hizalı sayı)
  * API:
  *  - GET  /api/home/banners  -> [{image_url}]
  *  - GET  /api/home/stats    -> { total_min/max, dist_min/max, part_min/max }
- * Görsel akış/istatistik mantığı aynen; sadece layout/stiller güncellendi.
  */
 
 const API = import.meta.env.VITE_API_BASE_URL;
@@ -95,7 +95,7 @@ export default function Hero() {
         <div className="shade" />
       </div>
 
-      {/* SAĞ — metrik kartları (neon bordür + sağa hizalı sayılar) */}
+      {/* SAĞ — metrik kartları (LED neon çerçeve + sağa hizalı sayılar) */}
       <div className="right">
         <MetricCard tone="gold" label="Toplam Ödül"    value={total} suffix=" ₺" />
         <MetricCard tone="aqua" label="Dağıtılan Ödül" value={dist}  suffix=" ₺" />
@@ -113,9 +113,11 @@ function MetricCard({
 }: { label: string; value: number; suffix: string; tone: "gold"|"aqua"|"vio" }) {
   return (
     <div className={`mCard ${tone}`} title={`${label}: ${fmt(value)}${suffix}`}>
-      {/* neon bordür */}
+      {/* LED neon çerçeve elemanları */}
+      <span className="neonEdge" aria-hidden />          {/* dış yumuşak aura */}
       <span className="neonBar top" aria-hidden />
       <span className="neonBar bot" aria-hidden />
+      <span className="neonScan" aria-hidden />          {/* ortadan geçen tarama */}
 
       <div className="row">
         <div className="lbl">{label}</div>
@@ -153,8 +155,6 @@ const FALLBACKS = [
   "https://images.unsplash.com/photo-1559703248-dcaaec9fab78?q=80&w=2000&auto=format&fit=crop",
 ];
 
-/* ... (kodun üst kısmı aynı kalacak, sadece style kısmı güncellendi) */
-
 /* ------- Stil ------- */
 const css = `
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&display=swap');
@@ -178,7 +178,7 @@ const css = `
 }
 .bg.active{ opacity:1; transform:scale(1.01); filter:blur(0px) brightness(1) }
 .shade{
-  position:absolute; inset:0;
+  position:absolute; inset:0; pointer-events:none;
   background:linear-gradient(180deg, rgba(6,10,22,.18) 0%, rgba(6,10,22,.84) 66%, rgba(6,10,22,.92) 100%);
 }
 
@@ -188,43 +188,73 @@ const css = `
   padding:6px 8px;
 }
 
-/* Metric Card (neon bordür + cam arka plan) */
+/* Metric Card (LED neon çerçeve + cam arka plan) */
 .mCard{
+  --tone: 190;
   position:relative; border-radius:16px; overflow:hidden;
   background: linear-gradient(180deg, rgba(12,16,28,.55), rgba(12,16,28,.35));
   border:1px solid rgba(255,255,255,.10);
-  box-shadow: 0 10px 26px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.04);
+  box-shadow:
+    0 10px 26px rgba(0,0,0,.35),
+    inset 0 0 0 1px rgba(255,255,255,.04);
   padding:18px 16px;
+  isolation:isolate; /* WHY: neon efektleri kart içinde kalsın */
 }
+
+/* Dış aura — LED hissini güçlendirir */
+.mCard .neonEdge{
+  position:absolute; inset:-2px; border-radius:18px; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(120% 60% at 50% -10%, hsla(var(--tone), 95%, 60%, .35), transparent 60%),
+    radial-gradient(120% 60% at 50% 110%, hsla(var(--tone), 95%, 55%, .28), transparent 60%);
+  filter: blur(10px);
+}
+
+/* Üst/Alt neon barlar (sabit) */
 .mCard .neonBar{
-  position:absolute; left:12px; right:12px; height:3px; border-radius:3px; filter:blur(.3px);
-  background:linear-gradient(90deg, rgba(255,255,255,0), hsla(var(--tone,190),95%,60%,1), rgba(255,255,255,0));
+  position:absolute; left:12px; right:12px; height:3px; border-radius:3px;
+  background:linear-gradient(90deg, rgba(255,255,255,0), hsla(var(--tone),95%,60%,1), rgba(255,255,255,0));
+  box-shadow:0 0 12px hsla(var(--tone),95%,60%,.55);
+  z-index:1; pointer-events:none;
 }
 .mCard .neonBar.top{ top:8px }
 .mCard .neonBar.bot{ bottom:8px }
 
-/* satır yerleşimi */
+/* Merkezden geçen tarama (scan) — hafif ve sürekli */
+.mCard .neonScan{
+  position:absolute; left:12px; right:12px; top:50%; height:2px; translate:0 -50%; border-radius:2px;
+  background:linear-gradient(90deg, transparent, rgba(255,255,255,.85), transparent);
+  mix-blend-mode:screen; opacity:.55; filter:blur(.4px);
+  animation:scanMove 2.2s linear infinite; z-index:1; pointer-events:none;
+}
+@keyframes scanMove{
+  0%{ transform:translateX(-30%) }
+  100%{ transform:translateX(30%) }
+}
+
+/* İçerik satırı */
 .mCard .row{
+  position:relative; z-index:2;
   display:flex; align-items:center; justify-content:space-between; gap:10px;
 }
 .mCard .lbl{
-  font-size:clamp(12px,1.8vw,14px);
+  font-size:clamp(12px,1.6vw,13px);
   letter-spacing:.6px; color:#a7bddb; text-transform:uppercase;
 }
+
+/* SAYI — Küçültüldü ve denge sağlandı */
 .mCard .val{
   display:flex; align-items:flex-end; flex-wrap:wrap; gap:4px;
-  color:#e9fbff; font-weight:900; line-height:1.06;
-  font-size: clamp(28px, 6vw, 46px);
+  color:#e9fbff; font-weight:900; line-height:1.08;
+  font-size: clamp(22px, 5vw, 36px);               /* <<< küçük boyut */
   font-variant-numeric: tabular-nums lining-nums;
   font-feature-settings: "tnum" 1, "lnum" 1;
-  text-shadow:0 0 16px rgba(0,229,255,.30);
+  text-shadow:0 0 14px rgba(0,229,255,.25);
   justify-content:flex-end;
-
-  /* Dijital font sadece sayılar için */
-  font-family:'Orbitron', monospace;
+  font-family:'Orbitron', monospace;               /* dijital hava */
 }
-.mCard .val .num{ letter-spacing:.4px }
-.mCard .val .suf{ font-size:.6em; opacity:.95; margin-left:2px }
+.mCard .val .num{ letter-spacing:.3px }
+.mCard .val .suf{ font-size:.62em; opacity:.95; margin-left:2px }
 
 /* ton renkleri */
 .mCard.gold{ --tone: 48 }
@@ -234,5 +264,6 @@ const css = `
 @media(max-width:900px){
   .left{ min-height:280px }
   .mCard{ padding:14px 12px }
+  .mCard .neonBar.top{ top:6px } .mCard .neonBar.bot{ bottom:6px }
 }
 `;
