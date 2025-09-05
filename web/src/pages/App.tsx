@@ -1,20 +1,25 @@
 // web/src/pages/App.tsx
 import { Routes, Route } from "react-router-dom";
+import Header from "../components/Header";
 
-// Sadece sayfa bileşenleri:
+// Sayfalar
 import Home from "./Home";
 import RadiCark from "./RadiCark";
-import Turnuvalar from "./Turnuvalar"; // gerekiyorsa açık kalsın
+import Turnuvalar from "./Turnuvalar";
+// İleride eklenecek sayfalar için yer tutucu (404 vs.)
 
 export default function App() {
   return (
     <div className="app">
-      {/* Global Header/SubNav yok; sayfalar kendi içinde eklenir */}
+      <Header />
+
       <div className="page">
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/cark" element={<RadiCark />} />
           <Route path="/turnuvalar" element={<Turnuvalar />} />
+          {/* <Route path="/canli-bulten" element={<CanliBulten />} /> */}
+          {/* <Route path="/deal-or-no-deal" element={<DealOrNoDeal />} /> */}
         </Routes>
       </div>
 
@@ -24,15 +29,16 @@ export default function App() {
 }
 
 const css = `
-/* -------- GLOBAL RESET -------- */
+/* Global reset */
 *{box-sizing:border-box}
-html, body, #root{height:100%; margin:0; background:#0b1224}
+html, body, #root{height:100%; margin:0}
 
-/* Sayfa zemini */
+/* Zemin */
 .app{
   min-height:100%;
   background:linear-gradient(180deg,#0b1224,#0e1a33);
-  font-family:sans-serif;
+  color:#eaf2ff;
+  font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;
 }
 
 /* İçerik konteyneri */
@@ -42,11 +48,7 @@ html, body, #root{height:100%; margin:0; background:#0b1224}
   padding:16px;
 }
 
-/* İlk çocukların üst marjını sıfırla (h1 margin-collapse olmaması için) */
-.page > *:first-child{ margin-top:0; }
-.page h1, .page h2{ margin-top:0; }
-
 @media (max-width:600px){
-  .page{ padding:12px; }
+  .page{ padding:12px }
 }
 `;
