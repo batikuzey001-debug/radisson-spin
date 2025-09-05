@@ -1,328 +1,357 @@
-// web/src/components/Header.tsx
-import { NavLink, useNavigate } from "react-router-dom";
-import { useEffect, useMemo, useState } from "react";
+// web/src/components/Hero.tsx
+import { useEffect, useRef, useState } from "react";
 
-/* ===== Types & Config ===== */
-type HeaderConfig = {
-  logo_url?: string;
-  login_cta_text?: string;
-  login_cta_url?: string;
-  online_min?: number | string;
-  online_max?: number | string;
-};
+/**
+ * HERO (rev2)
+ * - SOL: otomatik kayan banner (backend aynen)
+ * - SAĞ: üç metrik aynı tipografi ve boyda; son 3 basamak ÖZEL DEĞİL → düz metin
+ * - Artış: her 10 dakikada bir hedef belirlenir (rastgele +10 ile +300 arası)
+ *   ve değerler o hedefe doğru akıcı şekilde yükselir (geri düşmez).
+ * - Backend uçları KORUNDU: /api/home/banners ve /api/home/stats
+ */
+
 const API = import.meta.env.VITE_API_BASE_URL;
 
-/* ===== Small utils ===== */
-function toNum(v: unknown, def: number) {
-  if (v === null || v === undefined) return def;
-  const n = typeof v === "string" ? parseInt(v, 10) : (v as number);
-  return Number.isFinite(n) ? n : def;
-}
-function calcBand(hour: number, min: number, max: number) {
-  const span = Math.max(0, max - min);
-  if (hour >= 3 && hour < 6) return [min, min + Math.round(span * 0.15)] as const;
-  if (hour >= 6 && hour < 15) return [min + Math.round(span * 0.2), min + Math.round(span * 0.55)] as const;
-  if (hour >= 15 && hour < 22) return [min + Math.round(span * 0.7), max - Math.round(span * 0.1)] as const;
-  return [max - Math.round(span * 0.15), max] as const;
-}
-function splitThousands(n: number) {
-  return new Intl.NumberFormat("tr-TR").format(Math.max(0, Math.floor(n)));
-}
+type HeroStats = {
+  total_min: number; total_max: number;
+  dist_min:  number; dist_max:  number;
+  part_min:  number; part_max:  number;
+};
+type Banner = { id: string|number; image_url: string };
 
-/* ===== Animated digital-number (dijital saat stili) ===== */
-function AnimatedDigits({ value }: { value: number }) {
-  const str = useMemo(() => splitThousands(value), [value]);
-  return (
-    <span className="digits">
-      {str.split("").map((ch, i) =>
-        ch === "." ? (
-          <span key={`sep-${i}`} className="sep">.</span>
-        ) : (
-          <Digit key={`d-${i}`} d={ch} />
-        )
-      )}
-    </span>
-  );
-}
-function Digit({ d }: { d: string }) {
-  const target = Math.max(0, Math.min(9, parseInt(d, 10)));
-  return (
-    <span className="digit">
-      <span
-        className="rail"
-        // her değişimde translateY değişir ve CSS transition ile "roll" animasyonu olur
-        style={{ transform: `translateY(-${target * 10}%)` }}
-      >
-        {Array.from({ length: 10 }).map((_, i) => (
-          <span key={i} className="cell">
-            {i}
-          </span>
-        ))}
-      </span>
-    </span>
-  );
-}
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+const lerp  = (a: number, b: number, t: number)   => a + (b - a) * t;
+const fmtTR = new Intl.NumberFormat("tr-TR");
 
-/* ===== Header ===== */
-export default function Header() {
-  const navigate = useNavigate();
-  const [cfg, setCfg] = useState<HeaderConfig | null>(null);
-  const [online, setOnline] = useState(0);
+export default function Hero() {
+  const [slides, setSlides] = useState<Banner[]>([]);
+  const [idx, setIdx] = useState(0);
 
-  // CMS
+  // min/max aralıkları (backendten gelir)
+  const [ranges, setRanges] = useState<HeroStats>({
+    total_min: 60_000_000, total_max: 95_000_000,
+    dist_min:    200_000,  dist_max:   1_200_000,
+    part_min:    300_000,  part_max:     800_000,
+  });
+
+  // değerler
+  const [total, setTotal] = useState(72_000_000);
+  const [dist,  setDist]  = useState(420_000);
+  const [part,  setPart]  = useState(480_000);
+
+  // SOL — bannerlar
   useEffect(() => {
-    let live = true;
-    (async () => {
-      try {
-        const r = await fetch(`${API}/api/site/header`);
-        const js: HeaderConfig = r.ok ? await r.json() : {};
-        if (!live) return;
-        setCfg(js);
-        const min = toNum(js.online_min, 4800);
-        const max = toNum(js.online_max, 6800);
-        const hour = new Date().getHours();
-        const [low, high] = calcBand(hour, min, max);
-        setOnline(low + Math.floor((high - low) * 0.5));
-      } catch {
-        const hour = new Date().getHours();
-        const [low, high] = calcBand(hour, 4800, 6800);
-        setOnline(low + Math.floor((high - low) * 0.5));
-      }
-    })();
-    return () => {
-      live = false;
-    };
+    fetch(`${API}/api/home/banners`)
+      .then(r => r.json())
+      .then(rows => {
+        const arr = (Array.isArray(rows) ? rows : [])
+          .map((b: any) => b?.image_url)
+          .filter(Boolean);
+        setSlides((arr.length ? arr : FALLBACKS).map((src, i) => ({ id: i, image_url: src })));
+      })
+      .catch(() => setSlides(FALLBACKS.map((src, i) => ({ id: i, image_url: src }))));
   }, []);
 
-  // küçük dalgalanma
+  // Banner otomatik değişim
   useEffect(() => {
-    const t = setInterval(() => {
-      const hour = new Date().getHours();
-      const min = toNum(cfg?.online_min, 4800);
-      const max = toNum(cfg?.online_max, 6800);
-      const [low, high] = calcBand(hour, min, max);
-      const target = low + Math.floor(Math.random() * (high - low + 1));
-      setOnline((n) => n + Math.round((target - n) * 0.2));
-    }, 4000);
-    return () => clearInterval(t);
-  }, [cfg]);
+    if (!slides.length) return;
+    const t = window.setInterval(() => setIdx(i => (i + 1) % slides.length), 6000);
+    return () => window.clearInterval(t);
+  }, [slides, idx]);
+
+  // İLK yükleme: min/max al
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch(`${API}/api/home/stats`);
+        if (r.ok) {
+          const js: Partial<HeroStats> = await r.json();
+          const merged: HeroStats = {
+            total_min: js.total_min ?? ranges.total_min, total_max: js.total_max ?? ranges.total_max,
+            dist_min:  js.dist_min  ?? ranges.dist_min,  dist_max:  js.dist_max  ?? ranges.dist_max,
+            part_min:  js.part_min  ?? ranges.part_min,  part_max:  js.part_max  ?? ranges.part_max,
+          };
+          setRanges(merged);
+          // başlangıçları ortadan ver
+          setTotal(lerp(merged.total_min, merged.total_max, 0.5));
+          setDist (lerp(merged.dist_min,  merged.dist_max,  0.5));
+          setPart (lerp(merged.part_min,  merged.part_max,  0.5));
+        }
+      } catch { /* sessiz fallback */ }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
+   * — Artış mantığı —
+   * Her 10 dakikada bir (600_000 ms) yeni bir hedef seç:
+   * hedef = clamp(şu anki + rand(10..300), min, max)
+   * Sonra her ~1s küçük adımlarla hedefe doğru ilerle (akıcı).
+   * Not: max'a ulaşınca bekler; bir sonraki 10 dakikada yine artış denemesi yapılır.
+   */
+  useIncrementTowardsTarget({
+    value: total,
+    setValue: setTotal,
+    min: ranges.total_min, max: ranges.total_max,
+  });
+  useIncrementTowardsTarget({
+    value: dist,
+    setValue: setDist,
+    min: ranges.dist_min, max: ranges.dist_max,
+  });
+  useIncrementTowardsTarget({
+    value: part,
+    setValue: setPart,
+    min: ranges.part_min, max: ranges.part_max,
+  });
 
   return (
-    <header className="hdr">
-      <div className="hdr__in">
-        <div className="top">
-          <div className="left">
-            {/* Logo */}
-            <button className="logoBtn" onClick={() => navigate("/")} title="Ana Sayfa">
-              <img
-                src={
-                  cfg?.logo_url ||
-                  "https://cdn.prod.website-files.com/68ad80d65417514646edf3a3/68adb798dfed270f5040c714_logowhite.png"
-                }
-                alt="Logo"
-              />
-            </button>
+    <section className="hero-prem" aria-label="Hero alanı">
+      {/* SOL — Banner */}
+      <div className="hp-left">
+        {slides.map((b, i) => (
+          <div
+            key={b.id}
+            className={`hp-bg ${i === idx ? "active" : ""}`}
+            style={{ ["--img" as any]: `url('${b.image_url}')` }}
+          />
+        ))}
+        <div className="hp-shade"/>
+        <div className="hp-edge" />
+      </div>
 
-            {/* LIVE (kırmızı, nokta kırmızı - yanıp sönüyor, sayıda dijital animasyon) */}
-            <div className="live">
-              <span className="liveDot" />
-              <span className="liveText">LIVE</span>
-              <AnimatedDigits value={online} />
-            </div>
-          </div>
-
-          <div className="actions">
-            <button className="chip ghost" title="Hızlı Bonus">
-              <BellIcon />
-              <span>Hızlı Bonus</span>
-              <span className="notif" />
-            </button>
-            <button
-              className="chip primary"
-              title={cfg?.login_cta_text || "Giriş"}
-              onClick={() => {
-                const href = (cfg?.login_cta_url || "/").trim();
-                if (href) window.location.assign(href);
-              }}
-            >
-              <LoginIcon />
-              <span>{cfg?.login_cta_text || "Giriş"}</span>
-            </button>
-          </div>
-        </div>
-
-        <nav className="menu">
-          <MenuLink to="/" icon={<HomeIcon />} label="Ana Sayfa" />
-          <MenuLink to="/cark" icon={<WheelIcon />} label="Çark" />
-          <MenuLink to="/turnuvalar" icon={<TrophyIcon />} label="Turnuvalar" />
-          <MenuLink to="/canli-bulten" icon={<LiveIcon />} label="Canlı Bülten" />
-          <MenuLink to="/deal-or-no-deal" icon={<BriefcaseIcon />} label="Deal or No Deal" />
-        </nav>
+      {/* SAĞ — Metrikler (eşit satırlar; son 3 basamak özel değil) */}
+      <div className="hp-right">
+        <Metric label="Toplam Ödül" value={total} suffix="₺" tone="gold" />
+        <Metric label="Dağıtılan Ödül" value={dist} suffix="₺" tone="aqua" />
+        <Metric label="Katılımcı" value={part} suffix=""    tone="vio" />
       </div>
 
       <style>{css}</style>
-    </header>
+    </section>
   );
 }
 
-/* ===== MenuLink ===== */
-function MenuLink({ to, icon, label }: { to: string; icon: JSX.Element; label: string }) {
+/* -------------------- ARTIRIM HOOK'U -------------------- */
+function useIncrementTowardsTarget({
+  value, setValue, min, max,
+}: { value: number; setValue: (n: number) => void; min: number; max: number }) {
+  const targetRef = useRef<number>(value);
+  const lastPlanRef = useRef<number>(Date.now());
+  const plannerMs = 600_000; // 10 dakika
+  const stepTimerRef = useRef<number | null>(null);
+
+  // Planner: her 10 dk yeni hedef seç
+  useEffect(() => {
+    function plan() {
+      const now = Date.now();
+      const since = now - lastPlanRef.current;
+      if (since >= plannerMs || targetRef.current <= value + 0.5) {
+        const inc = 10 + Math.floor(Math.random() * 291); // 10..300
+        const next = clamp(value + inc, min, max);
+        targetRef.current = next;
+        lastPlanRef.current = now;
+      }
+    }
+    const planId = window.setInterval(plan, 5_000); // 5 sn'de bir kontrol et
+    plan(); // hemen bir kere
+    return () => clearInterval(planId);
+  }, [value, min, max]);
+
+  // Akıcı artış: ~1 sn aralıkla hedefe yaklaş
+  useEffect(() => {
+    if (stepTimerRef.current) window.clearInterval(stepTimerRef.current);
+    stepTimerRef.current = window.setInterval(() => {
+      const tgt = targetRef.current;
+      if (value >= tgt) return;
+      // kalan mesafeye göre dinamik küçük adım
+      const remain = tgt - value;
+      const step = Math.max(1, Math.ceil(remain * 0.08)); // %8 yaklaşım (min 1)
+      setValue(clamp(value + step, min, tgt));
+    }, 1000);
+    return () => {
+      if (stepTimerRef.current) window.clearInterval(stepTimerRef.current);
+    };
+  }, [value, min, setValue]);
+}
+
+/* -------------------- METRİK BLOĞU (düz sayı) -------------------- */
+function Metric({ label, value, suffix, tone }:{
+  label: string; value: number; suffix: string; tone: "gold"|"aqua"|"vio"
+}) {
   return (
-    <NavLink to={to} className={({ isActive }) => "mItem" + (isActive ? " active" : "")}>
-      <span className="ico">{icon}</span>
-      <span className="lab">{label}</span>
-    </NavLink>
+    <div className={`mtr ${tone}`} title={`${label}: ${fmtTR.format(Math.floor(value))}${suffix ? " " + suffix : ""}`}>
+      <div className="mtr-head">
+        <span className="dot" aria-hidden />
+        <span className="lbl">{label}</span>
+      </div>
+      <div className="mtr-val">
+        <span className="num">{fmtTR.format(Math.floor(value))}</span>
+        {suffix && <span className="suf"> {suffix}</span>}
+      </div>
+    </div>
   );
 }
 
-/* ===== Icons ===== */
-function BellIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24">
-      <path fill="currentColor" d="M12 22a2 2 0 0 0 2-2h-4a2 2 0 0 0 2 2Zm6-6v-5a6 6 0 1 0-12 0v5l-2 2v1h16v-1l-2-2Z" />
-    </svg>
-  );
-}
-function LoginIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24">
-      <path fill="currentColor" d="M10 17l5-5-5-5v3H3v4h7v3z" />
-      <path fill="currentColor" d="M20 3h-7v2h7v14h-7v2h7a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z" />
-    </svg>
-  );
-}
-function HomeIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24">
-      <path fill="currentColor" d="M12 3l10 9h-3v9h-6v-6H11v6H5v-9H2l10-9z" />
-    </svg>
-  );
-}
-function WheelIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="9" stroke="currentColor" fill="none" strokeWidth="2" />
-      <circle cx="12" cy="12" r="2" fill="currentColor" />
-      <path d="M12 3v6M21 12h-6M12 21v-6M3 12h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
-function TrophyIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24">
-      <path
-        fill="currentColor"
-        d="M17 3H7v2H4a2 2 0 0 0 2 2c0 3.53 2.61 6.43 6 6.92V17H9v2h6v-2h-3v-3.08c3.39-.49 6-3.39 6-6.92a2 2 0 0 0 2-2h-3V3zM6 7a4 4 0 0 1-2-3h2v3zm14-3a4 4 0 0 1-2 3V4h2z"
-      />
-    </svg>
-  );
-}
-function LiveIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24">
-      <rect x="3" y="5" width="14" height="14" rx="2" ry="2" stroke="currentColor" fill="none" strokeWidth="2" />
-      <path d="M17 10l4-3v10l-4-3" fill="currentColor" />
-    </svg>
-  );
-}
-function BriefcaseIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24">
-      <path fill="currentColor" d="M10 4h4a2 2 0 0 1 2 2v1h4v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7h4V6a2 2 0 0 1 2-2Zm0 3V6h4v1h-4Z" />
-    </svg>
-  );
-}
+/* ---- Fallback görseller ---- */
+const FALLBACKS = [
+  "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?q=80&w=2000&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1518609571773-39b7d303a87b?q=80&w=2000&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1559703248-dcaaec9fab78?q=80&w=2000&auto=format&fit=crop",
+];
 
-/* ===== CSS ===== */
+/* -------------------- STİL -------------------- */
 const css = `
-:root{ --topH:64px; --menuH:48px }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@600;800;900&display=swap');
 
-.hdr{
-  position:sticky; top:0; z-index:50;
-  background:linear-gradient(180deg,#0b1224,#0e1a33);
-  border-bottom:1px solid rgba(255,255,255,.08);
-}
-.hdr__in{
-  max-width:1200px; margin:0 auto; padding:0 16px;
-  display:flex; flex-direction:column; gap:6px;
-}
+:root {
+  --hp-card: #0f1524;
+  --hp-brd: rgba(255,255,255,.08);
 
-/* ÜST BAR */
-.top{
-  height:var(--topH);
-  display:flex; align-items:center; justify-content:space-between;
-  border-bottom:1px solid rgba(255,255,255,.06);
-}
-.left{ display:flex; align-items:center; gap:10px; min-width:0 }
-.logoBtn{ display:inline-grid; place-items:center; background:transparent; border:none; cursor:pointer; padding:0 }
-.logoBtn img{ height:30px; display:block; filter:drop-shadow(0 0 10px rgba(0,229,255,.3)) }
+  --hp-gold: #ffd057;
+  --hp-aqua: #3be2ff;
+  --hp-vio:  #b08cff;
 
-/* === LIVE BLOK (KIRMIZI) === */
-.live{ display:flex; align-items:center; gap:8px; font-weight:900 }
-.live .liveDot{
-  width:10px; height:10px; border-radius:50%;
-  background:#ff2a2a;
-  box-shadow:0 0 10px rgba(255,42,42,.9), 0 0 18px rgba(255,42,42,.65);
-  animation:blink 1s infinite;
-}
-.live .liveText{
-  font-size:13px; font-weight:900; letter-spacing:2px; text-transform:uppercase;
-  color:#ff4d4d;  /* düz kırmızı görünürlük */
-  text-shadow:0 0 8px rgba(255,42,42,.45);
-}
-.live .digits{
-  font-weight:900; color:#ffffff; font-size:14px; letter-spacing:.4px;
-  text-shadow:0 0 10px rgba(0,229,255,.25);
-  display:inline-flex; gap:1px;
-}
-.digit{
-  width:12px; height:16px; overflow:hidden; display:inline-block;
-  background:rgba(255,255,255,.06); border-radius:3px;
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);
-}
-.rail{
-  display:flex; flex-direction:column;
-  transition: transform .55s cubic-bezier(.18,.7,.2,1); /* dijital roll */
-}
-.cell{
-  height:16px; line-height:16px; text-align:center; font-size:12px;
-  color:#e9f6ff; text-shadow:0 0 6px rgba(0,229,255,.35);
-}
-.sep{ margin:0 2px; opacity:.75 }
+  --hp-text: #e8f1ff;
+  --hp-muted:#9ab0c9;
 
-/* SAĞ AKSİYONLAR */
-.actions{ display:flex; gap:10px }
-.chip{
-  display:flex; align-items:center; gap:6px;
-  padding:0 12px; height:34px; border-radius:6px;
-  font-weight:800; font-size:13px; color:#fff;
-  background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.1);
-}
-.chip svg{ width:14px; height:14px }
-.chip:hover{ filter:brightness(1.06) }
-.chip.ghost{ position:relative }
-.chip.ghost .notif{
-  position:absolute; top:4px; right:4px; width:8px; height:8px; border-radius:50%;
-  background:#ff4d6d; box-shadow:0 0 8px rgba(255,77,109,.6);
-}
-.chip.primary{
-  background:linear-gradient(90deg,#00e5ff,#4aa7ff); color:#001018; border-color:#0f6d8c;
-  box-shadow:0 4px 12px rgba(0,229,255,.28);
+  --hp-r: 18px;
+  --hp-shadow: 0 10px 40px rgba(0,0,0,.35);
 }
 
-/* MENÜ */
-.menu{
-  height:var(--menuH);
-  display:flex; align-items:center; gap:8px;
-  background:rgba(12,18,36,.55); border:1px solid rgba(255,255,255,.08);
-  border-radius:8px; padding:4px 6px; margin-bottom:6px;
+/* Kapsayıcı */
+.hero-prem{
+  display:grid;
+  grid-template-columns: 1.1fr .9fr;
+  gap:14px;
+  min-height: 340px;
+  border-radius: var(--hp-r);
+  position: relative;
+  isolation: isolate;
+  font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
 }
-.mItem{
-  display:flex; align-items:center; gap:6px;
-  padding:0 10px; height:36px; border-radius:6px;
-  font-size:13px; font-weight:700; color:#cfe3ff; text-decoration:none;
+@media (max-width: 900px){
+  .hero-prem{ grid-template-columns: 1fr; min-height: 560px; }
 }
-.mItem.active{ background:linear-gradient(90deg,#00e5ff,#4aa7ff); color:#001018; }
 
-@keyframes blink{ 0%,100%{ opacity:1 } 50%{ opacity:.35 } }
+/* SOL — Banner */
+.hp-left{
+  position:relative;
+  min-height: 280px;
+  border-radius: calc(var(--hp-r) - 2px);
+  overflow:hidden;
+  background: #0b1020;
+  box-shadow: var(--hp-shadow);
+}
+.hp-bg{
+  position:absolute; inset:0;
+  background-image: var(--img);
+  background-position: center;
+  background-size: cover;
+  opacity: 0;
+  transform: scale(1.05);
+  filter: saturate(1) brightness(.9) contrast(1.02);
+  transition: opacity 700ms ease, transform 900ms ease, filter 900ms ease;
+  will-change: opacity, transform, filter;
+}
+.hp-bg.active{
+  opacity: 1;
+  transform: scale(1.015);
+  filter: saturate(1.05) brightness(1) contrast(1.05);
+}
+.hp-shade{
+  position:absolute; inset:0;
+  background:
+    radial-gradient(80% 60% at 70% 20%, rgba(0,0,0,.15) 0%, rgba(0,0,0,0) 60%),
+    linear-gradient(180deg, rgba(6,10,22,.10), rgba(6,10,22,.86) 68%, rgba(6,10,22,.92));
+  pointer-events:none;
+}
+.hp-edge{
+  position:absolute; inset:0;
+  border: 1px solid var(--hp-brd);
+  border-radius: calc(var(--hp-r) - 2px);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.04);
+  pointer-events:none;
+}
+
+/* SAĞ — Metrikler: 3 eşit satır */
+.hp-right{
+  display:grid;
+  grid-template-rows: 1fr 1fr 1fr;
+  gap:10px;
+  min-height: 100%;
+}
+
+/* Metrik kart */
+.mtr{
+  position: relative;
+  display:flex;
+  flex-direction:column;
+  justify-content: center;
+  gap:10px;
+  padding: 16px 18px;
+  background:
+    linear-gradient(180deg, rgba(15,21,36,.92), rgba(15,21,36,.70)),
+    radial-gradient(120% 120% at -10% -10%, rgba(255,255,255,.06), rgba(255,255,255,0));
+  border-radius: 14px;
+  box-shadow: var(--hp-shadow);
+  outline: 1px solid rgba(255,255,255,.06);
+  overflow: hidden;
+}
+.mtr::after{
+  content:"";
+  position:absolute; inset:0;
+  border-radius: 14px;
+  pointer-events:none;
+  background:
+    linear-gradient(90deg, rgba(255,255,255,.10), rgba(255,255,255,0) 40%) top left / 100% 1px no-repeat,
+    linear-gradient(0deg, rgba(255,255,255,.10), rgba(255,255,255,0) 40%) top left / 1px 100% no-repeat;
+  opacity: .5;
+}
+
+.mtr-head{
+  display:flex; align-items:center; gap:10px;
+  letter-spacing:.4px;
+}
+.mtr-head .dot{
+  width:8px; height:8px; border-radius:50%;
+  background: currentColor;
+  filter: drop-shadow(0 0 6px currentColor);
+  opacity:.9;
+}
+.mtr .lbl{
+  color: var(--hp-muted);
+  font-size: clamp(12px, 1.5vw, 14px);
+  text-transform: uppercase;
+}
+
+/* Değer alanı — düz metin, son 3 basamak ÖZEL DEĞİL */
+.mtr-val{
+  display:flex; align-items:flex-end; gap:6px; flex-wrap:wrap;
+  color: var(--hp-text);
+  font-weight: 900;
+  font-variant-numeric: tabular-nums lining-nums; /* sabit genişlikli rakam */
+  font-feature-settings: "tnum" 1, "lnum" 1;
+  line-height: 1;
+  font-size: clamp(32px, 5.4vw, 48px);
+  text-shadow: 0 0 22px rgba(59,226,255,.18);
+}
+.mtr.gold .mtr-val{ text-shadow: 0 0 22px rgba(255,208,87,.24); color: #fff7e0; }
+.mtr.aqua .mtr-val{ text-shadow: 0 0 22px rgba(59,226,255,.22); color: #e9fbff; }
+.mtr.vio  .mtr-val{ text-shadow: 0 0 22px rgba(176,140,255,.22); color: #f1e9ff; }
+
+.num{
+  letter-spacing:.4px;
+}
+.suf{
+  font-size: .52em;
+  opacity:.96;
+  margin-left: 2px;
+  padding-bottom: 2px;
+}
+
+@media (max-width: 900px){
+  .hp-right{ gap:8px; }
+  .mtr{ padding: 12px 14px; }
+}
 `;
