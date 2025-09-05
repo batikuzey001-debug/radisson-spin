@@ -2,12 +2,11 @@
 import { useEffect, useRef, useState } from "react";
 
 /**
- * HERO (rev2)
- * - SOL: otomatik kayan banner (backend aynen)
- * - SAĞ: üç metrik aynı tipografi ve boyda; son 3 basamak ÖZEL DEĞİL → düz metin
- * - Artış: her 10 dakikada bir hedef belirlenir (rastgele +10 ile +300 arası)
- *   ve değerler o hedefe doğru akıcı şekilde yükselir (geri düşmez).
- * - Backend uçları KORUNDU: /api/home/banners ve /api/home/stats
+ * HERO (rev3 - sadece sayı mantığı değişti, boyutlar korunuyor)
+ * - Sol: otomatik kayan banner (gösterge yok)
+ * - Sağ: 3 metrik aynı formatta, aynı tipografi; SON 3 BASAMAK ÖZEL DEĞİL
+ * - Artış: 10 dakikada 1 kez, +10..+300 arası tek adım artar (drift/animasyon yok)
+ * - Backend uçları ve mevcut boyutlar korunur
  */
 
 const API = import.meta.env.VITE_API_BASE_URL;
@@ -21,13 +20,13 @@ type Banner = { id: string|number; image_url: string };
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const lerp  = (a: number, b: number, t: number)   => a + (b - a) * t;
-const fmtTR = new Intl.NumberFormat("tr-TR");
+const fmt   = (n: number) => new Intl.NumberFormat("tr-TR").format(Math.max(0, Math.floor(n)));
 
 export default function Hero() {
   const [slides, setSlides] = useState<Banner[]>([]);
   const [idx, setIdx] = useState(0);
 
-  // min/max aralıkları (backendten gelir)
+  // min/max aralıkları
   const [ranges, setRanges] = useState<HeroStats>({
     total_min: 60_000_000, total_max: 95_000_000,
     dist_min:    200_000,  dist_max:   1_200_000,
@@ -44,22 +43,22 @@ export default function Hero() {
     fetch(`${API}/api/home/banners`)
       .then(r => r.json())
       .then(rows => {
-        const arr = (Array.isArray(rows) ? rows : [])
-          .map((b: any) => b?.image_url)
+        const arr = (Array.isArray(rows)? rows:[])
+          .map((b:any)=> b?.image_url)
           .filter(Boolean);
-        setSlides((arr.length ? arr : FALLBACKS).map((src, i) => ({ id: i, image_url: src })));
+        setSlides((arr.length? arr: FALLBACKS).map((src, i)=> ({ id: i, image_url: src })));
       })
-      .catch(() => setSlides(FALLBACKS.map((src, i) => ({ id: i, image_url: src }))));
+      .catch(()=> setSlides(FALLBACKS.map((src, i)=> ({ id: i, image_url: src }))));
   }, []);
 
-  // Banner otomatik değişim
+  // otomatik değişim (6 sn)
   useEffect(() => {
     if (!slides.length) return;
     const t = window.setInterval(() => setIdx(i => (i + 1) % slides.length), 6000);
     return () => window.clearInterval(t);
   }, [slides, idx]);
 
-  // İLK yükleme: min/max al
+  // min/max aralıkları + başlangıç değerleri
   useEffect(() => {
     (async () => {
       try {
@@ -72,59 +71,45 @@ export default function Hero() {
             part_min:  js.part_min  ?? ranges.part_min,  part_max:  js.part_max  ?? ranges.part_max,
           };
           setRanges(merged);
-          // başlangıçları ortadan ver
+          // başlangıçları ortadan ver (boyutlar korunuyor)
           setTotal(lerp(merged.total_min, merged.total_max, 0.5));
           setDist (lerp(merged.dist_min,  merged.dist_max,  0.5));
           setPart (lerp(merged.part_min,  merged.part_max,  0.5));
         }
-      } catch { /* sessiz fallback */ }
+      } catch { /* fallback sessiz */ }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /**
-   * — Artış mantığı —
-   * Her 10 dakikada bir (600_000 ms) yeni bir hedef seç:
-   * hedef = clamp(şu anki + rand(10..300), min, max)
-   * Sonra her ~1s küçük adımlarla hedefe doğru ilerle (akıcı).
-   * Not: max'a ulaşınca bekler; bir sonraki 10 dakikada yine artış denemesi yapılır.
+   * Artış mantığı:
+   * - Her 10 dakikada (600_000ms) bir kez, +10..+300 arası tek adım artış yap.
+   * - Max'ı geçmez (clamp).
+   * - Geri düşme, yumuşak drift vb. YOK.
    */
-  useIncrementTowardsTarget({
-    value: total,
-    setValue: setTotal,
-    min: ranges.total_min, max: ranges.total_max,
-  });
-  useIncrementTowardsTarget({
-    value: dist,
-    setValue: setDist,
-    min: ranges.dist_min, max: ranges.dist_max,
-  });
-  useIncrementTowardsTarget({
-    value: part,
-    setValue: setPart,
-    min: ranges.part_min, max: ranges.part_max,
-  });
+  useTenMinuteIncrement(total, setTotal, ranges.total_min, ranges.total_max);
+  useTenMinuteIncrement(dist,  setDist,  ranges.dist_min,  ranges.dist_max);
+  useTenMinuteIncrement(part,  setPart,  ranges.part_min,  ranges.part_max);
 
   return (
-    <section className="hero-prem" aria-label="Hero alanı">
-      {/* SOL — Banner */}
-      <div className="hp-left">
+    <section className="heroSplit" aria-label="Hero alanı">
+      {/* SOL — banner */}
+      <div className="left">
         {slides.map((b, i) => (
           <div
             key={b.id}
-            className={`hp-bg ${i === idx ? "active" : ""}`}
+            className={`bg ${i === idx ? "active" : ""}`}
             style={{ ["--img" as any]: `url('${b.image_url}')` }}
           />
         ))}
-        <div className="hp-shade"/>
-        <div className="hp-edge" />
+        <div className="shade"/>
       </div>
 
-      {/* SAĞ — Metrikler (eşit satırlar; son 3 basamak özel değil) */}
-      <div className="hp-right">
-        <Metric label="Toplam Ödül" value={total} suffix="₺" tone="gold" />
-        <Metric label="Dağıtılan Ödül" value={dist} suffix="₺" tone="aqua" />
-        <Metric label="Katılımcı" value={part} suffix=""    tone="vio" />
+      {/* SAĞ — metrikler (boyutlar aynen korunur) */}
+      <div className="right">
+        <StatBlock label="Toplam Ödül" value={total} suffix=" ₺" tone="gold" />
+        <StatBlock label="Dağıtılan Ödül" value={dist} suffix=" ₺" tone="aqua" />
+        <StatBlock label="Katılımcı" value={part} suffix="" tone="vio" />
       </div>
 
       <style>{css}</style>
@@ -132,62 +117,39 @@ export default function Hero() {
   );
 }
 
-/* -------------------- ARTIRIM HOOK'U -------------------- */
-function useIncrementTowardsTarget({
-  value, setValue, min, max,
-}: { value: number; setValue: (n: number) => void; min: number; max: number }) {
-  const targetRef = useRef<number>(value);
-  const lastPlanRef = useRef<number>(Date.now());
-  const plannerMs = 600_000; // 10 dakika
-  const stepTimerRef = useRef<number | null>(null);
+/* ---- 10 dakikada bir artış hook'u ---- */
+function useTenMinuteIncrement(
+  value: number,
+  setValue: (n: number) => void,
+  min: number,
+  max: number
+){
+  const intervalRef = useRef<number | null>(null);
 
-  // Planner: her 10 dk yeni hedef seç
   useEffect(() => {
-    function plan() {
-      const now = Date.now();
-      const since = now - lastPlanRef.current;
-      if (since >= plannerMs || targetRef.current <= value + 0.5) {
-        const inc = 10 + Math.floor(Math.random() * 291); // 10..300
-        const next = clamp(value + inc, min, max);
-        targetRef.current = next;
-        lastPlanRef.current = now;
-      }
-    }
-    const planId = window.setInterval(plan, 5_000); // 5 sn'de bir kontrol et
-    plan(); // hemen bir kere
-    return () => clearInterval(planId);
-  }, [value, min, max]);
-
-  // Akıcı artış: ~1 sn aralıkla hedefe yaklaş
-  useEffect(() => {
-    if (stepTimerRef.current) window.clearInterval(stepTimerRef.current);
-    stepTimerRef.current = window.setInterval(() => {
-      const tgt = targetRef.current;
-      if (value >= tgt) return;
-      // kalan mesafeye göre dinamik küçük adım
-      const remain = tgt - value;
-      const step = Math.max(1, Math.ceil(remain * 0.08)); // %8 yaklaşım (min 1)
-      setValue(clamp(value + step, min, tgt));
-    }, 1000);
-    return () => {
-      if (stepTimerRef.current) window.clearInterval(stepTimerRef.current);
+    // her kurulumda eskiyi temizle
+    if (intervalRef.current) window.clearInterval(intervalRef.current);
+    const stepper = () => {
+      const inc = 10 + Math.floor(Math.random() * 291); // 10..300
+      setValue(v => clamp(v + inc, min, max));
     };
-  }, [value, min, setValue]);
+    intervalRef.current = window.setInterval(stepper, 600_000); // 10 dk
+    return () => {
+      if (intervalRef.current) window.clearInterval(intervalRef.current);
+    };
+  }, [min, max, setValue]);
 }
 
-/* -------------------- METRİK BLOĞU (düz sayı) -------------------- */
-function Metric({ label, value, suffix, tone }:{
+/* ---- Düz metinli metrik bloğu (boyutlar korunur) ---- */
+function StatBlock({ label, value, suffix, tone }:{
   label: string; value: number; suffix: string; tone: "gold"|"aqua"|"vio"
 }) {
   return (
-    <div className={`mtr ${tone}`} title={`${label}: ${fmtTR.format(Math.floor(value))}${suffix ? " " + suffix : ""}`}>
-      <div className="mtr-head">
-        <span className="dot" aria-hidden />
-        <span className="lbl">{label}</span>
-      </div>
-      <div className="mtr-val">
-        <span className="num">{fmtTR.format(Math.floor(value))}</span>
-        {suffix && <span className="suf"> {suffix}</span>}
+    <div className={`block ${tone}`} title={`${label}: ${fmt(value)}${suffix}`}>
+      <div className="blab">{label}</div>
+      <div className="bval">
+        <span className="num">{fmt(value)}</span>
+        <span className="suf">{suffix}</span>
       </div>
     </div>
   );
@@ -200,158 +162,67 @@ const FALLBACKS = [
   "https://images.unsplash.com/photo-1559703248-dcaaec9fab78?q=80&w=2000&auto=format&fit=crop",
 ];
 
-/* -------------------- STİL -------------------- */
+/* ---- Stil (ORİJİNAL BOYUTLAR KORUNDU) ---- */
 const css = `
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@600;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@700;800;900&display=swap');
 
-:root {
-  --hp-card: #0f1524;
-  --hp-brd: rgba(255,255,255,.08);
-
-  --hp-gold: #ffd057;
-  --hp-aqua: #3be2ff;
-  --hp-vio:  #b08cff;
-
-  --hp-text: #e8f1ff;
-  --hp-muted:#9ab0c9;
-
-  --hp-r: 18px;
-  --hp-shadow: 0 10px 40px rgba(0,0,0,.35);
+.heroSplit{
+  display:grid; grid-template-columns: 1.1fr .9fr; gap:14px;
+  min-height:320px; border-radius:18px; overflow:hidden;
+  font-family:'Poppins',system-ui,Segoe UI,Roboto,Arial,sans-serif;
+}
+@media(max-width:900px){
+  .heroSplit{ grid-template-columns: 1fr; }
 }
 
-/* Kapsayıcı */
-.hero-prem{
-  display:grid;
-  grid-template-columns: 1.1fr .9fr;
-  gap:14px;
-  min-height: 340px;
-  border-radius: var(--hp-r);
-  position: relative;
-  isolation: isolate;
-  font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+/* Sol: Banner (gösterge yok, otomatik değişir) */
+.left{ position:relative; min-height:260px; border-radius:14px; overflow:hidden; }
+.bg{
+  position:absolute; inset:0; background-image:var(--img);
+  background-size:cover; background-position:center;
+  opacity:0; transform:scale(1.04); filter:blur(2px) brightness(.96);
+  transition:opacity 800ms ease, transform 800ms ease, filter 800ms ease;
 }
-@media (max-width: 900px){
-  .hero-prem{ grid-template-columns: 1fr; min-height: 560px; }
-}
-
-/* SOL — Banner */
-.hp-left{
-  position:relative;
-  min-height: 280px;
-  border-radius: calc(var(--hp-r) - 2px);
-  overflow:hidden;
-  background: #0b1020;
-  box-shadow: var(--hp-shadow);
-}
-.hp-bg{
+.bg.active{ opacity:1; transform:scale(1.01); filter:blur(0px) brightness(1) }
+.shade{
   position:absolute; inset:0;
-  background-image: var(--img);
-  background-position: center;
-  background-size: cover;
-  opacity: 0;
-  transform: scale(1.05);
-  filter: saturate(1) brightness(.9) contrast(1.02);
-  transition: opacity 700ms ease, transform 900ms ease, filter 900ms ease;
-  will-change: opacity, transform, filter;
-}
-.hp-bg.active{
-  opacity: 1;
-  transform: scale(1.015);
-  filter: saturate(1.05) brightness(1) contrast(1.05);
-}
-.hp-shade{
-  position:absolute; inset:0;
-  background:
-    radial-gradient(80% 60% at 70% 20%, rgba(0,0,0,.15) 0%, rgba(0,0,0,0) 60%),
-    linear-gradient(180deg, rgba(6,10,22,.10), rgba(6,10,22,.86) 68%, rgba(6,10,22,.92));
-  pointer-events:none;
-}
-.hp-edge{
-  position:absolute; inset:0;
-  border: 1px solid var(--hp-brd);
-  border-radius: calc(var(--hp-r) - 2px);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.04);
-  pointer-events:none;
+  background:linear-gradient(180deg, rgba(6,10,22,.18) 0%, rgba(6,10,22,.84) 66%, rgba(6,10,22,.92) 100%);
 }
 
-/* SAĞ — Metrikler: 3 eşit satır */
-.hp-right{
-  display:grid;
-  grid-template-rows: 1fr 1fr 1fr;
-  gap:10px;
-  min-height: 100%;
+/* Sağ: Tam dolduran, çerçevesiz metrikler */
+.right{
+  display:flex; flex-direction:column; justify-content:space-evenly; gap:8px;
+  padding:8px 12px;
 }
+.block{
+  display:flex; flex-direction:column; gap:6px;
+  /* ÇERÇEVE YOK, sadece tipografi & glow */
+}
+.blab{
+  font-size:clamp(12px,1.8vw,14px);
+  letter-spacing:.6px; color:#a7bddb;
+  text-transform:uppercase;
+}
+.bval{
+  display:flex; align-items:flex-end; flex-wrap:wrap; gap:4px;
+  font-weight:900; color:#e9fbff;
+  text-shadow:0 0 16px rgba(0,229,255,.30);
+  font-size: clamp(28px, 6vw, 46px); /* ÖNCEKİ BOYUTLAR */
+  line-height:1.06;
 
-/* Metrik kart */
-.mtr{
-  position: relative;
-  display:flex;
-  flex-direction:column;
-  justify-content: center;
-  gap:10px;
-  padding: 16px 18px;
-  background:
-    linear-gradient(180deg, rgba(15,21,36,.92), rgba(15,21,36,.70)),
-    radial-gradient(120% 120% at -10% -10%, rgba(255,255,255,.06), rgba(255,255,255,0));
-  border-radius: 14px;
-  box-shadow: var(--hp-shadow);
-  outline: 1px solid rgba(255,255,255,.06);
-  overflow: hidden;
-}
-.mtr::after{
-  content:"";
-  position:absolute; inset:0;
-  border-radius: 14px;
-  pointer-events:none;
-  background:
-    linear-gradient(90deg, rgba(255,255,255,.10), rgba(255,255,255,0) 40%) top left / 100% 1px no-repeat,
-    linear-gradient(0deg, rgba(255,255,255,.10), rgba(255,255,255,0) 40%) top left / 1px 100% no-repeat;
-  opacity: .5;
-}
-
-.mtr-head{
-  display:flex; align-items:center; gap:10px;
-  letter-spacing:.4px;
-}
-.mtr-head .dot{
-  width:8px; height:8px; border-radius:50%;
-  background: currentColor;
-  filter: drop-shadow(0 0 6px currentColor);
-  opacity:.9;
-}
-.mtr .lbl{
-  color: var(--hp-muted);
-  font-size: clamp(12px, 1.5vw, 14px);
-  text-transform: uppercase;
-}
-
-/* Değer alanı — düz metin, son 3 basamak ÖZEL DEĞİL */
-.mtr-val{
-  display:flex; align-items:flex-end; gap:6px; flex-wrap:wrap;
-  color: var(--hp-text);
-  font-weight: 900;
-  font-variant-numeric: tabular-nums lining-nums; /* sabit genişlikli rakam */
+  /* tüm rakamlar aynı genişlikte → zıplama yok */
+  font-variant-numeric: tabular-nums lining-nums;
   font-feature-settings: "tnum" 1, "lnum" 1;
-  line-height: 1;
-  font-size: clamp(32px, 5.4vw, 48px);
-  text-shadow: 0 0 22px rgba(59,226,255,.18);
 }
-.mtr.gold .mtr-val{ text-shadow: 0 0 22px rgba(255,208,87,.24); color: #fff7e0; }
-.mtr.aqua .mtr-val{ text-shadow: 0 0 22px rgba(59,226,255,.22); color: #e9fbff; }
-.mtr.vio  .mtr-val{ text-shadow: 0 0 22px rgba(176,140,255,.22); color: #f1e9ff; }
+.block.gold .bval{ text-shadow:0 0 16px rgba(255,196,0,.30) }
+.block.aqua .bval{ text-shadow:0 0 16px rgba(0,229,255,.30) }
+.block.vio  .bval{ text-shadow:0 0 16px rgba(156,39,176,.28) }
 
-.num{
-  letter-spacing:.4px;
-}
-.suf{
-  font-size: .52em;
-  opacity:.96;
-  margin-left: 2px;
-  padding-bottom: 2px;
-}
+.num{ letter-spacing:.4px }
+.suf{ font-size:.6em; opacity:.95; margin-left:2px }
 
-@media (max-width: 900px){
-  .hp-right{ gap:8px; }
-  .mtr{ padding: 12px 14px; }
+/* Responsive ince ayar */
+@media(max-width:900px){
+  .right{ padding:6px 8px }
 }
 `;
