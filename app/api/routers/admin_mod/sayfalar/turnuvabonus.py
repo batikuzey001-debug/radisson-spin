@@ -1,4 +1,3 @@
-# app/api/routers/admin_mod/sayfalar/turnuvabonus.py
 from typing import Annotated, Dict, Any, Type, Optional
 from datetime import datetime
 from html import escape as _e
@@ -6,6 +5,7 @@ from html import escape as _e
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import case, desc  # <-- eklendi
 
 from app.db.session import get_db
 from app.db.models import AdminUser, AdminRole, Tournament, DailyBonus, PromoCode, Event
@@ -77,14 +77,18 @@ def page_turnuvabonus(
         tab = "tournaments"
 
     Model: Type = KIND_MAP[tab]["model"]
-    rows = (
-        db.query(Model)
-        .order_by(
-            getattr(Model, "start_at").desc().nullslast() if hasattr(Model, "start_at") else Model.id.desc(),
-            Model.id.desc(),
-        )
-        .all()
-    )
+
+    # --- NULLS LAST taşınabilir sıralama (CASE ile) ---
+    order_cols = []
+    if _has(Model, "start_at"):
+        # önce start_at IS NULL olanları sona at
+        order_cols.append(desc(case((Model.start_at == None, 1), else_=0)))  # noqa: E711
+        # sonra start_at DESC
+        order_cols.append(desc(Model.start_at))
+    # her zaman id DESC ile ikincil sıralama
+    order_cols.append(desc(Model.id))
+
+    rows = db.query(Model).order_by(*order_cols).all()
 
     edit_id = request.query_params.get("edit")
     try:
@@ -324,7 +328,6 @@ async def upsert_item(
         "category":  (form.get("category") or "").strip() or None,
     }
 
-    # Opsiyonel alanlar
     if _has(Model, "subtitle"):
         data["subtitle"] = (form.get("subtitle") or "").strip() or None
     if _has(Model, "slug"):
@@ -347,7 +350,6 @@ async def upsert_item(
     if _has(Model, "participant_count"):
         pc_raw = (form.get("participant_count") or "").strip()
         data["participant_count"] = int(pc_raw) if pc_raw.isdigit() else None
-    # Etkinlik: Ödül miktarı (₺)
     if _has(Model, "prize_amount"):
         amt_raw = (form.get("prize_amount") or "").replace(".", "").strip()
         data["prize_amount"] = int(amt_raw) if amt_raw.isdigit() else None
