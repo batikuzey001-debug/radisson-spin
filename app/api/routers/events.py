@@ -39,8 +39,8 @@ async def get_active_events(
 ) -> List[Dict]:
     """
     Etkinlik kartları (admin'den doldurulan Event kayıtları):
-      - state: "active"  -> now, start/end aralığında
-      - state: "upcoming"-> start_at gelecekte ve window_days içinde
+      - state: "active"   -> now, start/end aralığında
+      - state: "upcoming" -> start_at gelecekte ve window_days içinde
     Sıralama: pinned/priority -> (active önce) -> en yakın bitecek/başlayacak -> başlık
     Dönen alanlar: id, title, image_url, start_at, end_at, category, state,
                    seconds_left (active), seconds_to_start (upcoming),
@@ -97,7 +97,7 @@ async def get_active_events(
             "bg_color": getattr(r, "bg_color", None),
             "priority": getattr(r, "priority", 0),
             "is_pinned": bool(getattr(r, "is_pinned", False)),
-            "prize_amount": getattr(r, "prize_amount", None),  # <-- eklendi
+            "prize_amount": int(getattr(r, "prize_amount", 0)) if getattr(r, "prize_amount", None) is not None else None,
         })
 
     for r in future:
@@ -115,7 +115,7 @@ async def get_active_events(
             "bg_color": getattr(r, "bg_color", None),
             "priority": getattr(r, "priority", 0),
             "is_pinned": bool(getattr(r, "is_pinned", False)),
-            "prize_amount": getattr(r, "prize_amount", None),  # <-- eklendi
+            "prize_amount": int(getattr(r, "prize_amount", 0)) if getattr(r, "prize_amount", None) is not None else None,
         })
 
     # sıralama
