@@ -4,10 +4,9 @@ import { type PromoActive } from "../api/promos";
 
 /**
  * QuickBonus — Promo Kodlar
- * - Upcoming: sayaç (sarı); 0 olduğunda kod + flash + kopyala.
+ * - Upcoming: sayaç (>=1 saat sarı, <1 saat kırmızı yanıp söner); 0 olduğunda kod + flash + kopyala.
  * - Active: doğrudan kod.
- * - Son 1 saat kala: kırmızı yanıp söner.
- * - Tasarım: küçük kartlar (240px), aqua LED şerit + kayan efekt.
+ * - Küçük kartlar (240px), aqua LED sol şerit (kayan), yeşil nokta/state yok.
  */
 
 type PromoEx = PromoActive & {
@@ -52,7 +51,7 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
     return () => clearInterval(t);
   }, [rows.length]);
 
-  // reveal flash
+  // reveal flash tetikle
   useEffect(() => {
     const toFlash: string[] = [];
     rows.forEach(p => {
@@ -144,7 +143,12 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
                   )}
 
                   {p.cta_url ? (
-                    <a className="spx-cta" href={p.cta_url} target="_blank" rel="nofollow noreferrer">Katıl</a>
+                    <a className="spx-cta" href={p.cta_url} target="_blank" rel="nofollow noreferrer">
+                      Katıl
+                      <svg viewBox="0 0 24 24" className="spx-ic" aria-hidden="true">
+                        <path fill="currentColor" d="M9.2 16.7 9 20.7c.4 0 .6-.2.9-.4l2.1-1.7 4.3 3.1c.8.4 1.4.2 1.6-.8l2.9-13.6c.3-1.1-.4-1.6-1.2-1.3L2.7 9.9c-1 .4-1 1 0 1.3l4.9 1.5L18 6.9c.5-.3.9-.1.5.2l-9.3 8.3Z"/>
+                      </svg>
+                    </a>
                   ) : null}
                 </div>
               </article>
@@ -186,8 +190,15 @@ function Skeleton() {
           <header className="spx-media" />
           <div className="spx-body">
             <h3 className="spx-title" style={{ opacity: 0.4 }}>Yükleniyor…</h3>
-            <div className="spx-timer"><div className="spx-code wait">--:--:--</div></div>
+            <div className="spx-timer">
+              <div className="codeRow">
+                <div className="spx-code wait">--:--:--</div>
+                <button className="copyBtn" disabled>Kopyala</button>
+              </div>
+            </div>
             <div className="spx-scan" />
+            <div className="spx-limit"><span>Max:</span> <b>—</b></div>
+            <a className="spx-cta" href="#" onClick={e=>e.preventDefault()}>Katıl</a>
           </div>
         </article>
       ))}
@@ -195,7 +206,7 @@ function Skeleton() {
   );
 }
 
-/* ---------------- CSS ---------------- */
+/* ---------------- CSS (tamamı, kapatma backtick ile) ---------------- */
 const css = `
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@700;800;900&family=Rajdhani:wght@700;800;900&display=swap');
 
@@ -276,7 +287,7 @@ const css = `
   background-image: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.95) 12%, rgba(255,255,255,0) 24%),
                     linear-gradient(90deg, var(--n1), var(--n2));
   background-size:140px 100%,100% 100%; background-repeat:repeat,no-repeat; background-blend-mode:screen;
-  animation:scanX 1.2s linear infinite; box-shadow:0 0 14px var(--n1),0 0 26px var(--n2)}
+  animation:scanX 1.2s linear infinite; box-shadow:0 0 14px var(--n1), var(--n2)}
 @keyframes scanX{from{background-position:-40px 0,0 0}to{background-position:140px 0,0 0}}
 
 /* Max limit */
@@ -288,4 +299,13 @@ const css = `
 
 /* CTA */
 .spx-cta{display:block; width:100%; text-align:center; margin-top:2px; padding:10px 12px; border-radius:12px;
-  color:#06121a; font-weight:900; font-size:14px; font-family:Rajdhani,system-ui,sans-serif; letter-spacing:.6px; text
+  color:#06121a; font-weight:900; font-size:14px; font-family:Rajdhani,system-ui,sans-serif; letter-spacing:.6px; text-transform:uppercase;
+  border:1px solid rgba(255,255,255,.12); position:relative; overflow:hidden; transition:transform .18s, filter .18s;
+  background:linear-gradient(90deg,var(--n1),var(--n2)); box-shadow:0 0 16px rgba(0,229,255,.35)}
+.spx-cta:hover{transform:translateY(-2px); filter:brightness(1.06)}
+.spx-ic{width:18px;height:18px;margin-left:8px;vertical-align:-3px}
+
+/* Responsive */
+@media (max-width:900px){.spx-card{width:46%}}
+@media (max-width:560px){.spx-card{width:100%;max-width:340px}}
+`;
