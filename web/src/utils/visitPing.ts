@@ -1,30 +1,28 @@
 // web/src/utils/visitPing.ts
-// Ziyaretçi ID'yi localStorage'da saklar, backend'e 1 ping atar.
+// Anonim ziyaretçi UUID üretir (localStorage) ve backend'e 1 ping atar.
 
 const STORAGE_KEY = "visitor_uuid";
 
-// TODO: Backend base URL doğru mu? (genelde VITE_API_BASE_URL)
-// Örn: http://localhost:8000  veya prod domaininiz
+// Base URL: aynı origin ise boş kalabilir.
+// .env'de VITE_API_BASE_URL varsa onu kullanır.
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 
-// TODO: Backend endpoint yolu doğru mu? Ben varsayılan /api/fe/metrics/visit bıraktım.
-// Eğer farklıysa bana yazın veya burada güncelleyin.
+// Endpoint: backend'de kurduğumuz ping rotası.
+// Farklı ise sadece bu yolu değiştirin (örn. "/metrics/visit").
 const VISIT_PATH = "/api/fe/metrics/visit";
 
-// TODO: API key kullanacak mıyız?
-// - SiteConfig.fe_metric_key kullanıyorsanız, FE de aynı key'i header'a koymalı.
-// - Eğer key yoksa boş bırakın; header eklenmez.
-const FE_METRIC_API_KEY = ""; // Örn: "MY_PUBLIC_FE_KEY" (yoksa boş bırakın)
+// API Key kullanacak mısınız? SiteConfig.fe_metric_key ile eşleşmeli.
+// .env'de VITE_FE_METRIC_KEY tanımlıysa header'a eklenir.
+const FE_METRIC_API_KEY = import.meta.env.VITE_FE_METRIC_KEY || "";
 
 function ensureVisitorId(): string {
   let vid = localStorage.getItem(STORAGE_KEY);
   if (!vid) {
-    if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-      // @ts-ignore
-      vid = crypto.randomUUID();
-    } else {
-      vid = Date.now().toString(36) + Math.random().toString(36).slice(2);
-    }
+    // Modern tarayıcı: crypto.randomUUID
+    // Fallback: timestamp + random
+    // @ts-ignore
+    vid = (globalThis.crypto?.randomUUID?.() as string) ||
+          (Date.now().toString(36) + Math.random().toString(36).slice(2));
     localStorage.setItem(STORAGE_KEY, vid);
   }
   return vid;
@@ -40,6 +38,6 @@ export async function sendVisitPing(): Promise<void> {
 
     await fetch(url, { method: "POST", headers });
   } catch {
-    // sessiz yut
+    // sessizce geç
   }
 }
