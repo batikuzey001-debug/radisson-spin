@@ -12,6 +12,9 @@ type EventCard = {
   seconds_left?: number | null;
   seconds_to_start?: number | null;
   prize_amount?: number | null;
+  /** ✅ CTA alanları (BE JSON’da gönderiliyor olmalı) */
+  cta_text?: string | null;
+  cta_url?: string | null;
 };
 
 const API = import.meta.env.VITE_API_BASE_URL;
@@ -62,8 +65,7 @@ function toneOf(cat?: string | null) {
   }
 }
 
-/** Güvenli sLeft hesabı (her saniye canlı azalır)
- *  Tercih sırası:
+/** CANLI geri sayım:
  *  1) start_at varsa -> start_at - now
  *  2) yoksa seconds_to_start - elapsed (mount'tan beri)
  */
@@ -72,7 +74,7 @@ function calcSecondsLeft(ev: EventCard, nowMs: number, mountMs: number) {
   const startMs = ev.start_at ? Date.parse(ev.start_at) : NaN;
   if (Number.isFinite(startMs)) {
     return Math.max(0, Math.floor((startMs - nowMs) / 1000));
-  }
+    }
   const base = typeof ev.seconds_to_start === "number" ? ev.seconds_to_start : 0;
   const elapsed = Math.floor((nowMs - mountMs) / 1000);
   return Math.max(0, base - elapsed);
@@ -156,6 +158,9 @@ export default function EventsGrid() {
 
             const endPretty = ev.end_at ? fmtDate(ev.end_at) : "";
 
+            const ctaUrl = ev.cta_url?.trim();
+            const ctaText = (ev.cta_text?.trim() || "Katıl");
+
             return (
               <article
                 key={ev.id}
@@ -181,6 +186,7 @@ export default function EventsGrid() {
                   <h3 className="evTitle" title={ev.title}>
                     {ev.title}
                   </h3>
+
                   <div className="evTimer">
                     <div
                       className={`evBadge ${counterClass}`}
@@ -189,13 +195,27 @@ export default function EventsGrid() {
                       {display}
                     </div>
                   </div>
+
                   <div className="evScan" />
+
                   {endPretty && (
                     <div className="evEnd">
                       <span className="endTag">Bitiş</span>
                       <span className="endVal">{endPretty}</span>
                     </div>
                   )}
+
+                  {/* ✅ CTA butonu: API cta_url varsa çıkar; metin cta_text ya da "Katıl" */}
+                  {ctaUrl ? (
+                    <a
+                      className="evCta"
+                      href={ctaUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {ctaText}
+                    </a>
+                  ) : null}
                 </div>
               </article>
             );
@@ -260,7 +280,7 @@ const css = `
 .evRibbon .ribTxt{ transform: skewX(-6deg); }
 
 .evBody{padding:10px 12px 12px; text-align:center; position:relative; z-index:1}
-.evTitle{margin:4px 0 6px; color:var(--txt); font-weight:900; font-size:15px}
+.evTitle{margin:4px 0 6px; color:#eaf2ff; font-weight:900; font-size:15px}
 
 /* Rozet alanı: sayaç veya ÖDÜL */
 .evTimer{margin:2px 0 6px}
@@ -284,6 +304,16 @@ const css = `
 .evEnd .endTag{padding:4px 8px; border-radius:8px; font-weight:900; font-size:11px; letter-spacing:.5px; text-transform:uppercase;
   color:#071018; background:linear-gradient(180deg,var(--t1),var(--t2))}
 .evEnd .endVal{ color:#eaf2ff; font-weight:800; font-size:13px }
+
+/* ✅ CTA butonu */
+.evCta{
+  margin-top:10px; display:inline-flex; align-items:center; justify-content:center;
+  padding:10px 14px; border-radius:12px; text-decoration:none; font-weight:900; letter-spacing:.4px;
+  background: linear-gradient(90deg, var(--t1), var(--t2));
+  color:#071018; border:1px solid rgba(255,255,255,.12);
+  box-shadow:0 8px 20px rgba(0,0,0,.25), 0 0 0 1px rgba(255,255,255,.14) inset;
+}
+.evCta:hover{ filter:brightness(1.06) }
 
 @media (max-width:900px){.evCard{width:46%}}
 @media (max-width:560px){.evCard{width:100%;max-width:340px}}
