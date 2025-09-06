@@ -50,6 +50,18 @@ def render_tournaments(
     if _has(Model, "subtitle"):
         form.append(f"<label class='field span-12'><span>Alt Başlık</span><input name='subtitle' value='{val('subtitle')}' placeholder='Kısa vurucu metin'></label>")
 
+    # CTA — METİN ve LİNK (modelde varsa)
+    if _has(Model, "cta_text"):
+        form.append(
+            f"<label class='field span-6'><span>CTA Metni</span>"
+            f"<input name='cta_text' value='{val('cta_text')}' placeholder='Örn: Hemen Katıl'></label>"
+        )
+    if _has(Model, "cta_url"):
+        form.append(
+            f"<label class='field span-6'><span>CTA Linki</span>"
+            f"<input name='cta_url' value='{val('cta_url')}' placeholder='https://... veya /sayfa'></label>"
+        )
+
     # Görseller
     form.append(f"<label class='field span-12'><span>Kapak Görseli URL</span><input name='image_url' value='{val('image_url')}' placeholder='https://... veya /static/...'></label>")
     if _has(Model, "banner_url"):
