@@ -26,7 +26,7 @@ def render_daily_bonuses(
         if editing else ""
     )
 
-    # ---------------- FORM (sade sıra + BONUS % için AYRI SATIR — HER ZAMAN GÖSTER) ----------------
+    # ---------------- FORM (sade sıra + BONUS % + CTA Metni/Linki) ----------------
     form = [
         "<div class='card form-card'>",
         f"<div class='form-head'><div><h1>{_esc(title_text)}</h1><div class='sub'>{_esc(sub_text)}</div></div>"
@@ -42,8 +42,10 @@ def render_daily_bonuses(
 
         # Görsel
         f"<label class='field span-12'><span>Kapak Görseli URL</span><input name='image_url' value='{val('image_url')}' placeholder='https://... veya /static/...'></label>",
+    ]
 
-        # BONUS % — HER ZAMAN GÖRÜNSÜN (modelde alan olmasa bile formdan gelir; upsert _has ile güvenli)
+    # BONUS % — her zaman göster (0–100)
+    form += [
         "<label class='field span-12'>",
         "<span>Bonus %</span>",
         "<div class='pctRow'>",
@@ -53,6 +55,18 @@ def render_daily_bonuses(
         "<div class='muted pctInfo'>Değer 0–100 arası olmalı. Örn: <b>15.5</b> → <b>%15,5</b></div>",
         "</label>",
     ]
+
+    # CTA — METİN ve LİNK alanları (modelde varsa kaydolur; upsert _has ile korumalı)
+    if _has(Model, "cta_text"):
+        form += [
+            f"<label class='field span-6'><span>CTA Metni</span>"
+            f"<input name='cta_text' value='{val('cta_text')}' placeholder='Örn: Hemen Katıl'></label>"
+        ]
+    if _has(Model, "cta_url"):
+        form += [
+            f"<label class='field span-6'><span>CTA Linki</span>"
+            f"<input name='cta_url' value='{val('cta_url')}' placeholder='https://... veya /sayfa'></label>"
+        ]
 
     # Tarihler — input + yanında 📅 düğmesi (klavye girişi serbest)
     form += [
@@ -100,8 +114,8 @@ def render_daily_bonuses(
 
     # ---------------- TABLO ----------------
     t = ["<div class='card'><h1>Güne Özel Bonuslar</h1>"]
-    # Bonus % sütunu HER ZAMAN görünsün (modelde olmasa da '-' gösterir)
-    headers = "<tr><th>ID</th><th>Başlık</th><th>Durum</th><th>Başlangıç</th><th>Bitiş</th><th>Bonus %</th><th>Görsel</th><th style='width:160px'>İşlem</th></tr>"
+    # Bonus % + CTA Metni/Linki sütunları
+    headers = "<tr><th>ID</th><th>Başlık</th><th>Durum</th><th>Başlangıç</th><th>Bitiş</th><th>Bonus %</th><th>CTA Metni</th><th>CTA Linki</th><th>Görsel</th><th style='width:160px'>İşlem</th></tr>"
     t.append("<div class='table-wrap'><table>" + headers)
 
     for r in rows:
@@ -110,9 +124,12 @@ def render_daily_bonuses(
             img = f"<img src='{_esc(r.image_url)}' alt='' loading='lazy' />"
         start_txt = _dt_input(getattr(r, "start_at", None)).replace("T", " ") or "-"
         end_txt = _dt_input(getattr(r, "end_at", None)).replace("T", " ") or "-"
-        # Modelde alan yoksa getattr -> None döner; '-' basıyoruz
+
         pct_val = getattr(r, "bonus_percent", None)
         pct_txt = "-" if pct_val in (None, "") else f"{pct_val}%"
+
+        cta_text = getattr(r, "cta_text", None) or "-"
+        cta_url  = getattr(r, "cta_url",  None) or "-"
 
         t.append(
             f"<tr>"
@@ -122,6 +139,8 @@ def render_daily_bonuses(
             f"<td>{start_txt}</td>"
             f"<td>{end_txt}</td>"
             f"<td>{_esc(str(pct_txt))}</td>"
+            f"<td>{_esc(cta_text)}</td>"
+            f"<td>{_esc(cta_url)}</td>"
             f"<td class='img'>{img}</td>"
             f"<td class='actions'>"
             f"<a class='btn neon small' href='/admin/turnuvabonus?tab={tab_key}&edit={r.id}' title='Düzenle'>Düzenle</a>"
@@ -145,7 +164,6 @@ def render_daily_bonuses(
         outline:none; box-shadow:none; border-color:var(--line, #1c1f28);
       }
 
-      /* Tarih kutuları (ikon belirgin, klavye serbest) */
       .dateRow{ display:flex; align-items:center; gap:6px; }
       .dateInput{ flex:1 1 auto; }
       input[type="datetime-local"]::-webkit-calendar-picker-indicator{
@@ -157,15 +175,13 @@ def render_daily_bonuses(
       }
       .pickBtn:hover{ filter:brightness(1.08); }
 
-      /* BONUS % satırı (her zaman görünür) */
       .pctRow{ display:flex; align-items:center; gap:6px; }
       .pctInput{ flex:0 0 220px; min-width:180px; }
       .pctSuffix{ color:#cfe1ff; font-weight:800; }
       .pctInfo{ margin-top:4px; }
 
-      /* Tablo */
       .table-wrap{ overflow:auto; }
-      table{ width:100%; border-collapse:collapse; min-width:760px; }
+      table{ width:100%; border-collapse:collapse; min-width:880px; }
       th,td{ padding:8px 6px; border-bottom:1px solid var(--line); white-space:nowrap; text-align:left; }
       th{ font-size:12px; color:#9aa3b7; text-transform:uppercase; }
       .img img{ height:26px; display:block }
