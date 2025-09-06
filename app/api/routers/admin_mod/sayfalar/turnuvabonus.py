@@ -34,7 +34,8 @@ KIND_MAP: Dict[str, Dict[str, Any]] = {
 def page_turnuvabonus(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
-    current: Annotated[AdminUser, Depends(require_role(AdminRole.super_admin))],
+    # Admin ve üstü erişebilsin
+    current: Annotated[AdminUser, Depends(require_role(AdminRole.admin))],
     tab: str = "tournaments",
 ):
     if tab not in KIND_MAP:
@@ -135,7 +136,8 @@ async def upsert_item(
     kind: str,
     request: Request,
     db: Annotated[Session, Depends(get_db)],
-    current: Annotated[AdminUser, Depends(require_role(AdminRole.super_admin))],
+    # Admin ve üstü güncelleyebilsin
+    current: Annotated[AdminUser, Depends(require_role(AdminRole.admin))],
 ):
     if kind not in KIND_MAP:
         return RedirectResponse("/admin/turnuvabonus?tab=tournaments", status_code=303)
@@ -172,7 +174,7 @@ async def upsert_item(
         amt_raw = (form.get("prize_amount") or "").replace(".", "").strip()
         data["prize_amount"] = int(amt_raw) if amt_raw.isdigit() else None
 
-    # YENİ: Günlük Bonuslar için bonus_percent (0–100 ondalık)
+    # Günlük bonuslar için bonus_percent
     if _has(Model, "bonus_percent"):
         pct_raw = (form.get("bonus_percent") or "").replace("%", "").replace(",", ".").strip()
         try:
@@ -199,7 +201,8 @@ async def delete_item(
     kind: str,
     request: Request,
     db: Annotated[Session, Depends(get_db)],
-    current: Annotated[AdminUser, Depends(require_role(AdminRole.super_admin))],
+    # Admin ve üstü silebilsin
+    current: Annotated[AdminUser, Depends(require_role(AdminRole.admin))],
 ):
     if kind not in KIND_MAP:
         return RedirectResponse("/admin/turnuvabonus?tab=tournaments", status_code=303)
