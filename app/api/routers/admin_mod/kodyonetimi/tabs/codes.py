@@ -14,7 +14,7 @@ def render_codes(db: Session) -> str:
 
     last = db.query(Code).order_by(Code.created_at.desc()).limit(20).all()
 
-    # ========== KOD OLUŞTUR — minimal + buton yanında "son kod" chip'i ==========
+    # ========== KOD OLUŞTUR — buton yanında 5 sn görünür "son kod" chip'i ==========
     form = [
         "<div class='card codeCard'>",
         "<div class='codeHead'><h1>Kod Oluştur</h1></div>",
@@ -58,17 +58,16 @@ def render_codes(db: Session) -> str:
         "</div>",  # grid
         "<div class='hint muted'>Not: ‘Otomatik’ modda ödül, seçilen seviyeye ait dağılım yüzdelerine göre belirlenir.</div>",
 
-        # Oluştur butonu + YANINDA son kod chip (kopyalanabilir, şık – kopyalayınca kapanır)
+        # Oluştur butonu + YANINDA son kod chip (kopyalanabilir metin + küçük ikon)
         "<div class='formActions'>",
         "<button class='btn primary' type='submit'>Oluştur</button>",
-
-        # Son kod bölgesi: sadece ?new=... varsa görünecek (JS kontrol ediyor)
         "<div class='lastChip' id='lastChip' hidden>",
         "  <code class='chipCode' id='lastCode' title='Kodu kopyalamak için tıklayın'>—</code>",
         "  <button type='button' class='chipBtn' id='copyBtn' title='Kopyala' aria-label='Kopyala'>📋</button>",
+        "  <span class='copied' id='copied' hidden>kopyalandı</span>",
+        "</div>",
         "</div>",
 
-        "</div>",  # formActions
         "</form>",
         "</div>",  # card
     ]
@@ -116,7 +115,7 @@ def render_codes(db: Session) -> str:
         )
     table.append("</table></div></div>")
 
-    # ========== Stil + JS (chip entegre, kopyalayınca kendini kapatır) ==========
+    # ========== Stil + JS (5 sn görün, sonra kaybol; kopyalama feedback'i) ==========
     style_js = """
     <style>
       :root{ --line:#1c1f28; --muted:#a3aec2; --text:#f2f4f8; --panel:#0d0f15; --panel2:#0b0d13; --red:#ff0033; }
@@ -139,12 +138,14 @@ def render_codes(db: Session) -> str:
       .btn{ appearance:none; border:1px solid var(--line); background:#151824; color:#fff; padding:8px 12px; cursor:pointer; text-decoration:none; }
       .btn.primary{ background:linear-gradient(90deg,var(--red),#ff334f); border-color:#2a0e15; }
 
-      /* Son kod chip (copy UI entegre) */
+      /* Son kod chip */
       .lastChip{ display:flex; align-items:center; gap:6px; border:1px solid var(--line); background:#0e121b; padding:6px 8px; }
       .chipCode{ font-weight:900; color:#fff; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; user-select:text; }
       .chipBtn{ appearance:none; border:1px solid var(--line); background:#0b0d13; color:#fff; padding:6px 8px; cursor:pointer; }
       .chipBtn:hover{ filter:brightness(1.08); }
+      .copied{ font-size:12px; color:#9fe3ae; }
 
+      /* Tablo */
       .table-wrap{ overflow:auto; }
       table.codesTable{ width:100%; border-collapse:collapse; min-width:720px; }
       .codesTable th, .codesTable td{ border-bottom:1px solid var(--line); padding:8px 6px; text-align:left; white-space:nowrap; }
@@ -158,7 +159,6 @@ def render_codes(db: Session) -> str:
     </style>
 
     <script>
-      // Ödül modu (manuel/auto)
       function kMode(){
         var m=document.getElementById('modeSel');
         var s=document.getElementById('manualSel');
@@ -166,42 +166,42 @@ def render_codes(db: Session) -> str:
         s.disabled = (m.value!=='manual');
       }
 
-      // Oluşturulan kodu butonun yanında göster:
-      // Yalnızca URL'de ?new=KOD varsa görünür. Kopyalanınca chip kapanır ve URL'den ?new kaldırılır.
+      // Son kod: ?new=KOD ile gelir, 5 sn boyunca buton yanında görünür, sonra otomatik kaybolur.
       (function(){
         try{
-          var wrap = document.getElementById('lastChip');
+          var wrap   = document.getElementById('lastChip');
           var codeEl = document.getElementById('lastCode');
-          var copyBtn = document.getElementById('copyBtn');
+          var copyBtn= document.getElementById('copyBtn');
+          var copied = document.getElementById('copied');
           if(!wrap || !codeEl || !copyBtn) return;
 
           var params = new URLSearchParams(window.location.search);
           var v = (params.get('new') || '').trim();
 
-          if(v){
-            wrap.hidden = false;
-            codeEl.textContent = v;
+          if(!v) return;
+          wrap.hidden = false;
+          codeEl.textContent = v;
 
-            var hideChip = function(){
-              try{
-                // Clipboard
-                navigator.clipboard.writeText(v);
-              }catch(e){}
-              // Chip'i gizle
+          // 5 sn sonra chip'i gizle + URL'den ?new temizle
+          var hideTimer = setTimeout(function(){
+            try{
               wrap.hidden = true;
-              // URL'den ?new paramını kaldır (sayfayı yenilemeden)
-              try{
-                params.delete('new');
-                var newUrl = window.location.pathname + (params.toString()?('?'+params.toString()):'');
-                window.history.replaceState(null, '', newUrl);
-              }catch(e){}
-            };
+              params.delete('new');
+              var newUrl = window.location.pathname + (params.toString()?('?'+params.toString()):'');
+              window.history.replaceState(null, '', newUrl);
+            }catch(e){}
+          }, 5000);
 
-            // Kod metnine tıklayınca da kopyalansın
-            codeEl.onclick = hideChip;
-            // Buton da aynı işlev
-            copyBtn.onclick = hideChip;
+          // Kopyalama (chip gizlenmez; 5 sn sonra zaten kapanacak)
+          function copyOnly(){
+            try{
+              navigator.clipboard.writeText(v);
+              if(copied) { copied.hidden = false; setTimeout(function(){ copied.hidden = true; }, 1200); }
+            }catch(e){}
           }
+          codeEl.onclick = copyOnly;
+          copyBtn.onclick = copyOnly;
+
         }catch(e){}
       })();
     </script>
