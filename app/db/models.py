@@ -36,7 +36,6 @@ class Prize(Base):
         foreign_keys="Code.manual_prize_id",
         viewonly=True,
     )
-
     # -> Çark dağılım ilişkisi
     distributions = relationship(
         "PrizeDistribution",
@@ -49,13 +48,10 @@ class Code(Base):
     __tablename__ = "codes"
     code: Mapped[str] = mapped_column(String(64), primary_key=True)
     username: Mapped[str | None] = mapped_column(String(128), nullable=True)
-
     # Spin sonrası dolacak -> nullable
     prize_id: Mapped[int | None] = mapped_column(ForeignKey("prizes.id"), nullable=True)
-
     # Kodun seviyesini tutar (dinamik tier; prize_tiers.key)
     tier_key: Mapped[str | None] = mapped_column(String(32), nullable=True)
-
     # Kod oluştururken manuel ödül atanırsa (opsiyonel, tek seferlik)
     manual_prize_id: Mapped[int | None] = mapped_column(ForeignKey("prizes.id"), nullable=True)
 
@@ -163,6 +159,7 @@ class PromoCode(Base):
     coupon_code  = Column(String(64))
     cta_text     = Column(String(128))           # CTA Metni
     cta_url      = Column(String(512))           # CTA Linki
+    participant_count = Column(Integer)          # ✅ Max kişi sayısı (liste/form için)
     created_at = Column(DateTime(timezone=True), default=_utcnow)
     updated_at = Column(DateTime(timezone=True), default=_utcnow)
 
