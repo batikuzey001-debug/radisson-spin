@@ -127,6 +127,14 @@ try:
 except Exception:
     pass
 
+# >>> Content (tournaments / daily-bonuses / promo-codes / events — generic liste)
+try:
+    from app.api.routers.content import router as content_router
+    app.include_router(content_router, prefix="/api")
+except Exception:
+    pass
+# <<< Content SON
+
 # FE ziyaretçi metrikleri (benzersiz ziyaretçi ping)
 try:
     from app.api.routers.fe_metrics import router as fe_metrics_router
