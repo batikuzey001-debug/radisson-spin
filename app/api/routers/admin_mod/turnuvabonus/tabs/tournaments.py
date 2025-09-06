@@ -31,7 +31,7 @@ def render_tournaments(
         "<div class='card form-card'>",
         f"<div class='form-head'><div><h1>{_esc(title_text)}</h1><div class='sub'>{_esc(sub_text)}</div></div>"
         f"<div class='head-actions'>{cancel_edit_btn}</div></div>",
-        f"<form method='post' action='/admin/turnuvabonus/{tab_key}/upsert' autocomplete='on'>",
+        f"<form method='post' action='/admin/turnuvabonus/{tab_key}/upsert' autocomplete='off'>",
         f"{f'<input type=\"hidden\" name=\"id\" value=\"{editing.id}\">' if editing else ''}",
 
         "<div class='grid'>",
@@ -55,14 +55,19 @@ def render_tournaments(
     if _has(Model, "banner_url"):
         form.append(f"<label class='field span-12'><span>Banner Görseli URL</span><input name='banner_url' value='{val('banner_url')}' placeholder='Sayfa üst görseli (opsiyonel)'></label>")
 
-    # Tarihler (datetime-local)  — picker alanı beyaz, kırmızı şerit YOK
+    # Tarihler (picker ZORUNLU: klavye girişi devre dışı)
+    # - readonly: yazılamaz
+    # - keydown: tuşları engelle
+    # - click/focus: destek varsa showPicker() aç
     form.append(
         f"<label class='field span-6'><span>Başlangıç Tarihi</span>"
-        f"<input type='datetime-local' class='dateInput' name='start_at' value='{_dt_input(getattr(editing,'start_at',None))}'></label>"
+        f"<input type='datetime-local' class='dateInput' name='start_at' "
+        f"value='{_dt_input(getattr(editing,'start_at',None))}' readonly onpaste='return false'></label>"
     )
     form.append(
         f"<label class='field span-6'><span>Bitiş Tarihi</span>"
-        f"<input type='datetime-local' class='dateInput' name='end_at' value='{_dt_input(getattr(editing,'end_at',None))}'></label>"
+        f"<input type='datetime-local' class='dateInput' name='end_at' "
+        f"value='{_dt_input(getattr(editing,'end_at',None))}' readonly onpaste='return false'></label>"
     )
 
     # Kategori / Durum
@@ -90,7 +95,7 @@ def render_tournaments(
         form.append(f"<label class='field span-12'><span>Detay Açıklama</span><textarea name='long_desc' rows='4' placeholder='Detaylar...'>{val('long_desc')}</textarea></label>")
 
     form.extend([
-        "</div>",
+        "</div>",  # grid
         "<div class='form-actions'>"
         "<button class='btn primary' type='submit'>Kaydet</button>"
         f"{cancel_edit_btn}"
@@ -133,10 +138,10 @@ def render_tournaments(
         )
     t.append("</table></div></div>")
 
-    # --- Tarih inputu: picker alanını beyaz göster, kırmızı şerit YOK ---
-    style = """
+    # ——— Tarih picker: beyaz patch yok, klavye girişi kapalı, picker’ı tıkla-aç ———
+    style_js = """
     <style>
-      /* Temel input stilleri (kırmızı çerçeve yok) */
+      /* Kırmızı şerit YOK, standart görünüme dön */
       .field input, .field select, .field textarea{
         border:1px solid var(--line, #1c1f28);
         background:#0b0d13; color:#fff; padding:10px;
@@ -144,31 +149,33 @@ def render_tournaments(
       .field input:focus, .field select:focus, .field textarea:focus{
         outline:none; box-shadow:none; border-color:var(--line, #1c1f28);
       }
-
-      /* datetime-local: sağdaki picker tuşu beyaz bir patch üzerinde olsun */
+      /* datetime-local input: sadece picker kullanılacak */
       input[type="datetime-local"].dateInput{
-        padding:10px 40px 10px 10px; /* sağda picker için boşluk */
-        border:1px solid var(--line, #1c1f28);
-        background:
-          linear-gradient(90deg, transparent 0 calc(100% - 36px), #fff calc(100% - 36px) 100%),
-          #0b0d13;
-        color:#fff;
+        /* ekstra görsel yok; yalnız padding */
+        padding:10px;
         cursor:pointer;
-      }
-      /* WebKit takımı (Chrome/Safari) için ikon görünürlüğü */
-      input[type="datetime-local"].dateInput::-webkit-calendar-picker-indicator{
-        opacity:1;
-        filter:none;              /* siyah ikon */
-        background:transparent;
-        cursor:pointer;
-      }
-      /* Firefox için ek görünürlük (tam destek sınırlı) */
-      @-moz-document url-prefix(){
-        input[type="datetime-local"].dateInput{
-          background-color:#0b0d13;
-        }
       }
     </style>
+    <script>
+      (function(){
+        try{
+          var inputs = document.querySelectorAll('input.dateInput');
+          inputs.forEach(function(el){
+            // Klavye girişini engelle (Tab/oklar hariç)
+            el.addEventListener('keydown', function(e){
+              var ok = ['Tab','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Escape'];
+              if(ok.indexOf(e.key) === -1){ e.preventDefault(); }
+            });
+            // Odak/klik ile picker açmayı dene (destekliyse)
+            var open = function(){
+              try{ if (el.showPicker) el.showPicker(); }catch(e){}
+            };
+            el.addEventListener('focus', open);
+            el.addEventListener('click', open);
+          });
+        }catch(e){}
+      })();
+    </script>
     """
 
-    return "".join(form) + "".join(t) + style
+    return "".join(form) + "".join(t) + style_js
