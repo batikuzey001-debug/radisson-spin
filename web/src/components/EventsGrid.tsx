@@ -1,7 +1,6 @@
 // web/src/components/EventsGrid.tsx
 import { useEffect, useMemo, useState } from "react";
 
-/** API veri tipi (events/active) – prize_amount dahil */
 type EventCard = {
   id: number | string;
   title: string;
@@ -12,62 +11,26 @@ type EventCard = {
   state: "active" | "upcoming";
   seconds_left?: number | null;
   seconds_to_start?: number | null;
-  accent_color?: string | null;
-  bg_color?: string | null;
-  priority?: number | null;
-  is_pinned?: boolean;
   prize_amount?: number | null;
 };
 
 const API = import.meta.env.VITE_API_BASE_URL;
 
-/* --- Kategori -> renk/etiket eşleşmesi --- */
-const CAT: Record<string, { theme: "theme-emerald" | "theme-red" | "theme-gold" | "theme-aqua" | "theme-purple"; label: string }> = {
-  "sports":      { theme: "theme-emerald", label: "SPOR" },
-  "live-casino": { theme: "theme-red",     label: "CANLI" },
-  "slots":       { theme: "theme-gold",    label: "SLOT" },
-  "all":         { theme: "theme-aqua",    label: "HEPSİ" },
-  "other":       { theme: "theme-purple",  label: "ÖZEL" },
-};
-
-function themeOf(ev: EventCard) {
-  const key = (ev.category || "other").toLowerCase();
-  const m = CAT[key] || CAT["other"];
-  return m;
-}
-
-/* Basit tarih yazımı */
-function fmtDate(dt?: string | null) {
-  if (!dt) return "";
-  try {
-    const d = new Date(dt);
-    return d.toLocaleString("tr-TR", {
-      day: "2-digit",
-      month: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch { return dt || ""; }
-}
-
-/* TL */
 const fmtTL = (n: number) =>
   new Intl.NumberFormat("tr-TR").format(Math.max(0, Math.floor(n))) + " ₺";
 
-/* Saniyeyi HH:MM:SS */
-const fmtHHMMSS = (s: number) => {
-  const t = Math.max(0, Math.floor(s));
-  const hh = Math.floor(t / 3600);
-  const mm = Math.floor((t % 3600) / 60);
-  const ss = t % 60;
-  const pad = (x: number) => String(x).padStart(2, "0");
-  return `${pad(hh)}:${pad(mm)}:${pad(ss)}`;
+const fmtDate = (iso?: string | null) => {
+  if (!iso) return "";
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString("tr-TR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  } catch { return iso || ""; }
 };
 
 export default function EventsGrid() {
   const [items, setItems] = useState<EventCard[]>([]);
   const [err, setErr] = useState("");
-  const [tick, setTick] = useState(0); // WHY: sayaç yazısını her saniye güncelle
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     let live = true;
@@ -88,187 +51,148 @@ export default function EventsGrid() {
 
   useEffect(() => {
     if (!items.length) return;
-    const t = setInterval(() => setTick((v) => v + 1), 1000);
+    const t = setInterval(() => setTick(v => v + 1), 1000);
     return () => clearInterval(t);
   }, [items.length]);
 
-  const rows = useMemo(() => items, [items, tick]); // WHY: saniyelik re-render
-
-  if (err && !rows.length) {
-    return (
-      <div className="eventsWrap">
-        <div className="msg">{err}</div>
-        <style>{css}</style>
-      </div>
-    );
-  }
-  if (!rows.length) {
-    return (
-      <div className="eventsWrap">
-        <div className="msg muted">Şu an listelenecek etkinlik yok.</div>
-        <style>{css}</style>
-      </div>
-    );
-  }
+  const rows = useMemo(() => items, [items, tick]);
 
   return (
-    <section className="eventsWrap" aria-label="Etkinlikler">
-      <div className="ec-wrap">
-        {rows.map((ev) => {
-          const { theme, label: catLabel } = themeOf(ev);
-
-          // Rozet ve alt satır
-          const isLive = ev.state === "active" && (ev.seconds_left ?? 1) > 0;
-          const chipText = isLive ? "AKTİF" : "BEKLEMEDE";
-
-          let subTxt = "";
-          if (!isLive) {
-            if (ev.seconds_to_start != null && ev.seconds_to_start > 0) {
-              subTxt = `Başlamasına: ${fmtHHMMSS(ev.seconds_to_start)}`;
-            } else if (ev.start_at) {
-              subTxt = `Başlangıç: ${fmtDate(ev.start_at)}`;
-            }
-          }
-
-          const amountText = typeof ev.prize_amount === "number" ? fmtTL(ev.prize_amount) : null;
-
-          return (
-            <article key={ev.id} className={`ec-card ${theme}`}>
-              {/* Sol neon şerit */}
-              <span className="ec-led" aria-hidden />
-
-              {/* Üst görsel */}
-              <div className="ec-media">
-                <span className="ec-topneon" />
-                {ev.image_url ? <img src={ev.image_url} alt="" /> : <div style={{height:"100%"}} />}
-                {/* TV rozeti */}
-                <span className="ec-chip" style={{ color: isLive ? "#22d35a" : "#f59e0b" }}>
-                  <span className="dot" />{chipText}
-                </span>
-                {/* Ribbon */}
-                <span className="ec-ribbon">{catLabel}</span>
-              </div>
-
-              {/* Body */}
-              <div className="ec-body">
-                <h3 className="ec-title" title={ev.title}>{ev.title}</h3>
-                {/* Ödül */}
-                {amountText && <div className="ec-prize" title={amountText}>{amountText}</div>}
-                {/* Alt bilgi */}
-                {subTxt && <p className="ec-desc">{subTxt}</p>}
-                {/* Büyük CTA (bağlantı yoksa buton gibi davranır) */}
-                <a
-                  className="ec-cta"
-                  href="#"
-                  onClick={(e)=>e.preventDefault()}
-                  role="button"
-                >
-                  Katıl
-                </a>
-              </div>
-            </article>
-          );
-        })}
+    <section className="evWrap">
+      <div className="evHead">
+        <h2><span className="tag">⚽</span> Etkinlikler</h2>
+        <div className="headGlow" aria-hidden />
+        {err && !rows.length && <span className="muted">{err}</span>}
+        {!err && !rows.length && <span className="muted">Şu an gösterilecek etkinlik yok.</span>}
       </div>
+
+      {rows.length > 0 && (
+        <div className="evList">
+          {rows.map(ev => {
+            const isUpcoming = ev.state === "upcoming";
+            const sLeft = Math.max(0, Math.floor(ev.seconds_to_start ?? 0));
+            const counterClass = isUpcoming
+              ? (sLeft < 3600 ? "red" : "yellow")
+              : "on";
+
+            const display = isUpcoming && sLeft > 0
+              ? fmtT(sLeft)
+              : (ev.prize_amount ? fmtTL(ev.prize_amount) : "AKTİF");
+
+            const meta = isUpcoming
+              ? (sLeft > 0 ? `Başlamasına: ${fmtT(sLeft)}` : `Başlangıç: ${fmtDate(ev.start_at)}`)
+              : (ev.end_at ? `Bitiş: ${fmtDate(ev.end_at)}` : "");
+
+            return (
+              <article key={ev.id} className="evCard">
+                <span className="stripe" aria-hidden />
+                <header className="evMedia" style={{ ["--img" as any]: `url('${ev.image_url || ""}')` }} />
+                <div className="evBody">
+                  <h3 className="evTitle" title={ev.title}>{ev.title}</h3>
+                  <div className="evTimer">
+                    <div className={`evBadge ${counterClass}`} aria-live="polite">{display}</div>
+                  </div>
+                  <div className="evScan" />
+                  {meta && <div className="evMeta">{meta}</div>}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
 
       <style>{css}</style>
     </section>
   );
 }
 
-/* ===================== CSS (ec- tasarım, SOL HİZALI) ===================== */
+/* Helpers */
+function fmtT(total: number) {
+  const hh = Math.floor(total / 3600);
+  const mm = Math.floor((total % 3600) / 60);
+  const ss = total % 60;
+  return `${pad2(hh)}:${pad2(mm)}:${pad2(ss)}`;
+}
+function pad2(n: number) { return String(n).padStart(2, "0"); }
+
+/* CSS */
 const css = `
-:root{ --txt:#f0f4ff; --bg1:#0f162b; --bg2:#0a1224;
-  --red-1:#ff3b3b; --red-2:#ff6b6b;
-  --gold-1:#f7c948; --gold-2:#f59e0b;
-  --emer-1:#34d399; --emer-2:#10b981;
-  --purp-1:#c084fc; --purp-2:#a855f7;
-  --aqua-1:#06d6ff; --aqua-2:#118ab2;
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@700;800;900&family=Rajdhani:wght@700;800;900&display=swap');
+
+:root{
+  --radius:18px; --txt:#eaf2ff; --muted:#9fb3d9;
+  --bg1:#0f162b; --bg2:#0a1224;
+  --g1:#23e06c; --g2:#14c15a;
 }
 
-/* KAPSAYICI */
-.eventsWrap{ margin:18px 0 }
-.msg{ padding:16px; border:1px solid rgba(255,255,255,.10); border-radius:12px; background:rgba(255,255,255,.03); color:#eaf2ff }
-.msg.muted{ color:#9fb1cc }
+.evWrap{ margin:16px 0 }
 
-/* SOL HİZALI GRID (flex-wrap) */
-.ec-wrap{
-  display:flex; flex-wrap:wrap; gap:20px;
-  justify-content:flex-start; align-content:flex-start;
-  font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
-}
+/* Başlık */
+.evHead{position:relative; display:flex; align-items:center; gap:12px; margin-bottom:12px}
+.evHead h2{margin:0; font-size:20px; color:#eaf2ff; font-weight:900; display:flex; align-items:center; gap:8px;}
+.evHead .tag{display:inline-grid; place-items:center; width:26px; height:26px; border-radius:8px;
+  background:linear-gradient(180deg, rgba(35,224,108,.25), rgba(20,193,90,.15));
+  box-shadow:0 0 18px rgba(35,224,108,.35)}
+.evHead .headGlow{position:absolute; left:0; right:0; bottom:-6px; height:2px; border-radius:2px;
+  background:linear-gradient(90deg, transparent, rgba(35,224,108,.85), transparent);
+  box-shadow:0 0 18px rgba(35,224,108,.55);}
+.muted{color:#9fb1cc;font-size:13px}
+
+/* Liste */
+.evList{display:flex; flex-wrap:wrap; gap:16px 16px; justify-content:flex-start; align-content:flex-start;
+  font-family:Inter,system-ui,sans-serif}
 
 /* Kart */
-.ec-card{
-  width:300px;border-radius:18px;overflow:hidden;position:relative;
+.evCard{width:240px; border-radius:var(--radius); overflow:hidden;
   background:linear-gradient(180deg,var(--bg1),var(--bg2));
+  border:1px solid rgba(255,255,255,.10);
   box-shadow:0 12px 28px rgba(0,0,0,.45);
-  transition:transform .22s ease, box-shadow .22s ease
-}
-.ec-card:hover{transform:translateY(-4px);box-shadow:0 18px 38px rgba(0,0,0,.65),0 0 24px var(--t1)}
+  display:flex; flex-direction:column; position:relative; isolation:isolate;
+  transition:transform .22s ease, box-shadow .22s ease}
+.evCard:hover{transform:translateY(-4px); box-shadow:0 18px 38px rgba(0,0,0,.6); border-color:rgba(255,255,255,.16)}
 
-.theme-red    { --t1:var(--red-1);  --t2:var(--red-2); }
-.theme-gold   { --t1:var(--gold-1); --t2:var(--gold-2); }
-.theme-emerald{ --t1:var(--emer-1); --t2:var(--emer-2); }
-.theme-purple { --t1:var(--purp-1); --t2:var(--purp-2); }
-.theme-aqua   { --t1:var(--aqua-1); --t2:var(--aqua-2); }
+/* Sol şerit yeşil-beyaz akış */
+.evCard .stripe{position:absolute; left:0; top:0; bottom:0; width:7px; border-radius:8px 0 0 8px; z-index:999;
+  background:linear-gradient(180deg,var(--g1),var(--g2));
+  box-shadow:0 0 20px var(--g1), 0 0 44px var(--g2), 0 0 70px var(--g1)}
+.evCard .stripe::after{content:""; position:absolute; left:0; top:-8%; width:7px; height:116%; border-radius:8px; z-index:1000;
+  background-image:repeating-linear-gradient(180deg, rgba(255,255,255,.95) 0 6px, rgba(255,255,255,0) 6px 18px),
+                   linear-gradient(180deg, var(--g1), var(--g2));
+  background-blend-mode:screen; animation:evSlide 1.35s linear infinite}
+@keyframes evSlide{from{transform:translateY(0)}to{transform:translateY(18px)}}
 
-/* Sol neon şerit */
-.ec-led{position:absolute;left:0;top:0;bottom:0;width:8px;z-index:6;
-  background:linear-gradient(180deg,var(--t1),var(--t2));
-  box-shadow:0 0 22px var(--t1),0 0 44px var(--t2);
-  animation:ec-pulse 1.4s infinite alternate}
-@keyframes ec-pulse{from{opacity:.75;box-shadow:0 0 14px var(--t1)}to{opacity:1;box-shadow:0 0 32px var(--t2)}}
-
-/* Üst görsel */
-.ec-media{position:relative;aspect-ratio:16/9;background:#0d1428;overflow:hidden}
-.ec-media img{width:100%;height:100%;object-fit:cover;display:block;position:relative;z-index:1}
-.ec-media::after{content:"";position:absolute;inset:0;z-index:2;background:linear-gradient(180deg,transparent 55%,rgba(10,15,28,.85))}
-.ec-topneon{position:absolute;z-index:3;left:-40%;top:0;height:6px;width:180%;
-  background:linear-gradient(90deg,var(--t1),var(--t2),var(--t1));
-  box-shadow:0 0 18px var(--t1),0 0 36px var(--t2);
-  animation:ec-bar-move 4s linear infinite}
-@keyframes ec-bar-move{from{transform:translateX(0)}to{transform:translateX(-25%)}}
-
-/* Durum chip */
-.ec-chip{position:absolute;left:12px;top:12px;z-index:5;
-  padding:7px 11px;border-radius:12px;background:#0b1120cc;backdrop-filter:blur(4px);
-  font-weight:900;font-size:11px;text-transform:uppercase;color:#22d35a;border:1px solid rgba(255,255,255,.14);
-  display:inline-flex;gap:6px;align-items:center}
-.ec-chip .dot{width:10px;height:10px;border-radius:50%;background:currentColor;box-shadow:0 0 10px currentColor}
-
-/* Ribbon */
-.ec-ribbon{position:absolute;right:-44px;top:14px;transform:rotate(45deg);
-  width:150px;padding:5px 0;text-align:center;z-index:5;
-  color:#0b0d13;font-weight:900;font-size:12px;text-transform:uppercase;
-  background:linear-gradient(90deg,var(--t1),var(--t2));
-  box-shadow:0 0 20px var(--t1),0 0 40px var(--t2)}
+/* Media */
+.evMedia{position:relative; height:120px; overflow:hidden; background:#0d1428}
+.evMedia::before{content:""; position:absolute; inset:0; background-image:var(--img);
+  background-size:cover; background-position:center; filter:saturate(1.05) contrast(1.05)}
+.evMedia::after{content:""; position:absolute; inset:0; background:linear-gradient(180deg,transparent 55%,rgba(10,15,28,.85))}
 
 /* Body */
-.ec-body{padding:12px 14px 16px;color:var(--txt);text-align:center}
-.ec-title{margin:2px 0 8px;font-weight:800;font-size:16px}
+.evBody{padding:10px 12px 12px; text-align:center}
+.evTitle{margin:0 0 6px; color:var(--txt); font-weight:900; font-size:15px}
 
-/* Ödül — yanıp sönen glow */
-.ec-prize{
-  margin:6px 0 8px;font-family:Rajdhani,system-ui;font-weight:900;font-size:28px;
-  background:linear-gradient(90deg,var(--t1),var(--t2));
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
-  animation:glowPulse 1.6s infinite alternate
-}
-@keyframes glowPulse{from{text-shadow:0 0 14px var(--t1)}to{text-shadow:0 0 30px var(--t2)}}
+/* Sayaç/ödül badge */
+.evTimer{margin:2px 0 6px}
+.evBadge{font-family:Rajdhani,sans-serif; font-weight:900; font-size:26px; letter-spacing:1.2px; color:#f2f7ff;
+  display:inline-block; padding:10px 12px; border-radius:12px; min-width:140px;
+  background:linear-gradient(180deg,#0f1730,#0d1428); border:1px solid #202840}
+.evBadge.on{ text-shadow:0 0 14px rgba(35,224,108,.45)}
+.evBadge.yellow{color:#fff3c2; text-shadow:0 0 12px #ffda6b,0 0 22px #ffb300}
+.evBadge.red{color:#ffdada; text-shadow:0 0 14px #ff5c5c,0 0 28px #ff2e2e; animation:redPulse 1.4s ease-in-out infinite}
+@keyframes redPulse{0%,100%{opacity:1}50%{opacity:.55}}
 
-/* Alt bilgi */
-.ec-desc{margin:0 auto 10px;max-width:90%;color:#cfe0ff;font-size:13.5px;line-height:1.4}
+/* Tarama çizgisi */
+.evScan{height:3px; margin:8px auto 8px; width:150px; border-radius:999px; opacity:.98;
+  background-image:linear-gradient(90deg,rgba(255,255,255,0) 0%,rgba(255,255,255,.95) 12%,rgba(255,255,255,0) 24%),
+                   linear-gradient(90deg,var(--g1),var(--g2));
+  background-size:140px 100%,100% 100%; background-repeat:repeat,no-repeat;
+  animation:scanX 1.2s linear infinite; box-shadow:0 0 14px var(--g1),0 0 26px var(--g2)}
+@keyframes scanX{from{background-position:-40px 0,0 0}to{background-position:140px 0,0 0}}
 
-/* Büyük CTA */
-.ec-cta{
-  display:block;width:100%;margin-top:6px;padding:14px 0;border-radius:14px;
-  font-weight:900;font-size:15px;text-transform:uppercase;color:#0b0d13;text-decoration:none;
-  background:linear-gradient(90deg,var(--t1),var(--t2));
-  box-shadow:0 0 20px var(--t1),0 0 40px var(--t2)
-}
+/* Meta */
+.evMeta{margin:2px 0 0; color:#cfe0ff; font-size:12.5px; opacity:.95}
 
 /* Responsive */
-@media (max-width:900px){.ec-card{width:46%}}
-@media (max-width:560px){.ec-card{width:100%;max-width:360px}}
+@media (max-width:900px){.evCard{width:46%}}
+@media (max-width:560px){.evCard{width:100%;max-width:340px}}
 `;
