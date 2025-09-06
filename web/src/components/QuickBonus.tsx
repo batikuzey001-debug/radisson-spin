@@ -4,16 +4,16 @@ import { type PromoActive } from "../api/promos";
 
 /**
  * QuickBonus — Promo Kodlar
- * - Upcoming: sayaç (>=1 saat sarı, <1 saat kırmızı yanıp söner); 0 olduğunda kod görünür.
- * - Active: doğrudan kod.
- * - CTA: BE'den gelen cta_text ve cta_url kullanılır (cta_text yoksa "Katıl").
- * - Max kişi: YALNIZCA kod aktifken (countdown bittiğinde) büyük, dikkat çeken rozet.
- * - Kartlar: 240px, aqua LED sol şerit (kayan).
+ * - Countdown: kutu yok; LED dijital stili. Renk: T<1saat= kırmızı, aksi= sarı.
+ * - Kod: kutu yok; büyük metin. (0'a inince kod görünür)
+ * - Max kişi: HER KARTTA, kutusuz, büyük ve dikkat çekici.
+ * - CTA: BE'den (cta_text/cta_url). Kart genişliği: 240px. Sol şeritte aqua neon kayma.
  */
 
 type PromoEx = PromoActive & {
   state?: "active" | "upcoming";
   seconds_to_start?: number | null;
+  seconds_left?: number | null;
   code?: string | null;
   promo_code?: string | null;
   coupon_code?: string | null;
@@ -32,58 +32,49 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    fetch(
-      `${import.meta.env.VITE_API_BASE_URL}/api/promos/active?limit=${limit}&include_future=1&window_hours=48`
-    )
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
+    fetch(`${import.meta.env.VITE_API_BASE_URL}/api/promos/active?limit=${limit}&include_future=1&window_hours=48`)
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then((arr: PromoEx[]) => alive && (setRows(Array.isArray(arr) ? arr : []), setErr("")))
-      .catch((e) => alive && (setErr(e?.message ?? "Hata"), setRows([])))
+      .catch(e => alive && (setErr(e?.message ?? "Hata"), setRows([])))
       .finally(() => alive && setLoading(false));
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, [limit]);
 
   // sayaç tick
   useEffect(() => {
     if (!rows.length) return;
     const t = setInterval(() => {
-      setRows((prev) =>
-        prev.map((p) => {
-          if (p.state === "upcoming" && p.seconds_to_start != null) {
-            return { ...p, seconds_to_start: Math.max(0, p.seconds_to_start - 1) };
-          }
-          if (p.state === "active" && p.seconds_left != null) {
-            return { ...p, seconds_left: Math.max(0, p.seconds_left - 1) };
-          }
-          return p;
-        })
-      );
+      setRows(prev => prev.map(p => {
+        if (p.state === "upcoming" && p.seconds_to_start != null) {
+          return { ...p, seconds_to_start: Math.max(0, p.seconds_to_start - 1) };
+        }
+        if (p.state === "active" && p.seconds_left != null) {
+          return { ...p, seconds_left: Math.max(0, p.seconds_left - 1) };
+        }
+        return p;
+      }));
     }, 1000);
     return () => clearInterval(t);
   }, [rows.length]);
 
-  // sayaç 0→ kod görünür olduğunda kısa bir parıltı efekti
+  // sayaç 0 -> kod görünümü için kısa parıltı
   useEffect(() => {
     const toFlash: string[] = [];
-    rows.forEach((p) => {
+    rows.forEach(p => {
       const id = String(p.id);
       const prevSec = prevSecsRef.current[id];
-      const nowSecStart = p.state === "upcoming" ? p.seconds_to_start ?? 0 : undefined;
+      const nowSecStart = p.state === "upcoming" ? (p.seconds_to_start ?? 0) : undefined;
       if (prevSec != null && prevSec > 0 && nowSecStart === 0) toFlash.push(id);
-      prevSecsRef.current[id] = p.state === "upcoming" ? p.seconds_to_start ?? 0 : p.seconds_left ?? 0;
+      prevSecsRef.current[id] = p.state === "upcoming" ? (p.seconds_to_start ?? 0) : (p.seconds_left ?? 0);
     });
     if (toFlash.length) {
       const now = Date.now();
-      setFlashIds((prev) => {
+      setFlashIds(prev => {
         const next = { ...prev };
-        toFlash.forEach((id) => {
+        toFlash.forEach(id => {
           next[id] = now;
           setTimeout(() => {
-            setFlashIds((cur) => {
+            setFlashIds(cur => {
               const c = { ...cur };
               delete c[id];
               return c;
@@ -98,9 +89,7 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
   return (
     <section className="bonusSec">
       <div className="bonusHead">
-        <h2>
-          <span className="tag">🎟️</span> Promo Kodlar
-        </h2>
+        <h2><span className="tag">🎟️</span> Promo Kodlar</h2>
         <div className="headGlow" aria-hidden />
         {!loading && !rows.length && <span className="muted">Şu an gösterilecek promo yok.</span>}
       </div>
@@ -111,70 +100,54 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
         <div className="spx-wrap">
           {rows.map((p) => {
             const isUpcoming = p.state === "upcoming";
-            const showCountdown = isUpcoming && (p.seconds_to_start ?? 0) > 0;
+            const s = Math.max(0, Math.floor(p.seconds_to_start ?? 0));
+            const showCountdown = isUpcoming && s > 0;
 
             const codeText = (p.promo_code || p.coupon_code || p.code || "").toString().trim();
-            const displayText = showCountdown ? formatCountdown(p.seconds_to_start ?? 0) : codeText || p.title || "KOD";
+            const displayText = showCountdown ? fmt(s) : (codeText || p.title || "KOD");
 
-            const img =
-              p.image_url ||
-              "https://images.unsplash.com/photo-1519741497674-611481863552?q=80&w=1600&auto=format&fit=crop";
-
+            const img = p.image_url || "https://images.unsplash.com/photo-1519741497674-611481863552?q=80&w=1600&auto=format&fit=crop";
             const idStr = String(p.id);
             const doFlash = !!flashIds[idStr] && !showCountdown;
 
-            // sayaç renk sınıfı
-            let countdownClass = "wait";
-            if (showCountdown) countdownClass = (p.seconds_to_start ?? 0) < 3600 ? "red" : "yellow";
+            // countdown renkleri (LED)
+            let ledClass = "";
+            if (showCountdown) ledClass = s < 3600 ? "led red" : "led yellow";
 
-            // CTA
             const ctaUrl = p.cta_url?.trim();
             const ctaText = p.cta_text?.trim() || "Katıl";
 
-            // Max kişi (yalnızca kod aktifken)
             const maxCount = p.participant_count;
-            const showMax = !showCountdown && typeof maxCount === "number" && maxCount > 0;
+            const maxLine = typeof maxCount === "number" ? maxCount : undefined;
 
             return (
               <article className="spx-card" key={idStr}>
                 <header className="spx-media" style={{ ["--img" as any]: `url('${img}')` }} />
                 <div className="spx-body">
-                  <h3 className="spx-title" title={p.title ?? "Promo Kod"}>
-                    {p.title ?? "Promo Kod"}
-                  </h3>
+                  <h3 className="spx-title" title={p.title ?? "Promo Kod"}>{p.title ?? "Promo Kod"}</h3>
 
-                  <div className="spx-timer">
-                    <div className="codeRow">
-                      <div
-                        className={`spx-code ${showCountdown ? countdownClass : "on"} ${
-                          doFlash ? "revealFlash" : ""
-                        }`}
-                        aria-live="polite"
-                      >
-                        {displayText}
-                      </div>
-                    </div>
+                  {/* Kod / Geri sayım — kutusuz */}
+                  <div className="monoRow">
+                    <span className={`monoText ${ledClass} ${(!showCountdown && doFlash) ? "reveal" : ""}`} aria-live="polite">
+                      {displayText}
+                    </span>
                   </div>
 
-                  {/* Max kişi — sadece kod aktifken, büyük rozet */}
-                  {showMax && (
-                    <div className="maxWrap" title="Maksimum Katılımcı">
-                      <span className="maxBadge">MAX</span>
-                      <span className="maxVal">{trNum(maxCount)}</span>
+                  {/* Max kişi — HER KARTTA, kutusuz, öne çıkarılmış */}
+                  {maxLine != null && (
+                    <div className="maxLine">
+                      <span className="maxLabel">Max</span>
+                      <span className="maxValue">{trNum(maxLine)}</span>
                     </div>
                   )}
 
-                  <div className="spx-scan" />
+                  <div className="scanLine" />
 
-                  {/* CTA butonu */}
                   {ctaUrl ? (
                     <a className="spx-cta" href={ctaUrl} target="_blank" rel="nofollow noopener" title={ctaText}>
                       {ctaText}
                       <svg viewBox="0 0 24 24" className="spx-ic" aria-hidden="true">
-                        <path
-                          fill="currentColor"
-                          d="M9.2 16.7 9 20.7c.4 0 .6-.2.9-.4l2.1-1.7 4.3 3.1c.8.4 1.4.2 1.6-.8l2.9-13.6c.3-1.1-.4-1.6-1.2-1.3L2.7 9.9c-1 .4-1 1 0 1.3l4.9 1.5L18 6.9c.5-.3.9-.1.5.2l-9.3 8.3Z"
-                        />
+                        <path fill="currentColor" d="M9.2 16.7 9 20.7c.4 0 .6-.2.9-.4l2.1-1.7 4.3 3.1c.8.4 1.4.2 1.6-.8l2.9-13.6c.3-1.1-.4-1.6-1.2-1.3L2.7 9.9c-1 .4-1 1 0 1.3l4.9 1.5L18 6.9c.5-.3.9-.1.5.2l-9.3 8.3Z"/>
                       </svg>
                     </a>
                   ) : null}
@@ -191,21 +164,17 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
 }
 
 /* ---------------- Helpers ---------------- */
-function formatCountdown(s: number) {
-  const total = Math.max(0, Math.floor(s));
+function fmt(total: number) {
   const hh = Math.floor(total / 3600);
   const mm = Math.floor((total % 3600) / 60);
   const ss = total % 60;
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(hh)}:${pad(mm)}:${pad(ss)}`;
+  return `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}:${String(ss).padStart(2,"0")}`;
 }
 function trNum(v: any) {
   try {
     const n = typeof v === "string" ? Number(v.replace(/\./g, "").replace(/,/g, ".")) : Number(v);
     return Number.isFinite(n) ? n.toLocaleString("tr-TR") : String(v ?? "");
-  } catch {
-    return String(v ?? "");
-  }
+  } catch { return String(v ?? ""); }
 }
 
 /* ---------------- Skeleton ---------------- */
@@ -216,18 +185,11 @@ function Skeleton() {
         <article key={i} className="spx-card">
           <header className="spx-media" />
           <div className="spx-body">
-            <h3 className="spx-title" style={{ opacity: 0.4 }}>
-              Yükleniyor…
-            </h3>
-            <div className="spx-timer">
-              <div className="codeRow">
-                <div className="spx-code wait">--:--:--</div>
-              </div>
-            </div>
-            <div className="spx-scan" />
-            <a className="spx-cta" href="#" onClick={(e) => e.preventDefault()}>
-              Katıl
-            </a>
+            <h3 className="spx-title" style={{ opacity: 0.4 }}>Yükleniyor…</h3>
+            <div className="monoRow"><span className="monoText led">--:--:--</span></div>
+            <div className="maxLine"><span className="maxLabel">Max</span><span className="maxValue">—</span></div>
+            <div className="scanLine" />
+            <a className="spx-cta" href="#" onClick={e=>e.preventDefault()}>Katıl</a>
           </div>
         </article>
       ))}
@@ -247,10 +209,7 @@ const css = `
 
 .bonusSec{margin:16px 0}
 .bonusHead{position:relative; display:flex; align-items:center; gap:12px; margin-bottom:12px}
-.bonusHead h2{
-  margin:0; font-size:20px; color:#eaf2ff; font-weight:900; letter-spacing:.3px;
-  display:flex; align-items:center; gap:8px;
-}
+.bonusHead h2{margin:0; font-size:20px; color:#eaf2ff; font-weight:900; letter-spacing:.3px; display:flex; align-items:center; gap:8px;}
 .bonusHead .tag{display:inline-grid; place-items:center; width:26px; height:26px; border-radius:8px;
   background:linear-gradient(180deg, rgba(0,229,255,.25), rgba(0,179,255,.15)); box-shadow:0 0 18px rgba(0,229,255,.35)}
 .headGlow{position:absolute; left:0; right:0; bottom:-6px; height:2px; border-radius:2px;
@@ -268,7 +227,7 @@ const css = `
   border:1px solid rgba(255,255,255,.10); box-shadow:0 12px 28px rgba(0,0,0,.45);
   display:flex; flex-direction:column; position:relative; isolation:isolate;
   transition:transform .22s ease, box-shadow .22s ease, border-color .22s ease}
-.spx-card:hover{transform:translateY(-4px);box-shadow:0 18px 38px rgba(0,0,0,.6);border-color:rgba(255,255,255,.16)}
+.spx-card:hover{transform:translateY(-4px); box-shadow:0 18px 38px rgba(0,0,0,.6); border-color:rgba(255,255,255,.16)}
 
 /* Sol neon şerit */
 .spx-card::before{content:""; position:absolute; left:0; top:0; bottom:0; width:7px; border-radius:8px 0 0 8px; z-index:999;
@@ -289,43 +248,40 @@ const css = `
 .spx-body{padding:10px 12px 12px; text-align:center}
 .spx-title{margin:0 0 6px; color:var(--txt); font-weight:900; font-size:15px; letter-spacing:.2px}
 
-/* Kod / Sayaç */
-.spx-timer{margin:2px 0 6px}
-.codeRow{display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap}
-.spx-code{font-family:Rajdhani,system-ui,sans-serif; font-weight:900; font-size:26px; letter-spacing:1.2px; color:#f2f7ff;
-  display:inline-block; padding:10px 12px; border-radius:12px; min-width:140px;
-  background:linear-gradient(180deg,#0f1730,#0d1428); border:1px solid #202840;
-  box-shadow: inset 0 0 22px rgba(0,0,0,.38), 0 0 22px rgba(255,255,255,.05), 0 0 28px rgba(0,229,255,.18);}
-.spx-code.on{ text-shadow:0 0 14px rgba(0,229,255,.45) }
-.spx-code.yellow{ color:#fff3c2; text-shadow:0 0 12px #ffda6b, 0 0 22px #ffb300 }
-.spx-code.red{ color:#ffdada; text-shadow:0 0 14px #ff5c5c, 0 0 28px #ff2e2e; animation:redPulse 1.4s ease-in-out infinite }
-@keyframes redPulse{0%,100%{opacity:1}50%{opacity:.55}}
-.spx-code.revealFlash{animation: glowPop .9s ease-out}
-@keyframes glowPop{0%{transform:scale(.96); box-shadow:0 0 0 rgba(0,229,255,0)}
- 40%{transform:scale(1.04); box-shadow:0 0 26px rgba(0,229,255,.55), 0 0 52px rgba(0,179,255,.35)}
- 100%{transform:scale(1.00); box-shadow:0 0 18px rgba(0,229,255,.30)}}
+/* LED dijital sayaç / kod — kutusuz */
+.monoRow{display:flex; align-items:center; justify-content:center; margin:2px 0 6px}
+.monoText{
+  font-family:Rajdhani,system-ui,sans-serif; font-weight:1000; font-size:28px; letter-spacing:.12em;
+  color:#eaf2ff; text-shadow:0 0 10px rgba(0,229,255,.22);
+}
+.monoText.led.yellow{ color:#fff3c2; text-shadow:0 0 10px #ffd76a, 0 0 18px #ffb300 }
+.monoText.led.red{ color:#ffdada; text-shadow:0 0 10px #ff5c5c, 0 0 18px #ff2e2e }
+.monoText.reveal{ animation:revealPulse .9s ease-out }
+@keyframes revealPulse{
+  0%{ transform:scale(.98); text-shadow:0 0 0 rgba(0,229,255,0) }
+  50%{ transform:scale(1.04); text-shadow:0 0 18px rgba(0,229,255,.6) }
+  100%{ transform:scale(1.00); text-shadow:0 0 12px rgba(0,229,255,.3) }
+}
 
-/* MAX kişi rozet */
-.maxWrap{
-  margin:6px auto 2px; display:flex; align-items:center; justify-content:center; gap:8px;
-  background:rgba(0,229,255,.10); border:1px solid rgba(0,229,255,.28); padding:8px 10px; border-radius:12px;
-  box-shadow:0 0 16px rgba(0,229,255,.20) inset, 0 8px 18px rgba(0,0,0,.25);
+/* Max kişi — kutusuz, güçlü vurgu */
+.maxLine{
+  margin:4px 0 2px; display:flex; align-items:baseline; justify-content:center; gap:8px;
 }
-.maxBadge{
-  font-weight:1000; font-size:11px; letter-spacing:.6px; padding:4px 8px; border-radius:8px;
-  color:#06121a; background:linear-gradient(90deg,var(--n1),var(--n2));
+.maxLabel{
+  font-size:12px; letter-spacing:.5px; text-transform:uppercase; color:#9ec8ff;
 }
-.maxVal{
-  font-family:Rajdhani,system-ui; font-weight:900; font-size:22px; letter-spacing:.6px; color:#eaf2ff;
-  text-shadow:0 0 14px rgba(0,229,255,.35), 0 0 24px rgba(0,179,255,.25);
+.maxValue{
+  font-family:Rajdhani,system-ui; font-weight:1000; font-size:26px; letter-spacing:.04em;
+  background:linear-gradient(90deg,var(--n1),var(--n2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+  text-shadow:0 0 16px rgba(0,229,255,.35), 0 0 28px rgba(0,179,255,.25);
 }
 
 /* LED scan */
-.spx-scan{height:3px; margin:8px auto 8px; width:150px; border-radius:999px; opacity:.98;
-  background-image: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.95) 12%, rgba(255,255,255,0) 24%),
-                    linear-gradient(90deg, var(--n1), var(--n2));
-  background-size:140px 100%,100% 100%; background-repeat:repeat,no-repeat; background-blend-mode:screen;
-  animation:scanX 1.2s linear infinite; box-shadow:0 0 14px var(--n1), var(--n2)}
+.scanLine{height:3px; margin:8px auto 8px; width:150px; border-radius:999px; opacity:.98;
+  background-image:linear-gradient(90deg,rgba(255,255,255,0) 0%,rgba(255,255,255,.95) 12%,rgba(255,255,255,0) 24%),
+                   linear-gradient(90deg,var(--n1),var(--n2));
+  background-size:140px 100%,100% 100%; background-repeat:repeat,no-repeat;
+  animation:scanX 1.2s linear infinite; box-shadow:0 0 14px var(--n1),0 0 26px var(--n2)}
 @keyframes scanX{from{background-position:-40px 0,0 0}to{background-position:140px 0,0 0}}
 
 /* CTA */
