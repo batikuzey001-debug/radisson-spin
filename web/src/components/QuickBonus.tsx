@@ -8,8 +8,9 @@ import { type PromoActive } from "../api/promos";
  * - Kod: GERİ SAYIM BİTİNCE çerçeveli kutu içinde büyük görünür.
  * - Max kişi: her kartta kutusuz, dikkat çekici.
  * - CTA: BE'den (cta_text/cta_url). Sol şerit aqua neon.
- * - Simetri: Kod ve geri sayım aynı yükseklik/genişlik alanını kaplar.
- * - Şerit: Max kişi ile geri sayım/kod arasına yerleştirildi.
+ * - Simetri: Kod ve geri sayım aynı alanı kaplar.
+ * - Şerit: GERİ SAYIM/KOD ile Max kişi arasındadır.
+ * - Başlık: tema uyumlu, aqua gradyanlı.
  */
 
 type PromoEx = PromoActive & {
@@ -91,7 +92,10 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
   return (
     <section className="bonusSec">
       <div className="bonusHead">
-        <h2><span className="tag">🎟️</span> Promo Kodlar</h2>
+        <div className="titleWrap">
+          <span className="tag">⚡</span>
+          <h2 className="tgrad">Hızlı Promo Kodlar</h2>
+        </div>
         <div className="headGlow" aria-hidden />
         {!loading && !rows.length && <span className="muted">Şu an gösterilecek promo yok.</span>}
       </div>
@@ -130,18 +134,7 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
                 <div className="spx-body">
                   <h3 className="spx-title" title={p.title ?? "Promo Kod"}>{p.title ?? "Promo Kod"}</h3>
 
-                  {/* Max kişi — her kartta kutusuz */}
-                  {maxLine != null && (
-                    <div className="maxLine">
-                      <span className="maxLabel">Max</span>
-                      <span className="maxValue">{trNum(maxLine)}</span>
-                    </div>
-                  )}
-
-                  {/* NEON ŞERİT (scan) — Max ile geri sayım/kod arasına */}
-                  <div className="scanLine" />
-
-                  {/* Kod veya geri sayım — aynı alanı kaplayan slot */}
+                  {/* SıRA DEĞİŞTİ: Önce sayaç/kod, sonra şerit, sonra Max kişi */}
                   <div className="monoRow">
                     <span className="monoSlot">
                       {isCodeVisible ? (
@@ -155,6 +148,17 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
                       )}
                     </span>
                   </div>
+
+                  {/* NEON şerit */}
+                  <div className="scanLine" />
+
+                  {/* Max kişi — kutusuz, güçlü vurgu */}
+                  {maxLine != null && (
+                    <div className="maxLine">
+                      <span className="maxLabel">Max</span>
+                      <span className="maxValue">{trNum(maxLine)}</span>
+                    </div>
+                  )}
 
                   {/* CTA */}
                   {ctaUrl ? (
@@ -200,9 +204,9 @@ function Skeleton() {
           <header className="spx-media" />
           <div className="spx-body">
             <h3 className="spx-title" style={{ opacity: 0.4 }}>Yükleniyor…</h3>
-            <div className="maxLine"><span className="maxLabel">Max</span><span className="maxValue">—</span></div>
-            <div className="scanLine" />
             <div className="monoRow"><span className="monoSlot"><span className="monoText led">--:--:--</span></span></div>
+            <div className="scanLine" />
+            <div className="maxLine"><span className="maxLabel">Max</span><span className="maxValue">—</span></div>
             <a className="spx-cta" href="#" onClick={e=>e.preventDefault()}>Katıl</a>
           </div>
         </article>
@@ -223,9 +227,13 @@ const css = `
 }
 
 .bonusSec{margin:16px 0}
-.bonusHead{position:relative; display:flex; align-items:center; gap:12px; margin-bottom:12px}
-.bonusHead h2{margin:0; font-size:20px; color:#eaf2ff; font-weight:900; letter-spacing:.3px; display:flex; align-items:center; gap:8px;}
-.bonusHead .tag{display:inline-grid; place-items:center; width:26px; height:26px; border-radius:8px;
+.bonusHead{position:relative; display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px}
+.titleWrap{display:flex; align-items:center; gap:10px}
+.tgrad{
+  margin:0; font-size:20px; font-weight:1000; letter-spacing:.4px; text-transform:uppercase;
+  background:linear-gradient(90deg,var(--n1),var(--n2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+}
+.bonusHead .tag{display:inline-grid; place-items:center; width:28px; height:28px; border-radius:8px;
   background:linear-gradient(180deg, rgba(0,229,255,.25), rgba(0,179,255,.15)); box-shadow:0 0 18px rgba(0,229,255,.35)}
 .headGlow{position:absolute; left:0; right:0; bottom:-6px; height:2px; border-radius:2px;
   background:linear-gradient(90deg, transparent, rgba(0,229,255,.85), transparent);
@@ -261,7 +269,7 @@ const css = `
 
 /* Body */
 .spx-body{padding:10px 12px 12px; text-align:center}
-.spx-title{margin:0 0 6px; color:#eaf2ff; font-weight:900; font-size:15px; letter-spacing:.2px}
+.spx-title{margin:0 0 6px; color:var(--txt); font-weight:900; font-size:15px; letter-spacing:.2px}
 
 /* Max kişi — kutusuz, güçlü vurgu */
 .maxLine{ margin:4px 0 2px; display:flex; align-items:baseline; justify-content:center; gap:8px }
@@ -272,7 +280,7 @@ const css = `
   text-shadow:0 0 16px rgba(0,229,255,.35), 0 0 28px rgba(0,179,255,.25);
 }
 
-/* NEON scan — max ile sayaç/kod arasında */
+/* NEON scan — sayaç/kod ile max arasında */
 .scanLine{height:3px; margin:6px auto 6px; width:150px; border-radius:999px; opacity:.98;
   background-image:linear-gradient(90deg,rgba(255,255,255,0) 0%,rgba(255,255,255,.95) 12%,rgba(255,255,255,0) 24%),
                    linear-gradient(90deg,var(--n1),var(--n2));
