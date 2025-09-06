@@ -13,30 +13,40 @@ from app.db.session import get_db
 from app.db.models import (
     AdminUser, AdminRole, Code, Prize,
     Tournament, DailyBonus, PromoCode, Event,
-    SiteConfig,  # FE login toplamı için
+    SiteConfig,
 )
 from app.services.auth import require_role
 from app.api.routers.admin_mod.yerlesim import _layout, _render_flash_blocks
 
 router = APIRouter()
 
-def _now():
+def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+def _get_conf(db: Session, key: str, default: str = "") -> str:
+    row = db.get(SiteConfig, key)
+    return (row.value_text or "") if row else default
+
+def _to_int(s: str, default: int = 0) -> int:
+    try:
+        return int((s or "").strip())
+    except Exception:
+        return default
 
 @router.get("/admin", response_class=HTMLResponse)
 def dashboard(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
-    current: Annotated[AdminUser, Depends(require_role(AdminRole.admin))],  # admin ve super admin erişir
+    current: Annotated[AdminUser, Depends(require_role(AdminRole.admin))],
 ):
     fb = _render_flash_blocks(request)
 
-    # ---- Sayaçlar (aktif içerikler) ----
+    # ---- Aktif içerik sayıları ----
     now = _now()
     def active_count(model):
         q = db.query(func.count(model.id)).filter(model.status == "published")
         q = q.filter((model.start_at == None) | (model.start_at <= now))  # noqa: E711
-        q = q.filter((model.end_at == None) | (model.end_at >= now))      # noqa: E711
+        q = q.filter((model.end_at == None)   | (model.end_at   >= now))  # noqa: E711
         return q.scalar() or 0
 
     c_tour   = active_count(Tournament)
@@ -45,27 +55,31 @@ def dashboard(
     c_event  = active_count(Event)
     c_active_total = c_tour + c_bonus + c_promo + c_event
 
-    c_codes_total = db.query(func.count(Code.code)).scalar() or 0
-    c_prizes_total = db.query(func.count(Prize.id)).scalar() or 0  # referans/kıyas için
+    c_codes_total  = db.query(func.count(Code.code)).scalar() or 0
+    # c_prizes_total = db.query(func.count(Prize.id)).scalar() or 0  # gerekirse gösterilir
 
-    # ---- FE (Frontend) giriş yapan kullanıcı toplamı (SiteConfig.key='fe_login_total') ----
-    fe_login_total = 0
-    try:
-        row = db.get(SiteConfig, "fe_login_total")
-        if row and row.value_text:
-            try:
-                fe_login_total = max(0, int(str(row.value_text).strip()))
-            except Exception:
-                fe_login_total = 0
-    except Exception:
-        fe_login_total = 0
+    # ---- FE login toplamı (opsiyonel) ----
+    fe_login_total = _to_int(_get_conf(db, "fe_login_total", "0"), 0)
+
+    # ---- Benzersiz ziyaretçi: bugün ve bu ay ----
+    today_key = now.strftime("%Y%m%d")
+    month_prefix = now.strftime("%Y%m")  # visitors_daily_count_YYYYMM%
+
+    visitors_today = _to_int(_get_conf(db, f"visitors_daily_count_{today_key}", "0"), 0)
+
+    # Ay toplamı: SiteConfig key like visitors_daily_count_YYYYMM%
+    month_rows = db.query(SiteConfig).filter(SiteConfig.key.like(f"visitors_daily_count_{month_prefix}%")).all()
+    visitors_month = 0
+    for r in month_rows:
+        visitors_month += _to_int(r.value_text or "0", 0)
 
     # ---- Yakında bitecek içerik (tek öğe) ----
     def next_end(model):
-        q = db.query(model).filter(model.status=="published")
+        q = db.query(model).filter(model.status == "published")
         q = q.filter((model.end_at != None) & (model.end_at >= now))  # noqa: E711
         q = q.order_by(model.end_at.asc())
         return q.first()
+
     nxt = next_end(Tournament) or next_end(DailyBonus) or next_end(PromoCode) or next_end(Event)
     nxt_html = ""
     if nxt:
@@ -82,8 +96,7 @@ def dashboard(
         </div>
         """
 
-    # ---- Büyük metrik döşemeleri (köşeli, kırmızı vurgu, sade) ----
-    # Not: Kısayollar ve "Son Kodlar" kaldırıldı; sol menü mevcut.
+    # ---- Büyük metrik döşemeleri ----
     def fmt(n: int) -> str:
         try:
             return f"{int(n):,}".replace(",", ".")
@@ -109,6 +122,12 @@ def dashboard(
       </div>
 
       <div class="card kpiTile">
+        <div class="kpiKey">BENZERSİZ ZİYARETÇİ</div>
+        <div class="kpiValBig">{fmt(visitors_today)}</div>
+        <div class="kpiHint">Bugün • Bu Ay: <b>{fmt(visitors_month)}</b></div>
+      </div>
+
+      <div class="card kpiTile">
         <div class="kpiKey">GİRİŞ YAPAN KULLANICI (FE)</div>
         <div class="kpiValBig">{fmt(fe_login_total)}</div>
         <div class="kpiHint">SiteConfig: <code>fe_login_total</code></div>
@@ -122,11 +141,10 @@ def dashboard(
     parts.append(tiles)
     if nxt_html: parts.append(nxt_html)
 
-    # ---- Dashboard'a özel küçük stiller ----
+    # ---- Dashboard'a özel stiller ----
     style = """
     <style>
       :root{--red:#ff0033;--red2:#ff263f;--line:#1c1f28;--muted:#9aa3b7;--text:#f2f4f8;--panel:#0d0f15}
-      /* KPI grid */
       .kpiGrid{display:grid;grid-template-columns:repeat(12,1fr);gap:12px}
       .kpiTile{position:relative;border:1px solid var(--line);background:var(--panel);padding:14px;grid-column:span 4}
       .kpiTile.accent{border-left:4px solid var(--red)}
@@ -140,14 +158,12 @@ def dashboard(
       .kpiSplit .sp span{font-size:11px;color:var(--muted)}
       .kpiSplit .sp b{font-size:16px;color:#fff}
 
-      /* Yakında Biten */
       .kpiCard{border:1px solid var(--line);background:#0b0d13;padding:14px}
       .kpiHead{font-size:12px;color:var(--muted);letter-spacing:.6px;margin-bottom:6px}
       .kpiRow{display:flex;align-items:center;justify-content:space-between}
       .kpiLabel{font-weight:800}
       .kpiVal{font-weight:900;color:#fff}
 
-      /* Genel card (layout'tan köşeli miras alır) */
       .card{margin:12px 0}
       code{background:#0b0d13;border:1px solid var(--line);padding:1px 6px}
     </style>
