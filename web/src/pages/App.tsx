@@ -1,6 +1,8 @@
 // web/src/pages/App.tsx
+import { useEffect } from "react";
 import { Routes, Route } from "react-router-dom";
 import Header from "../components/Header";
+import { sendVisitPing } from "../utils/visitPing";
 
 // Sayfalar
 import Home from "./Home";
@@ -8,6 +10,11 @@ import RadiCark from "./RadiCark";
 import Turnuvalar from "./Turnuvalar";
 
 export default function App() {
+  // Ziyaretçi ping: uygulama yüklendiğinde 1 kez
+  useEffect(() => {
+    sendVisitPing();
+  }, []);
+
   return (
     <div className="app">
       <Header />
@@ -15,8 +22,8 @@ export default function App() {
       <div className="page">
         <Routes>
           <Route path="/" element={<Home />} />
-        <Route path="/cark" element={<RadiCark />} />
-        <Route path="/turnuvalar" element={<Turnuvalar />} />
+          <Route path="/cark" element={<RadiCark />} />
+          <Route path="/turnuvalar" element={<Turnuvalar />} />
         </Routes>
       </div>
 
@@ -44,19 +51,16 @@ html, body, #root{height:100%; margin:0}
   margin:0 auto;
   padding:16px;
 }
-/* İlk çocukların üst marjını sıfırla (header büyük görünmesin) */
 .page > *:first-child{ margin-top:0; }
 
 @media (max-width:600px){
   .page{ padding:12px; }
 }
 
-/* ========= HEADER KORUMA (sabit ölçü / dış etkilerden izole) ========= */
-/* Yükseklikleri sabitle */
+/* ========= HEADER KORUMA ========= */
 .hdr .top  { height:52px !important; }
 .hdr .menu { height:44px !important; }
 
-/* Logo boyutunu sabitle (global img kuralları bozmasın) */
 .hdr .logoBtn img{
   height:30px !important;
   width:auto !important;
@@ -65,14 +69,11 @@ html, body, #root{height:100%; margin:0}
   display:block;
 }
 
-/* Header içindeki yazı/ikonların beklenmeyen font şişmesini önle */
 .hdr{ font-size:14px; line-height:1.2; }
 .hdr .mItem{ font-size:13px; }
 
-/* Header'ın çevresinde olası margin-collapse önlemi */
 .hdr + .page{ padding-top:16px; }
 
-/* (Opsiyonel) Küçük ekranda menü satırı taşarsa yatay scroll serbest kalsın */
 @media (max-width:720px){
   .hdr .menu{ overflow:auto; white-space:nowrap; }
 }
