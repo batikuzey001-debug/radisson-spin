@@ -2,6 +2,17 @@
 from html import escape as _e
 from fastapi import Request
 
+# --- LOGO kaynağını CMS tarafındaki sabitten al (fallback'lı) ---
+try:
+    # En olası: home-banners sayfasında LOGO_URL tutuluyor
+    from app.api.routers.admin_mod.sayfalar.home_banners import LOGO_URL as CMS_LOGO_URL  # type: ignore
+except Exception:
+    try:
+        # Alternatif: cms.py altında olabilir
+        from app.api.routers.admin_mod.sayfalar.cms import LOGO_URL as CMS_LOGO_URL  # type: ignore
+    except Exception:
+        CMS_LOGO_URL = None  # Yoksa metin göster
+
 # ---------------- Flash API (değişmeden) ----------------
 def flash(request: Request, message: str, level: str = "info") -> None:
     message = _e(message)
@@ -35,7 +46,7 @@ def _sidebar_links(active: str = "", is_super: bool = False) -> str:
     ]
     if is_super:
         items.append(("users", "Adminler", "/admin/users"))
-    # !!! Çıkış artık burada yok !!!
+    # Çıkış butonu artık sadece header'da
 
     out = ["<nav class='sideNav' role='navigation' aria-label='Admin menü'>"]
     for key, label, href in items:
@@ -47,6 +58,12 @@ def _sidebar_links(active: str = "", is_super: bool = False) -> str:
 # --------------- Kabuğu üret -----------------------------
 def _layout(body: str, title: str = "Yönetim", notice: str = "", active: str = "", is_super: bool = False) -> str:
     sidebar = _sidebar_links(active, is_super)
+    # Logo HTML: CMS_LOGO_URL varsa logo, yoksa metin
+    brand_html = (
+        f"<a href='/admin' class='brandLink'><img src='{_e(CMS_LOGO_URL)}' alt='Logo' class='brandLogo'></a>"
+        if CMS_LOGO_URL else
+        "YÖNETİM"
+    )
     return f"""<!doctype html>
 <html lang="tr">
 <head>
@@ -65,7 +82,7 @@ body{{margin:0;background:
   linear-gradient(180deg,var(--bg),#090a10 50%, var(--bg));
   color:var(--text);font:14px/1.55 system-ui,Segoe UI,Roboto,Arial,sans-serif}}
 
-/* Köşeler: tamamı sıfır */
+/* Köşeler tamamen sıfır */
 :where(.btn, .card, input, select, textarea, .item, .notice, .table-wrap, .header, .sideNav, .searchBar){{border-radius:0}}
 
 /* ============ Uygulama ızgarası ============ */
@@ -75,7 +92,9 @@ body{{margin:0;background:
 
 .sidebar{{background:var(--panel);border-right:1px solid var(--line);position:sticky;top:0;height:100vh;display:flex;flex-direction:column}}
 .brandBar{{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);background:var(--panel2)}}
-.brand{{padding:12px 14px;font-weight:900;letter-spacing:.4px;color:#fff;border-right:1px solid var(--line)}}
+.brand{{padding:12px 14px;color:#fff;border-right:1px solid var(--line);display:flex;align-items:center}}
+.brandLink{{display:inline-flex;align-items:center;text-decoration:none}}
+.brandLogo{{height:28px;display:block;filter:drop-shadow(0 0 6px rgba(255,255,255,.12))}}
 .toggleBtn{{display:none}}
 @media(max-width:720px){{
   .brand{{padding:12px}}
@@ -155,7 +174,7 @@ textarea{{min-height:64px;resize:vertical}}
   <div class="appShell">
     <aside id="sidebar" class="sidebar">
       <div class="brandBar">
-        <div class="brand">YÖNETİM</div>
+        <div class="brand">{brand_html}</div>
         <button class="toggleBtn" type="button" onclick="__sb_toggle()">MENÜ</button>
       </div>
       {sidebar}
