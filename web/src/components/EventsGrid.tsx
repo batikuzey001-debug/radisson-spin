@@ -133,7 +133,7 @@ export default function EventsGrid() {
           {rows.map((ev) => {
             const tone = toneOf(ev.category);
 
-            // Ödül metni (HER ZAMAN görünür, kutusuz ve kart tonunda)
+            // Ödül (HER ZAMAN, kutusuz)
             const prizeText =
               typeof ev.prize_amount === "number" ? fmtTL(ev.prize_amount) : "—";
 
@@ -194,7 +194,7 @@ export default function EventsGrid() {
                     {prizeText}
                   </div>
 
-                  {/* Geri sayım / aktif etiketi: kutusuz LED stil */}
+                  {/* Geri sayım / aktif etiketi: kutusuz LED stil — DAHA BÜYÜK */}
                   {statusLabel && (
                     <div className={`evStatusText ${statusClass}`} aria-live="polite">
                       {statusLabel}
@@ -298,15 +298,19 @@ const css = `
   text-shadow:0 0 14px rgba(255,255,255,.08), 0 0 26px rgba(0,0,0,.25);
 }
 
-/* Durum — kutusuz LED stil */
+/* Durum — kutusuz LED stil (BÜYÜTÜLDÜ) */
 .evStatusText{
-  margin-top:4px; font-weight:1000; font-size:16px; letter-spacing:.08em;
+  margin-top:6px;
   font-family:Rajdhani,sans-serif;
-  color:#eaf2ff; text-shadow:0 0 10px rgba(255,255,255,.12);
+  font-weight:1000;
+  font-size:clamp(18px, 2.8vw, 28px);  /* ↑ büyütüldü */
+  letter-spacing:.12em;                 /* ↑ dijital görsel */
+  color:#eaf2ff;
+  text-shadow:0 0 12px rgba(255,255,255,.14), 0 0 22px rgba(0,0,0,.35);
 }
-.evStatusText.yellow{ color:#fff3c2; text-shadow:0 0 12px #ffda6b,0 0 22px #ffb300 }
-.evStatusText.red{ color:#ffdada; text-shadow:0 0 14px #ff5c5c,0 0 28px #ff2e2e; animation:redPulse 1.4s ease-in-out infinite }
-.evStatusText.live{ color:#c1ffd6; text-shadow:0 0 12px #2dd36f,0 0 22px #2eca6a }
+.evStatusText.yellow{ color:#fff3c2; text-shadow:0 0 14px #ffda6b,0 0 28px #ffb300 }
+.evStatusText.red{ color:#ffdada; text-shadow:0 0 16px #ff5c5c,0 0 32px #ff2e2e; animation:redPulse 1.4s ease-in-out infinite }
+.evStatusText.live{ color:#c1ffd6; text-shadow:0 0 16px #2dd36f,0 0 30px #22c55e }
 @keyframes redPulse{0%,100%{opacity:1}50%{opacity:.55}}
 
 /* Tarama çizgisi */
