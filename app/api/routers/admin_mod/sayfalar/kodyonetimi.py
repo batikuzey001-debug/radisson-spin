@@ -7,7 +7,7 @@ from html import escape as _e
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import ProgrammingError  # tablo/sütun yoksa güvenli yakalama
+from sqlalchemy.exc import ProgrammingError  # aksiyonlarda kullanılabilir
 
 from app.db.session import get_db
 from app.db.models import Prize, Code, PrizeDistribution, PrizeTier, AdminUser, AdminRole
@@ -15,35 +15,13 @@ from app.services.codes import gen_code
 from app.services.auth import require_role
 from app.api.routers.admin_mod.yerlesim import _layout, _render_flash_blocks, flash
 
+# yeni: modüler render ve yardımcılar
+from app.api.routers.admin_mod.kodyonetimi.tabs.codes import render_codes
+from app.api.routers.admin_mod.kodyonetimi.tabs.prizes import render_prizes
+from app.api.routers.admin_mod.kodyonetimi.tabs.tiers import render_tiers
+from app.api.routers.admin_mod.kodyonetimi.helpers import _normalize, _tiers
+
 router = APIRouter()
-
-# ----------------- helpers -----------------
-def _normalize(u: str | None) -> str | None:
-    if not u:
-        return None
-    x = u.strip()
-    if not x:
-        return None
-    if x.startswith(("http://", "https://", "data:")):
-        return x
-    if x.startswith("//"):
-        return "https:" + x
-    return x
-
-def _img_cell(url: str | None) -> str:
-    u = _normalize(url or "")
-    if not u:
-        return "-"
-    return f'<img src="{_e(u)}" style="height:24px;border-radius:6px" loading="lazy" />'
-
-def _tiers(db: Session) -> List[PrizeTier]:
-    return db.query(PrizeTier).order_by(PrizeTier.sort.asc(), PrizeTier.key.asc()).all()
-
-# Eski adresten otomatik yönlendirme
-@router.get("/admin/kod")
-def _redir_old():
-    return RedirectResponse(url="/admin/kod-yonetimi", status_code=307)
-
 
 # ----------------- SAYFA -----------------
 @router.get("/admin/kod-yonetimi", response_class=HTMLResponse)
@@ -59,294 +37,21 @@ def kod_yonetimi(
         cls = "tab active" if tab == key else "tab"
         t_html.append(f"<a class='{cls}' href='/admin/kod-yonetimi?tab={key}'>{_e(label)}</a>")
     t_html.append("</div>")
-    body_parts = ["".join(t_html)]
 
+    parts: List[str] = ["".join(t_html)]
     fb = _render_flash_blocks(request)
     if fb:
-        body_parts.append(fb)
+        parts.append(fb)
 
-    # ----------------- KODLAR -----------------
+    # İçerik (modüler render)
     if tab == "kodlar":
-        prizes = db.query(Prize).order_by(Prize.wheel_index).all()
-        prize_label_by_id = {p.id: p.label for p in prizes}
-        all_tiers = _tiers(db)
-        enabled_tiers = [t for t in all_tiers if t.enabled]
-
-        last = db.query(Code).order_by(Code.created_at.desc()).limit(20).all()
-
-        # Kod Oluştur formu
-        form = [
-            "<div class='card'><h1>Kod Oluştur</h1>",
-            "<form method='post' action='/admin/kod-yonetimi/create-code' oninput='kMode()'>",
-            "<div class='grid'>",
-            "<div class='span-6'><div>Kullanıcı adı</div><input name='username' required></div>",
-            "<div class='span-6'><div>Seviye</div><select name='tier_key' required>",
-        ]
-        if not enabled_tiers:
-            form += ["<option value=''>— Önce seviye ekleyin —</option>"]
-        else:
-            form += [f"<option value='{_e(t.key)}'>{_e(t.label)}</option>" for t in enabled_tiers]
-        form += [
-            "</select></div>",
-            "</div>",
-            "<div style='height:8px'></div>",
-            "<div class='grid'>",
-            "<div class='span-6'><div>Ödül Seçimi</div>",
-            "<select name='mode' id='modeSel'>",
-            "<option value='auto' selected>Otomatik (dağılıma göre)</option>",
-            "<option value='manual'>Manuel (tek seferlik)</option>",
-            "</select></div>",
-            "<div class='span-6'><div>Manuel Ödül (ops.)</div><select name='manual_prize_id' id='manualSel' disabled>",
-            "<option value=''>— Seçiniz —</option>",
-            *[f"<option value='{p.id}'>[{p.wheel_index}] {_e(p.label)}</option>" for p in prizes],
-            "</select></div>",
-            "</div>",
-            "<div class='hint muted'>Not: 'Otomatik' modda ödül, seçilen seviyeye ait dağılım yüzdelerine göre belirlenir.</div>",
-            "<div style='height:8px'></div>",
-            "<button class='btn primary' type='submit'>Oluştur</button>",
-            "</form>",
-            "<script>function kMode(){var m=document.getElementById('modeSel');var s=document.getElementById('manualSel');if(!m||!s) return; s.disabled=(m.value!=='manual');}</script>",
-            "</div>",
-        ]
-
-        # Son 20 tablo
-        table = [
-            "<div class='card'><h1>Son 20 Kod</h1>",
-            "<div class='table-wrap'><table>",
-            "<tr><th>Kod</th><th>Kullanıcı</th><th>Seviye</th><th>Manuel Ödül</th><th>Kazanan Ödül</th><th>Durum</th></tr>",
-        ]
-        for c in last:
-            tier_label = "-"
-            if c.tier_key:
-                t = next((x for x in all_tiers if x.key == c.tier_key), None)
-                tier_label = t.label if t else c.tier_key
-            table.append(
-                f"<tr>"
-                f"<td><code>{_e(c.code)}</code></td>"
-                f"<td>{_e(c.username or '-')}</td>"
-                f"<td>{_e(tier_label)}</td>"
-                f"<td>{_e(prize_label_by_id.get(getattr(c,'manual_prize_id',None), '-') if getattr(c,'manual_prize_id',None) else '-')}</td>"
-                f"<td>{_e(prize_label_by_id.get(c.prize_id, '-') if c.prize_id else '-')}</td>"
-                f"<td>{'Kullanıldı' if c.status == 'used' else 'Verildi'}</td>"
-                f"</tr>"
-            )
-        table.append("</table></div></div>")
-        body_parts += form + table
-
-    # ----------------- ÖDÜLLER -----------------
+        parts.append(render_codes(db))
     elif tab == "oduller":
-        prizes = db.query(Prize).order_by(Prize.wheel_index).all()
-        tiers = [t for t in _tiers(db) if t.enabled]
-        if not tiers:
-            body_parts.append("<div class='card'><b>Uyarı:</b> Aktif seviye bulunamadı. Lütfen 'Seviyeler' sekmesinden ekleyin.</div>")
+        parts.append(render_prizes(db, request.query_params))
+    else:  # seviyeler
+        parts.append(render_tiers(db, request.query_params))
 
-        # dağılım kayıtlarını güvenli oku (tablo yoksa 500 yerine uyarı ver)
-        dist_rows: List[PrizeDistribution] = []
-        try:
-            dist_rows = db.query(PrizeDistribution).all()
-        except ProgrammingError:
-            body_parts.append("<div class='card'><b>Uyarı:</b> Dağılım tablosu henüz oluşturulmamış görünüyor. Yeniden başlatmayı veya bir güncellemeden sonra tekrar denemeyi deneyin.</div>")
-            dist_rows = []
-        except Exception:
-            body_parts.append("<div class='card'><b>Uyarı:</b> Dağılım verileri okunamadı.</div>")
-            dist_rows = []
-
-        # dağılımlar map
-        dist = {p.id: {t.key: 0 for t in tiers} for p in prizes}
-        for d in dist_rows:
-            if d.prize_id in dist and any(t.key == d.tier_key for t in tiers):
-                dist[d.prize_id][d.tier_key] = int(d.weight_bp or 0)
-
-        # sütun toplamları
-        sums = {t.key: 0 for t in tiers}
-        for p in prizes:
-            for t in tiers:
-                sums[t.key] += dist[p.id][t.key]
-
-        # tablo + form
-        rows: List[str] = [
-            "<div class='card'><h1>Ödüller</h1>",
-            "<div class='table-wrap'><form method='post' action='/admin/kod-yonetimi/prizes/dist/save' oninput='sumCheck()'><table>",
-            "<tr>",
-            "<th>Ad</th><th>Sıra</th><th>Görsel</th>",
-            *[f"<th>{_e(t.label)}<br/><small>%</small></th>" for t in tiers],
-            "<th>Aktif</th><th style='width:110px'>İşlem</th></tr>",
-        ]
-        for p in prizes:
-            cells = [
-                f"<td>{_e(p.label)}</td>",
-                f"<td>{p.wheel_index}</td>",
-                f"<td>{_img_cell(p.image_url)}</td>",
-            ]
-            for t in tiers:
-                val_pct = dist[p.id][t.key] / 100
-                cells.append(
-                    f"<td><input class='pct' data-tier='{_e(t.key)}' name='w_{p.id}_{t.key}' "
-                    f"value='{val_pct}' type='number' step='0.01' min='0' max='100' style='width:80px'></td>"
-                )
-            checked = "checked" if getattr(p, "enabled", True) else ""
-            cells.append(f"<td><input type='checkbox' name='en_{p.id}' {checked}></td>")
-            cells.append(
-                "<td>"
-                f"<a class='btn small' href='/admin/kod-yonetimi?tab=oduller&edit={p.id}'>Düzenle</a> "
-                f"<form method='post' action='/admin/kod-yonetimi/prizes/delete' style='display:inline' onsubmit=\"return confirm('Silinsin mi?')\">"
-                f"<input type='hidden' name='id' value='{p.id}' />"
-                f"<button class='btn small' type='submit'>Sil</button></form>"
-                "</td>"
-            )
-            rows.append("<tr>" + "".join(cells) + "</tr>")
-
-        # toplam satırı
-        sum_cells = ["<td colspan='3' style='text-align:right'><b>Toplam (%)</b></td>"]
-        for t in tiers:
-            sum_cells.append(f"<td><b id='sum_{_e(t.key)}'>{sums[t.key]/100:.2f}</b></td>")
-        sum_cells += ["<td></td><td></td>"]
-        rows.append("<tr>" + "".join(sum_cells) + "</tr>")
-
-        rows.append(
-            "</table><div style='height:8px'></div>"
-            "<div id='sumWarn' class='muted'></div>"
-            "<button id='saveBtn' class='btn primary' type='submit'>Dağılımları Kaydet</button>"
-            "</form></div></div>"
-        )
-
-        # ödül ekle/düzenleme formu (mevcut)
-        edit_id = request.query_params.get("edit")
-        try:
-            editing = db.get(Prize, int(edit_id)) if edit_id else None
-        except Exception:
-            editing = None
-
-        eid = editing.id if editing else ""
-        elabel = editing.label if editing else ""
-        ewi = editing.wheel_index if editing else ""
-        eurl = getattr(editing, "image_url", "") or ""
-
-        form = f"""
-        <div class='card'>
-          <h1>{'Ödül Düzenle' if editing else 'Yeni Ödül'}</h1>
-          <form method='post' action='/admin/kod-yonetimi/prizes/upsert'>
-            {f'<input type="hidden" name="id" value="{eid}">' if editing else ''}
-            <div class='grid'>
-              <div class='span-6'><div>Sıralama</div><input name='wheel_index' type='number' value='{ewi}' required></div>
-              <div class='span-6'><div>Ad</div><input name='label' value='{_e(elabel)}' required></div>
-            </div>
-            <div style='height:8px'></div>
-            <div>Görsel URL</div>
-            <input name='image_url' value='{_e(eurl)}' placeholder='https://... veya /static/...'>
-            <div style='height:10px'></div>
-            <button class='btn primary' type='submit'>Kaydet</button>
-          </form>
-        </div>
-        """
-        body_parts += rows + [form]
-
-        # JS: canlı toplam ve otomatik tamamlama (son inputa)
-        tiers_keys_js = [t.key for t in tiers]
-        js = """
-        <script>
-        function sumCheck(){
-          var tiers = %s;
-          var ok = true, messages = [];
-          tiers.forEach(function(tk){
-            var inputs = Array.from(document.querySelectorAll("input.pct[data-tier='"+tk+"']"));
-            var sum = inputs.reduce(function(a,el){ var v=parseFloat(el.value||"0"); return a+(isNaN(v)?0:v); }, 0);
-            var sumEl = document.getElementById('sum_'+tk);
-            if(sumEl) sumEl.textContent = sum.toFixed(2);
-            if(Math.abs(sum-100) > 0.005){ ok=false; messages.push(tk + " = " + sum.toFixed(2) + "%%"); }
-          });
-          var warn = document.getElementById('sumWarn');
-          var btn = document.getElementById('saveBtn');
-          if(!ok){
-            if(warn) warn.textContent = "Toplam %%100 olmalı: " + messages.join(" | ");
-            if(btn) btn.disabled = true;
-          }else{
-            if(warn) warn.textContent = "";
-            if(btn) btn.disabled = false;
-          }
-        }
-        // otomatik tamamlama: satırda fokus kaybedilince son alan kalanla dolar (negatif ise 0)
-        document.addEventListener('blur', function(e){
-          if(!e.target || !e.target.classList || !e.target.classList.contains('pct')) return;
-          var row = e.target.closest('tr'); if(!row) return;
-          var inputs = Array.from(row.querySelectorAll('input.pct'));
-          if(inputs.length === 0) return;
-          var filled = inputs.slice(0,-1);
-          var sum = filled.reduce(function(a,el){ var v=parseFloat(el.value||"0"); return a+(isNaN(v)?0:v); },0);
-          var last = inputs[inputs.length-1];
-          var remain = 100 - sum;
-          if(remain < 0) remain = 0;
-          last.value = remain.toFixed(2);
-          sumCheck();
-        }, true);
-        sumCheck();
-        </script>
-        """ % (str(tiers_keys_js).replace("'", "\""))  # % formatında '%%' kaçışları eklendi
-        body_parts.append(js)
-
-    # ----------------- SEVİYELER -----------------
-    else:
-        tiers = _tiers(db)
-        edit_key = (request.query_params.get("edit") or "").strip()
-        editing = next((t for t in tiers if t.key == edit_key), None)
-
-        # liste
-        rows = [
-            "<div class='card'><h1>Seviye Yönetimi</h1>",
-            "<div class='table-wrap'><table>",
-            "<tr><th>Anahtar</th><th>Etiket</th><th>Sıra</th><th>Aktif</th><th style='width:160px'>İşlem</th></tr>",
-        ]
-        for t in tiers:
-            rows.append(
-                f"<tr>"
-                f"<td><code>{_e(t.key)}</code></td>"
-                f"<td>{_e(t.label)}</td>"
-                f"<td>{t.sort}</td>"
-                f"<td>{'Evet' if t.enabled else 'Hayır'}</td>"
-                f"<td>"
-                f"<a class='btn small' href='/admin/kod-yonetimi?tab=seviyeler&edit={_e(t.key)}'>Düzenle</a> "
-                f"<form method='post' action='/admin/kod-yonetimi/tiers/delete' style='display:inline' onsubmit=\"return confirm('Silinsin mi? (İlgili dağılımlar da silinir)')\">"
-                f"<input type='hidden' name='key' value='{_e(t.key)}' />"
-                f"<button class='btn small' type='submit'>Sil</button></form>"
-                f"</td>"
-                f"</tr>"
-            )
-        rows.append("</table></div></div>")
-
-        # form (ekle/düzenle)
-        ekey = editing.key if editing else ""
-        elabel = editing.label if editing else ""
-        esort = editing.sort if editing else 0
-        echecked = "checked" if (editing.enabled if editing else True) else ""
-
-        form = f"""
-        <div class='card'>
-          <h1>{'Seviye Düzenle' if editing else 'Yeni Seviye'}</h1>
-          <form method='post' action='/admin/kod-yonetimi/tiers/upsert'>
-            <div class='grid'>
-              <div class='span-6'>
-                <div>Anahtar</div>
-                <input name='key' value='{_e(ekey)}' {'readonly' if editing else ''} placeholder='ör. bronze-100' required>
-              </div>
-              <div class='span-6'>
-                <div>Etiket</div>
-                <input name='label' value='{_e(elabel)}' placeholder='ör. 100 TL' required>
-              </div>
-            </div>
-            <div style='height:8px'></div>
-            <div class='grid'>
-              <div class='span-6'><div>Sıra</div><input name='sort' type='number' value='{esort}' required></div>
-              <div class='span-6'><div>Aktif</div><label class='cb'><input type='checkbox' name='enabled' {echecked}> Aktif</label></div>
-            </div>
-            <div style='height:10px'></div>
-            <button class='btn primary' type='submit'>Kaydet</button>
-            {"<a class='btn' href='/admin/kod-yonetimi?tab=seviyeler'>Yeni</a>" if editing else ""}
-          </form>
-        </div>
-        """
-        body_parts += rows + [form]
-
-    # stil
+    # stil (mevcut)
     style = """
     <style>
       :root{--bg:#090a0f;--card:#0f1016;--line:#1b1d26;--text:#f2f3f7;--muted:#a9afbd;--red:#ff0033;--red2:#ff4d6d;--black:#0a0b0f;}
@@ -368,17 +73,18 @@ def kod_yonetimi(
       .cb{display:inline-flex;align-items:center;gap:8px}
     </style>
     """
-    html = _layout(style + "".join(body_parts), title="Kod Yönetimi", active="kod", is_super=(current.role == AdminRole.super_admin))
-    return HTMLResponse(html)
+
+    return HTMLResponse(_layout(style + "".join(parts), title="Kod Yönetimi", active="kod", is_super=(current.role == AdminRole.super_admin)))
 
 
-# ----------------- ACTIONS -----------------
+# ----------------- ACTIONS (Aynen korunur) -----------------
 @router.post("/admin/kod-yonetimi/create-code", response_model=None)
 async def create_code(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
     current: Annotated[AdminUser, Depends(require_role(AdminRole.admin))],
 ):
+    from app.db.models import Code  # tipin üstte olması yeterliydi, değişmedi
     form = await request.form()
     username = (form.get("username") or "").strip() or None
     tier_key = (form.get("tier_key") or "").strip() or None
@@ -472,12 +178,7 @@ async def prizes_dist_save(
     db: Annotated[Session, Depends(get_db)],
     current: Annotated[AdminUser, Depends(require_role(AdminRole.admin))],
 ):
-    """
-    Dinamik seviyeler için dağılımı kaydeder.
-      w_<prizeId>_<tierKey> = yüzde (0..100)
-      en_<prizeId>          = on/off
-    Her tier toplamı %100 olmalı (bp= yüzde*100)
-    """
+    """Dinamik seviyeler için dağılımı kaydeder."""
     form = await request.form()
     prizes = db.query(Prize).order_by(Prize.wheel_index).all()
     tiers = [t for t in _tiers(db) if t.enabled]
