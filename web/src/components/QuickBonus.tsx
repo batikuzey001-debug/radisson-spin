@@ -6,8 +6,9 @@ import { type PromoActive } from "../api/promos";
  * QuickBonus — Promo Kodlar
  * - Upcoming: sayaç (>=1 saat sarı, <1 saat kırmızı yanıp söner); 0 olduğunda kod + flash + kopyala.
  * - Active: doğrudan kod.
- * - CTA: BE'den gelen cta_text ve cta_url kullanılır (cta_text yoksa "Katıl")
- * - Küçük kartlar (240px), aqua LED sol şerit (kayan), yeşil nokta yok.
+ * - CTA: BE'den gelen cta_text ve cta_url kullanılır (cta_text yoksa "Katıl").
+ * - Max kişi: BE'den gelen participant_count gösterilir.
+ * - Küçük kartlar (240px), aqua LED sol şerit (kayan).
  */
 
 type PromoEx = PromoActive & {
@@ -15,7 +16,7 @@ type PromoEx = PromoActive & {
   seconds_to_start?: number | null;
   code?: string | null;
   promo_code?: string | null;
-  /** CTA alanları (BE JSON’unda gelmeli) */
+  coupon_code?: string | null;
   cta_text?: string | null;
   cta_url?: string | null;
 };
@@ -37,13 +38,8 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       })
-      .then(
-        (arr: PromoEx[]) =>
-          alive && (setRows(Array.isArray(arr) ? arr : []), setErr(""))
-      )
-      .catch(
-        (e) => alive && (setErr(e?.message ?? "Hata"), setRows([]))
-      )
+      .then((arr: PromoEx[]) => alive && (setRows(Array.isArray(arr) ? arr : []), setErr("")))
+      .catch((e) => alive && (setErr(e?.message ?? "Hata"), setRows([])))
       .finally(() => alive && setLoading(false));
     return () => {
       alive = false;
@@ -57,10 +53,7 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
       setRows((prev) =>
         prev.map((p) => {
           if (p.state === "upcoming" && p.seconds_to_start != null) {
-            return {
-              ...p,
-              seconds_to_start: Math.max(0, p.seconds_to_start - 1),
-            };
+            return { ...p, seconds_to_start: Math.max(0, p.seconds_to_start - 1) };
           }
           if (p.state === "active" && p.seconds_left != null) {
             return { ...p, seconds_left: Math.max(0, p.seconds_left - 1) };
@@ -72,21 +65,17 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
     return () => clearInterval(t);
   }, [rows.length]);
 
-  // reveal flash tetikle
+  // reveal flash tetikle (sayaç 0'a düştüğünde)
   useEffect(() => {
     const toFlash: string[] = [];
     rows.forEach((p) => {
       const id = String(p.id);
       const prevSec = prevSecsRef.current[id];
-      const nowSecStart =
-        p.state === "upcoming" ? p.seconds_to_start ?? 0 : undefined;
+      const nowSecStart = p.state === "upcoming" ? p.seconds_to_start ?? 0 : undefined;
       if (prevSec != null && prevSec > 0 && nowSecStart === 0) {
         toFlash.push(id);
       }
-      prevSecsRef.current[id] =
-        p.state === "upcoming"
-          ? p.seconds_to_start ?? 0
-          : p.seconds_left ?? 0;
+      prevSecsRef.current[id] = p.state === "upcoming" ? p.seconds_to_start ?? 0 : p.seconds_left ?? 0;
     });
     if (toFlash.length) {
       const now = Date.now();
@@ -114,9 +103,7 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
           <span className="tag">🎟️</span> Promo Kodlar
         </h2>
         <div className="headGlow" aria-hidden />
-        {!loading && !rows.length && (
-          <span className="muted">Şu an gösterilecek promo yok.</span>
-        )}
+        {!loading && !rows.length && <span className="muted">Şu an gösterilecek promo yok.</span>}
       </div>
 
       {loading && <Skeleton />}
@@ -125,64 +112,51 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
         <div className="spx-wrap">
           {rows.map((p) => {
             const isUpcoming = p.state === "upcoming";
-            const showCountdown =
-              isUpcoming && (p.seconds_to_start ?? 0) > 0;
+            const showCountdown = isUpcoming && (p.seconds_to_start ?? 0) > 0;
 
-            const codeText = (p.promo_code || p.code || "")
-              .toString()
-              .trim();
-            const displayText = showCountdown
-              ? formatCountdown(p.seconds_to_start ?? 0)
-              : codeText || p.title || "KOD";
+            // BE alanlarıyla uyumlu: promo_code / coupon_code / code
+            const codeText = (p.promo_code || p.coupon_code || p.code || "").toString().trim();
+            const displayText = showCountdown ? formatCountdown(p.seconds_to_start ?? 0) : codeText || p.title || "KOD";
 
             const img =
               p.image_url ||
               "https://images.unsplash.com/photo-1519741497674-611481863552?q=80&w=1600&auto=format&fit=crop";
-            const maxText =
-              p.priority != null ? trNum(p.priority) : undefined;
+
+            // Max kişi BE'den: participant_count
+            const maxCount = p.participant_count;
+            const maxText = typeof maxCount === "number" ? trNum(maxCount) : undefined;
+
             const idStr = String(p.id);
             const doFlash = !!flashIds[idStr] && !showCountdown;
 
-            // countdown renk sınıfı
+            // sayaç renk
             let countdownClass = "wait";
-            if (showCountdown) {
-              countdownClass =
-                (p.seconds_to_start ?? 0) < 3600 ? "red" : "yellow";
-            }
+            if (showCountdown) countdownClass = (p.seconds_to_start ?? 0) < 3600 ? "red" : "yellow";
 
-            // CTA metni & linki (BE’den düzenlenebilir)
+            // CTA (BE)
             const ctaUrl = p.cta_url?.trim();
             const ctaText = p.cta_text?.trim() || "Katıl";
 
             return (
               <article className="spx-card" key={idStr}>
-                <header
-                  className="spx-media"
-                  style={{ ["--img" as any]: `url('${img}')` }}
-                />
+                <header className="spx-media" style={{ ["--img" as any]: `url('${img}')` }} />
                 <div className="spx-body">
-                  <h3
-                    className="spx-title"
-                    title={p.title ?? "Promo Kod"}
-                  >
+                  <h3 className="spx-title" title={p.title ?? "Promo Kod"}>
                     {p.title ?? "Promo Kod"}
                   </h3>
 
                   <div className="spx-timer">
                     <div className="codeRow">
                       <div
-                        className={`spx-code ${
-                          showCountdown ? countdownClass : "on"
-                        } ${doFlash ? "revealFlash" : ""}`}
+                        className={`spx-code ${showCountdown ? countdownClass : "on"} ${
+                          doFlash ? "revealFlash" : ""
+                        }`}
                         aria-live="polite"
                       >
                         {displayText}
                       </div>
                       {!showCountdown && codeText ? (
-                        <button
-                          className="copyBtn"
-                          onClick={() => copyToClipboard(codeText)}
-                        >
+                        <button className="copyBtn" onClick={() => copyToClipboard(codeText)}>
                           Kopyala
                         </button>
                       ) : null}
@@ -199,19 +173,9 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
 
                   {/* CTA butonu: BE’den gelen metin ve link */}
                   {ctaUrl ? (
-                    <a
-                      className="spx-cta"
-                      href={ctaUrl}
-                      target="_blank"
-                      rel="nofollow noopener"
-                      title={ctaText}
-                    >
+                    <a className="spx-cta" href={ctaUrl} target="_blank" rel="nofollow noopener" title={ctaText}>
                       {ctaText}
-                      <svg
-                        viewBox="0 0 24 24"
-                        className="spx-ic"
-                        aria-hidden="true"
-                      >
+                      <svg viewBox="0 0 24 24" className="spx-ic" aria-hidden="true">
                         <path
                           fill="currentColor"
                           d="M9.2 16.7 9 20.7c.4 0 .6-.2.9-.4l2.1-1.7 4.3 3.1c.8.4 1.4.2 1.6-.8l2.9-13.6c.3-1.1-.4-1.6-1.2-1.3L2.7 9.9c-1 .4-1 1 0 1.3l4.9 1.5L18 6.9c.5-.3.9-.1.5.2l-9.3 8.3Z"
@@ -249,10 +213,7 @@ async function copyToClipboard(text: string) {
 }
 function trNum(v: any) {
   try {
-    const n =
-      typeof v === "string"
-        ? Number(v.replace(/\./g, "").replace(/,/g, "."))
-        : Number(v);
+    const n = typeof v === "string" ? Number(v.replace(/\./g, "").replace(/,/g, ".")) : Number(v);
     return Number.isFinite(n) ? n.toLocaleString("tr-TR") : String(v ?? "");
   } catch {
     return String(v ?? "");
@@ -282,11 +243,7 @@ function Skeleton() {
             <div className="spx-limit">
               <span>Max:</span> <b>—</b>
             </div>
-            <a
-              className="spx-cta"
-              href="#"
-              onClick={(e) => e.preventDefault()}
-            >
+            <a className="spx-cta" href="#" onClick={(e) => e.preventDefault()}>
               Katıl
             </a>
           </div>
