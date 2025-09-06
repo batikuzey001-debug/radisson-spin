@@ -4,10 +4,10 @@ import { type PromoActive } from "../api/promos";
 
 /**
  * QuickBonus — Promo Kodlar
- * - Countdown: kutu yok; LED dijital stili. Renk: T<1saat= kırmızı, aksi= sarı.
- * - Kod: kutu yok; büyük metin. (0'a inince kod görünür)
- * - Max kişi: HER KARTTA, kutusuz, büyük ve dikkat çekici.
- * - CTA: BE'den (cta_text/cta_url). Kart genişliği: 240px. Sol şeritte aqua neon kayma.
+ * - Countdown: kutusuz LED dijital stil (T<1saat = kırmızı, aksi = sarı).
+ * - Kod: GERİ SAYIM BİTİNCE çerçeveli kutu içinde büyük görünür.
+ * - Max kişi: her kartta kutusuz, dikkat çekici.
+ * - CTA: BE'den (cta_text/cta_url). Sol şerit aqua neon.
  */
 
 type PromoEx = PromoActive & {
@@ -110,7 +110,7 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
             const idStr = String(p.id);
             const doFlash = !!flashIds[idStr] && !showCountdown;
 
-            // countdown renkleri (LED)
+            // countdown LED renk
             let ledClass = "";
             if (showCountdown) ledClass = s < 3600 ? "led red" : "led yellow";
 
@@ -120,20 +120,28 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
             const maxCount = p.participant_count;
             const maxLine = typeof maxCount === "number" ? maxCount : undefined;
 
+            const isCodeVisible = !showCountdown;
+
             return (
               <article className="spx-card" key={idStr}>
                 <header className="spx-media" style={{ ["--img" as any]: `url('${img}')` }} />
                 <div className="spx-body">
                   <h3 className="spx-title" title={p.title ?? "Promo Kod"}>{p.title ?? "Promo Kod"}</h3>
 
-                  {/* Kod / Geri sayım — kutusuz */}
+                  {/* Kod veya geri sayım — kutu YALNIZCA KOD için */}
                   <div className="monoRow">
-                    <span className={`monoText ${ledClass} ${(!showCountdown && doFlash) ? "reveal" : ""}`} aria-live="polite">
-                      {displayText}
-                    </span>
+                    {isCodeVisible ? (
+                      <span className={`codeBox ${doFlash ? "reveal" : ""}`} aria-live="polite">
+                        {displayText}
+                      </span>
+                    ) : (
+                      <span className={`monoText ${ledClass}`} aria-live="polite">
+                        {displayText}
+                      </span>
+                    )}
                   </div>
 
-                  {/* Max kişi — HER KARTTA, kutusuz, öne çıkarılmış */}
+                  {/* Max kişi — her kartta, kutusuz */}
                   {maxLine != null && (
                     <div className="maxLine">
                       <span className="maxLabel">Max</span>
@@ -248,7 +256,7 @@ const css = `
 .spx-body{padding:10px 12px 12px; text-align:center}
 .spx-title{margin:0 0 6px; color:var(--txt); font-weight:900; font-size:15px; letter-spacing:.2px}
 
-/* LED dijital sayaç / kod — kutusuz */
+/* LED dijital sayaç (kodsuz) */
 .monoRow{display:flex; align-items:center; justify-content:center; margin:2px 0 6px}
 .monoText{
   font-family:Rajdhani,system-ui,sans-serif; font-weight:1000; font-size:28px; letter-spacing:.12em;
@@ -256,20 +264,26 @@ const css = `
 }
 .monoText.led.yellow{ color:#fff3c2; text-shadow:0 0 10px #ffd76a, 0 0 18px #ffb300 }
 .monoText.led.red{ color:#ffdada; text-shadow:0 0 10px #ff5c5c, 0 0 18px #ff2e2e }
-.monoText.reveal{ animation:revealPulse .9s ease-out }
+.reveal{ animation:revealPulse .9s ease-out }
 @keyframes revealPulse{
   0%{ transform:scale(.98); text-shadow:0 0 0 rgba(0,229,255,0) }
   50%{ transform:scale(1.04); text-shadow:0 0 18px rgba(0,229,255,.6) }
   100%{ transform:scale(1.00); text-shadow:0 0 12px rgba(0,229,255,.3) }
 }
 
+/* KOD kutusu — sadece kod görünürken */
+.codeBox{
+  display:inline-block; padding:10px 14px; border-radius:12px; min-width:140px;
+  font-family:Rajdhani,system-ui,sans-serif; font-weight:1000; font-size:26px; letter-spacing:.05em;
+  color:#f2f7ff;
+  background:linear-gradient(180deg,#0f1730,#0d1428);
+  border:1px solid #202840;
+  box-shadow: inset 0 0 22px rgba(0,0,0,.38), 0 0 22px rgba(255,255,255,.05), 0 0 28px rgba(0,229,255,.18);
+}
+
 /* Max kişi — kutusuz, güçlü vurgu */
-.maxLine{
-  margin:4px 0 2px; display:flex; align-items:baseline; justify-content:center; gap:8px;
-}
-.maxLabel{
-  font-size:12px; letter-spacing:.5px; text-transform:uppercase; color:#9ec8ff;
-}
+.maxLine{ margin:4px 0 2px; display:flex; align-items:baseline; justify-content:center; gap:8px }
+.maxLabel{ font-size:12px; letter-spacing:.5px; text-transform:uppercase; color:#9ec8ff }
 .maxValue{
   font-family:Rajdhani,system-ui; font-weight:1000; font-size:26px; letter-spacing:.04em;
   background:linear-gradient(90deg,var(--n1),var(--n2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent;
