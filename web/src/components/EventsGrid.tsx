@@ -113,7 +113,6 @@ export default function EventsGrid() {
     return () => clearInterval(t);
   }, []);
 
-  // Re-render için memo
   const rows = useMemo(() => items, [items, now]);
 
   return (
@@ -134,7 +133,7 @@ export default function EventsGrid() {
           {rows.map((ev) => {
             const tone = toneOf(ev.category);
 
-            // prize: HER ZAMAN ana rozet
+            // Ödül metni (HER ZAMAN görünür, kutusuz ve kart tonunda)
             const prizeText =
               typeof ev.prize_amount === "number" ? fmtTL(ev.prize_amount) : "—";
 
@@ -161,7 +160,7 @@ export default function EventsGrid() {
             }
 
             const endPretty = ev.end_at ? fmtDate(ev.end_at) : "";
-            const ctaUrl = ev.cta_url?.trim();
+            const ctaUrl = ev.cta_url?.trim() || "#";
             const ctaText = ev.cta_text?.trim() || "Katıl";
 
             return (
@@ -190,14 +189,14 @@ export default function EventsGrid() {
                     {ev.title}
                   </h3>
 
-                  {/* Ana rozet: ÖDÜL HER ZAMAN */}
-                  <div className="evPrize" aria-label="Ödül">
+                  {/* Ödül: kutusuz, kart tonunda gradyan metin */}
+                  <div className="evPrizeText" aria-label="Ödül">
                     {prizeText}
                   </div>
 
-                  {/* İkincil durum: başlangıca geri sayım (ödülün ALTINDA) veya aktif etiketi */}
+                  {/* Geri sayım / aktif etiketi: kutusuz LED stil */}
                   {statusLabel && (
-                    <div className={`evStatus ${statusClass}`} aria-live="polite">
+                    <div className={`evStatusText ${statusClass}`} aria-live="polite">
                       {statusLabel}
                     </div>
                   )}
@@ -211,18 +210,19 @@ export default function EventsGrid() {
                     </div>
                   )}
 
-                  {/* CTA daha uzun (tam genişlik) */}
-                  {ctaUrl ? (
-                    <a
-                      className="evCta wide"
-                      href={ctaUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title={ctaText}
-                    >
-                      {ctaText}
-                    </a>
-                  ) : null}
+                  {/* CTA her zaman görünür (URL yoksa #) */}
+                  <a
+                    className="evCta wide"
+                    href={ctaUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => {
+                      if (!ev.cta_url) e.preventDefault();
+                    }}
+                    title={ctaText}
+                  >
+                    {ctaText}
+                  </a>
                 </div>
               </article>
             );
@@ -290,24 +290,23 @@ const css = `
 .evBody{padding:10px 12px 12px; text-align:center; position:relative; z-index:1}
 .evTitle{margin:4px 0 6px; color:#eaf2ff; font-weight:900; font-size:15px}
 
-/* ÖDÜL (her zaman) */
-.evPrize{
+/* ÖDÜL — kutusuz, kart tonunda gradyan metin */
+.evPrizeText{
+  margin-top:2px;
   font-family:Rajdhani,sans-serif; font-weight:1000; font-size:26px; letter-spacing:1.2px;
-  display:inline-block; padding:10px 12px; border-radius:12px; min-width:140px;
-  background:linear-gradient(180deg,#0f1730,#0d1428); border:1px solid #202840;
-  color:#f2f7ff;
-  box-shadow: inset 0 0 22px rgba(0,0,0,.38), 0 0 22px rgba(255,255,255,.05), 0 0 28px rgba(255,255,255,.12);
+  background:linear-gradient(90deg,var(--t1),var(--t2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+  text-shadow:0 0 14px rgba(255,255,255,.08), 0 0 26px rgba(0,0,0,.25);
 }
 
-/* Durum (ödülün altında): geri sayım ya da AKTİF! */
-.evStatus{
-  margin-top:6px; font-weight:900; font-size:15px; letter-spacing:.4px;
-  display:inline-block; padding:6px 10px; border-radius:10px;
-  background:rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.10);
+/* Durum — kutusuz LED stil */
+.evStatusText{
+  margin-top:4px; font-weight:1000; font-size:16px; letter-spacing:.08em;
+  font-family:Rajdhani,sans-serif;
+  color:#eaf2ff; text-shadow:0 0 10px rgba(255,255,255,.12);
 }
-.evStatus.yellow{color:#fff3c2; text-shadow:0 0 12px #ffda6b,0 0 22px #ffb300}
-.evStatus.red{color:#ffdada; text-shadow:0 0 14px #ff5c5c,0 0 28px #ff2e2e; animation:redPulse 1.4s ease-in-out infinite}
-.evStatus.live{color:#c1ffd6; text-shadow:0 0 12px #2dd36f,0 0 22px #2eca6a}
+.evStatusText.yellow{ color:#fff3c2; text-shadow:0 0 12px #ffda6b,0 0 22px #ffb300 }
+.evStatusText.red{ color:#ffdada; text-shadow:0 0 14px #ff5c5c,0 0 28px #ff2e2e; animation:redPulse 1.4s ease-in-out infinite }
+.evStatusText.live{ color:#c1ffd6; text-shadow:0 0 12px #2dd36f,0 0 22px #2eca6a }
 @keyframes redPulse{0%,100%{opacity:1}50%{opacity:.55}}
 
 /* Tarama çizgisi */
@@ -326,7 +325,7 @@ const css = `
   color:#071018; background:linear-gradient(180deg,var(--t1),var(--t2))}
 .evEnd .endVal{ color:#eaf2ff; font-weight:800; font-size:13px }
 
-/* CTA (daha uzun) */
+/* CTA (her zaman görünür) */
 .evCta{
   width:100%; margin-top:10px; display:block; text-align:center;
   padding:12px 16px; border-radius:12px; text-decoration:none; font-weight:900; letter-spacing:.4px; font-size:15px;
@@ -336,6 +335,7 @@ const css = `
 }
 .evCta:hover{ filter:brightness(1.06) }
 
+/* Responsive */
 @media (max-width:900px){.evCard{width:46%}}
 @media (max-width:560px){.evCard{width:100%;max-width:340px}}
 `;
