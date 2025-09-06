@@ -127,6 +127,14 @@ try:
 except Exception:
     pass
 
+# <<< YENİ: FE ziyaretçi metrikleri (benzersiz ziyaretçi ping) >>>
+try:
+    from app.api.routers.fe_metrics import router as fe_metrics_router
+    app.include_router(fe_metrics_router)  # router kendi prefix'ini içerir: /api/fe/metrics
+except Exception:
+    pass
+# <<< YENİ SON >>>
+
 # admin router en son (auth ve şablonlar buna bağlı)
 try:
     from app.api.routers.admin_mod import admin_router
