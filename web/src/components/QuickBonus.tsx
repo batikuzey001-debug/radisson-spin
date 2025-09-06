@@ -15,7 +15,7 @@ type PromoEx = PromoActive & {
   seconds_to_start?: number | null;
   code?: string | null;
   promo_code?: string | null;
-  /** ✅ CTA alanları (BE JSON’unda gelmeli) */
+  /** CTA alanları (BE JSON’unda gelmeli) */
   cta_text?: string | null;
   cta_url?: string | null;
 };
@@ -150,9 +150,9 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
                 (p.seconds_to_start ?? 0) < 3600 ? "red" : "yellow";
             }
 
-            // ✅ CTA metni & linki (BE’den düzenlenebilir)
+            // CTA metni & linki (BE’den düzenlenebilir)
             const ctaUrl = p.cta_url?.trim();
-            const ctaText = (p as any).cta_text?.trim() || "Katıl";
+            const ctaText = p.cta_text?.trim() || "Katıl";
 
             return (
               <article className="spx-card" key={idStr}>
@@ -197,7 +197,7 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
                     </div>
                   )}
 
-                  {/* ✅ CTA butonu: BE’den gelen metin ve link */}
+                  {/* CTA butonu: BE’den gelen metin ve link */}
                   {ctaUrl ? (
                     <a
                       className="spx-cta"
