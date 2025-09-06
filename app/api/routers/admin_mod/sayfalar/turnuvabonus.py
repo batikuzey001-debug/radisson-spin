@@ -172,6 +172,14 @@ async def upsert_item(
         amt_raw = (form.get("prize_amount") or "").replace(".", "").strip()
         data["prize_amount"] = int(amt_raw) if amt_raw.isdigit() else None
 
+    # YENİ: Günlük Bonuslar için bonus_percent (0–100 ondalık)
+    if _has(Model, "bonus_percent"):
+        pct_raw = (form.get("bonus_percent") or "").replace("%", "").replace(",", ".").strip()
+        try:
+            data["bonus_percent"] = None if pct_raw == "" else float(pct_raw)
+        except Exception:
+            data["bonus_percent"] = None
+
     if id_raw:
         row = db.get(Model, int(id_raw))
         if not row:
