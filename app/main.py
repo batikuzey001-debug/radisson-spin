@@ -127,13 +127,12 @@ try:
 except Exception:
     pass
 
-# <<< YENİ: FE ziyaretçi metrikleri (benzersiz ziyaretçi ping) >>>
+# FE ziyaretçi metrikleri (benzersiz ziyaretçi ping)
 try:
     from app.api.routers.fe_metrics import router as fe_metrics_router
     app.include_router(fe_metrics_router)  # router kendi prefix'ini içerir: /api/fe/metrics
 except Exception:
     pass
-# <<< YENİ SON >>>
 
 # admin router en son (auth ve şablonlar buna bağlı)
 try:
@@ -245,6 +244,21 @@ def on_startup() -> None:
                 END IF;
               END IF;
             END $$;""")
+
+            # >>> YENİ: daily_bonuses.bonus_percent (yoksa ekle) <<<
+            _run_safe(conn, """
+            DO $$
+            BEGIN
+              IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='daily_bonuses') THEN
+                IF NOT EXISTS (
+                  SELECT 1 FROM information_schema.columns
+                  WHERE table_name='daily_bonuses' AND column_name='bonus_percent'
+                ) THEN
+                  EXECUTE 'ALTER TABLE daily_bonuses ADD COLUMN bonus_percent NUMERIC(6,2)';
+                END IF;
+              END IF;
+            END $$;""")
+            # <<< YENİ SON >>>
 
             # prize_tiers tabloları (idempotent)
             _run_safe(conn, """
