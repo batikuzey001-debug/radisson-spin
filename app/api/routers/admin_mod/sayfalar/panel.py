@@ -43,7 +43,7 @@ def dashboard(
 
     now = _now()
 
-    # ---- Aktif içerik sayıları (kutu İÇİNDE OLMAYACAK) ----
+    # ---- Aktif içerik sayıları (BÜYÜK panel) ----
     def active_count(model):
         q = db.query(func.count(model.id)).filter(model.status == "published")
         q = q.filter((model.start_at == None) | (model.start_at <= now))  # noqa: E711
@@ -56,18 +56,17 @@ def dashboard(
     c_event = active_count(Event)
     c_active_total = c_tour + c_bonus + c_promo + c_event
 
-    # ---- Toplam verilen kod ----
+    # ---- Toplam verilen kod (büyük kutu) ----
     c_codes_total = db.query(func.count(Code.code)).scalar() or 0
 
-    # ---- Benzersiz ziyaretçi: Bugün & Bu Ay (ÖNEMLİ KART) ----
+    # ---- Benzersiz ziyaretçi: Bugün & Bu Ay (büyük kutu) ----
     today_key    = now.strftime("%Y%m%d")
-    month_prefix = now.strftime("%Y%m")  # visitors_daily_count_YYYYMM*
-
+    month_prefix = now.strftime("%Y%m")
     visitors_today = _to_int(_get_conf(db, f"visitors_daily_count_{today_key}", "0"), 0)
     month_rows = db.query(SiteConfig).filter(SiteConfig.key.like(f"visitors_daily_count_{month_prefix}%")).all()
     visitors_month = sum(_to_int(r.value_text or "0", 0) for r in month_rows)
 
-    # ---- Yakında bitecek içerik (tek öğe) ----
+    # ---- Yakında bitecek içerik (tek kart) ----
     def next_end(model):
         q = db.query(model).filter(model.status == "published")
         q = q.filter((model.end_at != None) & (model.end_at >= now))  # noqa: E711
@@ -80,97 +79,138 @@ def dashboard(
         end_at = getattr(nxt, "end_at", None)
         end_txt = end_at.strftime("%d.%m.%Y %H:%M") if end_at else "-"
         nxt_html = f"""
-        <div class="card kpiCard">
-          <div class="kpiHead">Yakında Biten</div>
-          <div class="kpiRow">
-            <div class="kpiLabel">{_e(label)}</div>
-            <div class="kpiVal">{_e(end_txt)}</div>
+        <div class="card upcomingCard">
+          <div class="upHead">Yakında Biten</div>
+          <div class="upRow">
+            <div class="upLabel">{_e(label)}</div>
+            <div class="upVal">{_e(end_txt)}</div>
           </div>
         </div>
         """
 
-    # ---- Görünüm (kutu düzeni sade; aktif içerik ŞERİT halinde) ----
+    # ---- Sayılar formatı ----
     def fmt(n: int) -> str:
         try:
             return f"{int(n):,}".replace(",", ".")
         except Exception:
             return str(n)
 
-    # Üst satır: Ziyaretçi (büyük) + Toplam Kod (ikincil)
-    top_row = f"""
-    <div class="kpiGrid">
-      <div class="card kpiTile accent span-8">
-        <div class="kpiKey">BENZERSİZ ZİYARETÇİ</div>
-        <div class="kpiValBig xl">{fmt(visitors_today)}</div>
-        <div class="kpiHint">Bugün • Bu Ay: <b>{fmt(visitors_month)}</b></div>
+    # ----- DÜZEN: Solda büyük “Aktif İçerik” paneli, sağda 2 büyük KPI -----
+    # Sol panel geniş, okunabilir ve profesyonel tipografiyle.
+    active_panel = f"""
+    <section class="activePanel card">
+      <div class="apTop">
+        <div class="apTitle">AKTİF İÇERİK</div>
+        <div class="apTotal">
+          <div class="apTotalKey">TOPLAM</div>
+          <div class="apTotalVal">{fmt(c_active_total)}</div>
+        </div>
       </div>
-      <div class="card kpiTile span-4">
-        <div class="kpiKey">TOPLAM VERİLEN KOD</div>
-        <div class="kpiValBig">{fmt(c_codes_total)}</div>
+      <div class="apGrid">
+        <div class="apBox">
+          <div class="k">{_e("Turnuva")}</div>
+          <div class="v">{fmt(c_tour)}</div>
+        </div>
+        <div class="apBox">
+          <div class="k">{_e("Bonus")}</div>
+          <div class="v">{fmt(c_bonus)}</div>
+        </div>
+        <div class="apBox">
+          <div class="k">{_e("Promo Kod")}</div>
+          <div class="v">{fmt(c_promo)}</div>
+        </div>
+        <div class="apBox">
+          <div class="k">{_e("Etkinlik")}</div>
+          <div class="v">{fmt(c_event)}</div>
+        </div>
       </div>
-    </div>
+    </section>
     """
 
-    # Aktif içerik: kutu İÇERİSİNDE DEĞİL; şerit görünümü
-    active_strip = f"""
-    <div class="statStrip" aria-label="Aktif içerik">
-      <div class="sTitle">AKTİF İÇERİK</div>
-      <div class="sBadge total"><span>Toplam</span><b>{fmt(c_active_total)}</b></div>
-      <div class="sBadge"><span>Turnuva</span><b>{fmt(c_tour)}</b></div>
-      <div class="sBadge"><span>Bonus</span><b>{fmt(c_bonus)}</b></div>
-      <div class="sBadge"><span>Promo Kod</span><b>{fmt(c_promo)}</b></div>
-      <div class="sBadge"><span>Etkinlik</span><b>{fmt(c_event)}</b></div>
-    </div>
+    visitors_panel = f"""
+    <section class="kpiBig card">
+      <div class="kpiTitle">BENZERSİZ ZİYARETÇİ</div>
+      <div class="kpiValue">{fmt(visitors_today)}</div>
+      <div class="kpiSub">Bugün</div>
+      <div class="kpiSplitRow">
+        <div class="kpiMini">
+          <span>Bu Ay</span>
+          <b>{fmt(visitors_month)}</b>
+        </div>
+      </div>
+    </section>
     """
 
-    parts = []
-    if fb: parts.append(fb)
-    parts.append(top_row)
-    parts.append(active_strip)
-    if nxt_html: parts.append(nxt_html)
+    codes_panel = f"""
+    <section class="kpiBig card">
+      <div class="kpiTitle">TOPLAM VERİLEN KOD</div>
+      <div class="kpiValue">{fmt(c_codes_total)}</div>
+      <div class="kpiSub">&nbsp;</div>
+    </section>
+    """
+
+    # Kompozisyon
+    layout = f"""
+    <div class="dashGrid">
+      <div class="colLeft">
+        {active_panel}
+      </div>
+      <div class="colRight">
+        {visitors_panel}
+        {codes_panel}
+      </div>
+    </div>
+    {nxt_html}
+    """
 
     style = """
     <style>
-      :root{--red:#ff0033;--line:#1c1f28;--muted:#9aa3b7;--text:#f2f4f8;--panel:#0d0f15}
-      /* GRID */
-      .kpiGrid{display:grid;grid-template-columns:repeat(12,1fr);gap:12px}
-      .span-8{grid-column:span 8}.span-4{grid-column:span 4}
-      @media(max-width:1080px){.span-8{grid-column:span 12}.span-4{grid-column:span 12}}
-
-      /* KARTLAR */
-      .kpiTile{border:1px solid var(--line);background:var(--panel);padding:14px}
-      .kpiTile.accent{border-left:4px solid var(--red)}
-      .kpiKey{font-size:12px;letter-spacing:.6px;color:var(--muted)}
-      .kpiValBig{margin-top:6px;font-weight:900;font-size:28px;letter-spacing:.2px;color:var(--text)}
-      .kpiValBig.xl{font-size:34px}
-      .kpiHint{margin-top:4px;color:var(--muted);font-size:12px}
-
-      /* AKTİF İÇERİK ŞERİDİ (kutu yok) */
-      .statStrip{
-        margin:8px 0 4px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;
-        border-top:1px solid var(--line); border-bottom:1px solid var(--line); padding:10px 8px;
-        background:#0b0d13;
+      :root{
+        --red:#ff0033; --line:#1c1f28; --muted:#a3aec2; --text:#f2f4f8; --panel:#0d0f15; --panel2:#0b0d13;
       }
-      .statStrip .sTitle{font-size:12px; letter-spacing:.6px; color:var(--muted); margin-right:6px}
-      .sBadge{
-        display:inline-flex; align-items:baseline; gap:6px; padding:6px 8px;
-        border:1px solid var(--line); background:#0e121b; color:#fff;
+
+      /* Ana grid: solda büyük panel, sağda iki büyük kutu */
+      .dashGrid{
+        display:grid; grid-template-columns: 2fr 1fr; gap:16px;
       }
-      .sBadge span{font-size:11px; color:var(--muted)}
-      .sBadge b{font-size:16px}
-      .sBadge.total{border-color:var(--red)}
+      @media(max-width:1100px){ .dashGrid{ grid-template-columns:1fr; } .colRight{ display:grid; grid-template-columns:1fr 1fr; gap:16px } }
+      @media(max-width:680px){ .colRight{ grid-template-columns:1fr } }
 
-      /* YAKINDA BİTEN */
-      .kpiCard{border:1px solid var(--line);background:#0b0d13;padding:14px;margin-top:12px}
-      .kpiHead{font-size:12px;color:var(--muted);letter-spacing:.6px;margin-bottom:6px}
-      .kpiRow{display:flex;align-items:center;justify-content:space-between}
-      .kpiLabel{font-weight:800}
-      .kpiVal{font-weight:900;color:#fff}
+      /* Kartlar */
+      .card{ border:1px solid var(--line); background:var(--panel); padding:22px }
 
-      /* GENEL */
-      .card{margin:12px 0}
+      /* --- AKTİF PANEL --- */
+      .activePanel{ background:linear-gradient(180deg,var(--panel),var(--panel2)); }
+      .apTop{ display:flex; align-items:flex-end; justify-content:space-between; margin-bottom:14px; }
+      .apTitle{ font-size:18px; font-weight:900; letter-spacing:.6px; color:#fff }
+      .apTotal{ text-align:right }
+      .apTotalKey{ font-size:12px; color:var(--muted); letter-spacing:.6px }
+      .apTotalVal{ font-size:42px; font-weight:900; color:#fff; letter-spacing:.5px }
+
+      .apGrid{ display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:14px; }
+      @media(max-width:900px){ .apGrid{ grid-template-columns:repeat(2, minmax(0,1fr)); } }
+      .apBox{ border:1px solid var(--line); background:#0e121b; padding:16px }
+      .apBox .k{ font-size:13px; color:var(--muted); margin-bottom:6px; letter-spacing:.4px }
+      .apBox .v{ font-size:28px; font-weight:900; color:#fff; }
+
+      /* --- KPI BÜYÜK --- */
+      .kpiBig{ display:flex; flex-direction:column; gap:6px; background:linear-gradient(180deg,var(--panel),#101422); }
+      .kpiTitle{ font-size:14px; letter-spacing:.6px; color:var(--muted) }
+      .kpiValue{ font-size:40px; font-weight:900; letter-spacing:.6px; color:#fff }
+      .kpiSub{ font-size:13px; color:#cfd8ea }
+      .kpiSplitRow{ display:flex; gap:12px; margin-top:6px }
+      .kpiMini{ border:1px solid var(--line); background:#0e121b; padding:10px 12px; display:flex; align-items:baseline; gap:8px }
+      .kpiMini span{ font-size:12px; color:var(--muted) }
+      .kpiMini b{ font-size:18px; color:#fff }
+
+      /* --- YAKINDA BİTEN --- */
+      .upcomingCard{ margin-top:16px; background:#0b0d13; }
+      .upHead{ font-size:14px; letter-spacing:.6px; color:var(--muted); margin-bottom:8px }
+      .upRow{ display:flex; justify-content:space-between; align-items:center }
+      .upLabel{ font-size:16px; font-weight:800; color:#fff }
+      .upVal{ font-size:18px; font-weight:900; color:#fff }
     </style>
     """
 
-    html = _layout(style + "".join(parts), title="Dashboard", active="panel", is_super=(current.role == AdminRole.super_admin))
+    html = _layout(style + (fb or "") + layout, title="Dashboard", active="panel", is_super=(current.role == AdminRole.super_admin))
     return HTMLResponse(html)
