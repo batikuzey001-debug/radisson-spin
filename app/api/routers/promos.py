@@ -2,7 +2,7 @@
 from typing import Annotated, Dict, List, Optional
 from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_
 
@@ -33,9 +33,13 @@ async def get_active_promos(
     """
     Aktif + (opsiyonel) Yakında başlayacak promosyonlar.
     Dönüş alanları:
-      - state: "active" | "upcoming"
-      - seconds_left (active ise), seconds_to_start (upcoming ise)
-    Sıralama: pinned/priority -> (active üstte), sonra en yakın bitecek/başlayacak.
+      id, title, image_url, category, start_at, end_at,
+      state: 'active'|'upcoming',
+      seconds_left (active), seconds_to_start (upcoming),
+      accent_color, bg_color, priority, is_pinned,
+      coupon_code (ham kupon), promo_code (FE uyumlu alias),
+      cta_text, cta_url, participant_count (varsa)
+    Sıralama: pinned/priority -> (active üstte) -> en yakın bitecek/başlayacak -> title
     """
     now = _utcnow()
 
@@ -45,8 +49,8 @@ async def get_active_promos(
         q = q.filter(PromoCode.status == "published")
     q = q.filter(
         and_(
-            or_(PromoCode.start_at == None, PromoCode.start_at <= now),   # noqa
-            or_(PromoCode.end_at == None, now <= PromoCode.end_at),       # noqa
+            or_(PromoCode.start_at == None, PromoCode.start_at <= now),   # noqa: E711
+            or_(PromoCode.end_at == None, now <= PromoCode.end_at),       # noqa: E711
         )
     )
     active_rows = q.all()
@@ -60,59 +64,67 @@ async def get_active_promos(
             qf = qf.filter(PromoCode.status == "published")
         qf = qf.filter(
             and_(
-                PromoCode.start_at != None,              # noqa
+                PromoCode.start_at != None,              # noqa: E711
                 PromoCode.start_at > now,
                 PromoCode.start_at <= until,
             )
         )
         future_rows = qf.all()
 
-    # Maple
-    out: List[Dict] = []
-    for r in active_rows:
-        out.append({
+    def map_row_active(r: PromoCode) -> Dict:
+        return {
             "id": r.id,
             "title": r.title,
             "image_url": r.image_url,
-            "coupon_code": getattr(r, "coupon_code", None),
-            "cta_url": getattr(r, "cta_url", None),
             "category": getattr(r, "category", None),
             "start_at": r.start_at.isoformat() if r.start_at else None,
             "end_at": r.end_at.isoformat() if r.end_at else None,
+            "state": "active",
             "seconds_left": _sec_between(r.end_at, now),
             "seconds_to_start": None,
-            "state": "active",
             "accent_color": getattr(r, "accent_color", None),
             "bg_color": getattr(r, "bg_color", None),
             "priority": getattr(r, "priority", 0),
             "is_pinned": bool(getattr(r, "is_pinned", False)),
-        })
+            # Kupon/CTA
+            "coupon_code": getattr(r, "coupon_code", None),
+            "promo_code": getattr(r, "coupon_code", None),  # FE uyumluluk: QuickBonus promo_code alanını okuyor
+            "cta_text": getattr(r, "cta_text", None),
+            "cta_url": getattr(r, "cta_url", None),
+            # Opsiyonel max kişi
+            "participant_count": getattr(r, "participant_count", None),
+        }
 
-    for r in future_rows:
-        out.append({
+    def map_row_upcoming(r: PromoCode) -> Dict:
+        return {
             "id": r.id,
             "title": r.title,
             "image_url": r.image_url,
-            "coupon_code": getattr(r, "coupon_code", None),  # FE kilitleyecek
-            "cta_url": getattr(r, "cta_url", None),
             "category": getattr(r, "category", None),
             "start_at": r.start_at.isoformat() if r.start_at else None,
             "end_at": r.end_at.isoformat() if r.end_at else None,
+            "state": "upcoming",
             "seconds_left": None,
             "seconds_to_start": _sec_between(r.start_at, now),
-            "state": "upcoming",
             "accent_color": getattr(r, "accent_color", None),
             "bg_color": getattr(r, "bg_color", None),
             "priority": getattr(r, "priority", 0),
             "is_pinned": bool(getattr(r, "is_pinned", False)),
-        })
+            # Kupon/CTA (upcoming için FE kodu kilitler ama alanlar yine döndürülür)
+            "coupon_code": getattr(r, "coupon_code", None),
+            "promo_code": getattr(r, "coupon_code", None),
+            "cta_text": getattr(r, "cta_text", None),
+            "cta_url": getattr(r, "cta_url", None),
+            "participant_count": getattr(r, "participant_count", None),
+        }
+
+    out: List[Dict] = [*map(map_row_active, active_rows), *map(map_row_upcoming, future_rows)]
 
     # Sıralama: pinned/priority -> state(active önce) -> yakın (end_at/ start_at) -> title
     def sort_key(x: Dict):
         pinned = 1 if x.get("is_pinned") else 0
         prio = int(x.get("priority") or 0)
         state_rank = 1 if x.get("state") == "active" else 0
-        # aktif için bitişe göre, upcoming için başlayana göre
         near = x.get("seconds_left") if state_rank == 1 else x.get("seconds_to_start")
         near = near if near is not None else 1_000_000_000
         return (-pinned, -prio, -state_rank, near, (x.get("title") or ""))
