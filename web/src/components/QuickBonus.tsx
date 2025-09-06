@@ -323,11 +323,6 @@ const css = `
  40%{transform:scale(1.04); box-shadow:0 0 26px rgba(0,229,255,.55), 0 0 52px rgba(0,179,255,.35)}
  100%{transform:scale(1.00); box-shadow:0 0 18px rgba(0,229,255,.30)}}
 
-/* Kopyala butonu */
-.copyBtn{appearance:none; border:0; cursor:pointer; border-radius:10px; padding:9px 12px; font-weight:900; font-size:12px;
-  background:rgba(0,229,255,.12); color:#c8f6ff; box-shadow: inset 0 0 0 1px rgba(0,229,255,.45);}
-.copyBtn:hover{ filter:brightness(1.06) }
-.copyBtn:active{ transform:translateY(1px) }
 
 /* LED scan */
 .spx-scan{height:3px; margin:8px auto 8px; width:150px; border-radius:999px; opacity:.98;
