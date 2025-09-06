@@ -64,15 +64,10 @@ function toneOf(cat?: string | null) {
   }
 }
 
-/** CANLI geri sayım:
- *  1) start_at varsa -> start_at - now
- *  2) yoksa seconds_to_start - elapsed (mount'tan beri)
- */
+/** CANLI geri sayım: start_at varsa -> start_at-now, yoksa seconds_to_start-elapsed */
 function calcSecondsLeft(ev: EventCard, nowMs: number, mountMs: number) {
   const startMs = ev.start_at ? Date.parse(ev.start_at) : NaN;
-  if (Number.isFinite(startMs)) {
-    return Math.max(0, Math.floor((startMs - nowMs) / 1000));
-  }
+  if (Number.isFinite(startMs)) return Math.max(0, Math.floor((startMs - nowMs) / 1000));
   const base = typeof ev.seconds_to_start === "number" ? ev.seconds_to_start : 0;
   const elapsed = Math.floor((nowMs - mountMs) / 1000);
   return Math.max(0, base - elapsed);
@@ -84,15 +79,11 @@ export default function EventsGrid() {
   const [now, setNow] = useState<number>(Date.now());
   const mountAtRef = useRef<number>(Date.now());
 
-  // Veri çek
   useEffect(() => {
     let live = true;
     (async () => {
       try {
-        const r = await fetch(
-          `${API}/api/events/active?limit=12&include_future=1`,
-          { cache: "no-store" }
-        );
+        const r = await fetch(`${API}/api/events/active?limit=12&include_future=1`, { cache: "no-store" });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const js = (await r.json()) as EventCard[];
         if (live) setItems(Array.isArray(js) ? js : []);
@@ -102,12 +93,9 @@ export default function EventsGrid() {
         if (live) setItems([]);
       }
     })();
-    return () => {
-      live = false;
-    };
+    return () => { live = false; };
   }, []);
 
-  // Her saniye yenile (sayaç için)
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
@@ -118,14 +106,10 @@ export default function EventsGrid() {
   return (
     <section className="evWrap">
       <div className="evHead">
-        <h2>
-          <span className="tag">⚽</span> Etkinlikler
-        </h2>
+        <h2><span className="tag">⚽</span> Etkinlikler</h2>
         <div className="headGlow" aria-hidden />
         {err && !rows.length && <span className="muted">{err}</span>}
-        {!err && !rows.length && (
-          <span className="muted">Şu an gösterilecek etkinlik yok.</span>
-        )}
+        {!err && !rows.length && <span className="muted">Şu an gösterilecek etkinlik yok.</span>}
       </div>
 
       {rows.length > 0 && (
@@ -133,26 +117,19 @@ export default function EventsGrid() {
           {rows.map((ev) => {
             const tone = toneOf(ev.category);
 
-            // Ödül (HER ZAMAN, kutusuz)
-            const prizeText =
-              typeof ev.prize_amount === "number" ? fmtTL(ev.prize_amount) : "—";
+            const prizeText = typeof ev.prize_amount === "number" ? fmtTL(ev.prize_amount) : "—";
 
-            // zaman / durum
             const startMs = ev.start_at ? Date.parse(ev.start_at) : NaN;
             const endMs = ev.end_at ? Date.parse(ev.end_at) : NaN;
             const isActiveWindow =
-              Number.isFinite(startMs) &&
-              Number.isFinite(endMs) &&
-              startMs <= now &&
-              now < endMs;
+              Number.isFinite(startMs) && Number.isFinite(endMs) && startMs <= now && now < endMs;
 
-            const sLeft =
-              ev.state === "upcoming" ? calcSecondsLeft(ev, now, mountAtRef.current) : 0;
+            const sLeft = ev.state === "upcoming" ? calcSecondsLeft(ev, now, mountAtRef.current) : 0;
 
             let statusLabel = "";
             let statusClass = "";
             if (sLeft > 0) {
-              statusLabel = fmtT(sLeft); // başlangıca geri sayım
+              statusLabel = fmtT(sLeft);
               statusClass = sLeft < 3600 ? "red" : "yellow";
             } else if (isActiveWindow || ev.state === "active") {
               statusLabel = "AKTİF!";
@@ -175,26 +152,21 @@ export default function EventsGrid() {
                 }
               >
                 <span className="stripe" aria-hidden />
-                <header
-                  className="evMedia"
-                  style={{ ["--img" as any]: `url('${ev.image_url || ""}')` }}
-                >
+                <header className="evMedia" style={{ ["--img" as any]: `url('${ev.image_url || ""}')` }}>
                   <span className="evRibbon" aria-label={tone.label}>
                     <span className="ribTxt">{tone.label}</span>
                   </span>
                 </header>
 
                 <div className="evBody">
-                  <h3 className="evTitle" title={ev.title}>
-                    {ev.title}
-                  </h3>
+                  <h3 className="evTitle" title={ev.title}>{ev.title}</h3>
 
-                  {/* Ödül: kutusuz, kart tonunda gradyan metin */}
+                  {/* ÖDÜL: biraz büyütüldü */}
                   <div className="evPrizeText" aria-label="Ödül">
                     {prizeText}
                   </div>
 
-                  {/* Geri sayım / aktif etiketi: kutusuz LED stil — DAHA BÜYÜK */}
+                  {/* GERİ SAYIM / AKTİF: biraz küçültüldü */}
                   {statusLabel && (
                     <div className={`evStatusText ${statusClass}`} aria-live="polite">
                       {statusLabel}
@@ -210,15 +182,12 @@ export default function EventsGrid() {
                     </div>
                   )}
 
-                  {/* CTA her zaman görünür (URL yoksa #) */}
                   <a
                     className="evCta wide"
                     href={ctaUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    onClick={(e) => {
-                      if (!ev.cta_url) e.preventDefault();
-                    }}
+                    onClick={(e) => { if (!ev.cta_url) e.preventDefault(); }}
                     title={ctaText}
                   >
                     {ctaText}
@@ -290,27 +259,31 @@ const css = `
 .evBody{padding:10px 12px 12px; text-align:center; position:relative; z-index:1}
 .evTitle{margin:4px 0 6px; color:#eaf2ff; font-weight:900; font-size:15px}
 
-/* ÖDÜL — kutusuz, kart tonunda gradyan metin */
+/* ÖDÜL — kutusuz, kart tonunda gradyan metin (BÜYÜTÜLDÜ) */
 .evPrizeText{
   margin-top:2px;
-  font-family:Rajdhani,sans-serif; font-weight:1000; font-size:26px; letter-spacing:1.2px;
-  background:linear-gradient(90deg,var(--t1),var(--t2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent;
-  text-shadow:0 0 14px rgba(255,255,255,.08), 0 0 26px rgba(0,0,0,.25);
+  font-family:Rajdhani,sans-serif;
+  font-weight:1000;
+  font-size:clamp(26px, 3.6vw, 32px);   /* ↑ daha büyük */
+  letter-spacing:1.2px;
+  background:linear-gradient(90deg,var(--t1),var(--t2));
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+  text-shadow:0 0 18px rgba(255,255,255,.10), 0 0 28px rgba(0,0,0,.28);
 }
 
-/* Durum — kutusuz LED stil (BÜYÜTÜLDÜ) */
+/* Durum — kutusuz LED stil (BİRAZ KÜÇÜLTÜLDÜ) */
 .evStatusText{
   margin-top:6px;
   font-family:Rajdhani,sans-serif;
   font-weight:1000;
-  font-size:clamp(18px, 2.8vw, 28px);  /* ↑ büyütüldü */
-  letter-spacing:.12em;                 /* ↑ dijital görsel */
+  font-size:clamp(16px, 2.2vw, 22px);  /* ↓ biraz daha küçük */
+  letter-spacing:.10em;
   color:#eaf2ff;
-  text-shadow:0 0 12px rgba(255,255,255,.14), 0 0 22px rgba(0,0,0,.35);
+  text-shadow:0 0 10px rgba(255,255,255,.12), 0 0 20px rgba(0,0,0,.32);
 }
-.evStatusText.yellow{ color:#fff3c2; text-shadow:0 0 14px #ffda6b,0 0 28px #ffb300 }
-.evStatusText.red{ color:#ffdada; text-shadow:0 0 16px #ff5c5c,0 0 32px #ff2e2e; animation:redPulse 1.4s ease-in-out infinite }
-.evStatusText.live{ color:#c1ffd6; text-shadow:0 0 16px #2dd36f,0 0 30px #22c55e }
+.evStatusText.yellow{ color:#fff3c2; text-shadow:0 0 14px #ffda6b,0 0 24px #ffb300 }
+.evStatusText.red{ color:#ffdada; text-shadow:0 0 14px #ff5c5c,0 0 28px #ff2e2e; animation:redPulse 1.4s ease-in-out infinite }
+.evStatusText.live{ color:#c1ffd6; text-shadow:0 0 14px #2dd36f,0 0 26px #22c55e }
 @keyframes redPulse{0%,100%{opacity:1}50%{opacity:.55}}
 
 /* Tarama çizgisi */
