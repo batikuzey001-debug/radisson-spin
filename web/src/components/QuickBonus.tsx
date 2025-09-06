@@ -8,6 +8,8 @@ import { type PromoActive } from "../api/promos";
  * - Kod: GERİ SAYIM BİTİNCE çerçeveli kutu içinde büyük görünür.
  * - Max kişi: her kartta kutusuz, dikkat çekici.
  * - CTA: BE'den (cta_text/cta_url). Sol şerit aqua neon.
+ * - Simetri: Kod ve geri sayım aynı yükseklik/genişlik alanını kaplar.
+ * - Şerit: Max kişi ile geri sayım/kod arasına yerleştirildi.
  */
 
 type PromoEx = PromoActive & {
@@ -128,20 +130,7 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
                 <div className="spx-body">
                   <h3 className="spx-title" title={p.title ?? "Promo Kod"}>{p.title ?? "Promo Kod"}</h3>
 
-                  {/* Kod veya geri sayım — kutu YALNIZCA KOD için */}
-                  <div className="monoRow">
-                    {isCodeVisible ? (
-                      <span className={`codeBox ${doFlash ? "reveal" : ""}`} aria-live="polite">
-                        {displayText}
-                      </span>
-                    ) : (
-                      <span className={`monoText ${ledClass}`} aria-live="polite">
-                        {displayText}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Max kişi — her kartta, kutusuz */}
+                  {/* Max kişi — her kartta kutusuz */}
                   {maxLine != null && (
                     <div className="maxLine">
                       <span className="maxLabel">Max</span>
@@ -149,8 +138,25 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
                     </div>
                   )}
 
+                  {/* NEON ŞERİT (scan) — Max ile geri sayım/kod arasına */}
                   <div className="scanLine" />
 
+                  {/* Kod veya geri sayım — aynı alanı kaplayan slot */}
+                  <div className="monoRow">
+                    <span className="monoSlot">
+                      {isCodeVisible ? (
+                        <span className={`codeBox ${doFlash ? "reveal" : ""}`} aria-live="polite">
+                          {displayText}
+                        </span>
+                      ) : (
+                        <span className={`monoText ${ledClass}`} aria-live="polite">
+                          {displayText}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+
+                  {/* CTA */}
                   {ctaUrl ? (
                     <a className="spx-cta" href={ctaUrl} target="_blank" rel="nofollow noopener" title={ctaText}>
                       {ctaText}
@@ -194,9 +200,9 @@ function Skeleton() {
           <header className="spx-media" />
           <div className="spx-body">
             <h3 className="spx-title" style={{ opacity: 0.4 }}>Yükleniyor…</h3>
-            <div className="monoRow"><span className="monoText led">--:--:--</span></div>
             <div className="maxLine"><span className="maxLabel">Max</span><span className="maxValue">—</span></div>
             <div className="scanLine" />
+            <div className="monoRow"><span className="monoSlot"><span className="monoText led">--:--:--</span></span></div>
             <a className="spx-cta" href="#" onClick={e=>e.preventDefault()}>Katıl</a>
           </div>
         </article>
@@ -213,6 +219,7 @@ const css = `
   --radius:18px; --txt:#eaf2ff; --muted:#9fb3d9;
   --bg1:#0f162b; --bg2:#0a1224;
   --n1:#00e5ff; --n2:#00b3ff; /* Aqua LED */
+  --monoH: 46px;              /* kod/geri sayım slot yüksekliği */
 }
 
 .bonusSec{margin:16px 0}
@@ -254,32 +261,7 @@ const css = `
 
 /* Body */
 .spx-body{padding:10px 12px 12px; text-align:center}
-.spx-title{margin:0 0 6px; color:var(--txt); font-weight:900; font-size:15px; letter-spacing:.2px}
-
-/* LED dijital sayaç (kodsuz) */
-.monoRow{display:flex; align-items:center; justify-content:center; margin:2px 0 6px}
-.monoText{
-  font-family:Rajdhani,system-ui,sans-serif; font-weight:1000; font-size:28px; letter-spacing:.12em;
-  color:#eaf2ff; text-shadow:0 0 10px rgba(0,229,255,.22);
-}
-.monoText.led.yellow{ color:#fff3c2; text-shadow:0 0 10px #ffd76a, 0 0 18px #ffb300 }
-.monoText.led.red{ color:#ffdada; text-shadow:0 0 10px #ff5c5c, 0 0 18px #ff2e2e }
-.reveal{ animation:revealPulse .9s ease-out }
-@keyframes revealPulse{
-  0%{ transform:scale(.98); text-shadow:0 0 0 rgba(0,229,255,0) }
-  50%{ transform:scale(1.04); text-shadow:0 0 18px rgba(0,229,255,.6) }
-  100%{ transform:scale(1.00); text-shadow:0 0 12px rgba(0,229,255,.3) }
-}
-
-/* KOD kutusu — sadece kod görünürken */
-.codeBox{
-  display:inline-block; padding:10px 14px; border-radius:12px; min-width:140px;
-  font-family:Rajdhani,system-ui,sans-serif; font-weight:1000; font-size:26px; letter-spacing:.05em;
-  color:#f2f7ff;
-  background:linear-gradient(180deg,#0f1730,#0d1428);
-  border:1px solid #202840;
-  box-shadow: inset 0 0 22px rgba(0,0,0,.38), 0 0 22px rgba(255,255,255,.05), 0 0 28px rgba(0,229,255,.18);
-}
+.spx-title{margin:0 0 6px; color:#eaf2ff; font-weight:900; font-size:15px; letter-spacing:.2px}
 
 /* Max kişi — kutusuz, güçlü vurgu */
 .maxLine{ margin:4px 0 2px; display:flex; align-items:baseline; justify-content:center; gap:8px }
@@ -290,13 +272,44 @@ const css = `
   text-shadow:0 0 16px rgba(0,229,255,.35), 0 0 28px rgba(0,179,255,.25);
 }
 
-/* LED scan */
-.scanLine{height:3px; margin:8px auto 8px; width:150px; border-radius:999px; opacity:.98;
+/* NEON scan — max ile sayaç/kod arasında */
+.scanLine{height:3px; margin:6px auto 6px; width:150px; border-radius:999px; opacity:.98;
   background-image:linear-gradient(90deg,rgba(255,255,255,0) 0%,rgba(255,255,255,.95) 12%,rgba(255,255,255,0) 24%),
                    linear-gradient(90deg,var(--n1),var(--n2));
   background-size:140px 100%,100% 100%; background-repeat:repeat,no-repeat;
   animation:scanX 1.2s linear infinite; box-shadow:0 0 14px var(--n1),0 0 26px var(--n2)}
 @keyframes scanX{from{background-position:-40px 0,0 0}to{background-position:140px 0,0 0}}
+
+/* Sayaç/Kod alanı — simetrik slot */
+.monoRow{display:flex; align-items:center; justify-content:center; margin:2px 0 6px}
+.monoSlot{height:var(--monoH); display:flex; align-items:center; justify-content:center; min-width:160px}
+.monoText,
+.codeBox{
+  height:var(--monoH);
+  display:flex; align-items:center; justify-content:center;
+  padding:0 14px; box-sizing:border-box;
+  font-family:Rajdhani,system-ui,sans-serif; font-weight:1000; font-size:26px;
+  letter-spacing:.05em;
+}
+/* LED dijital sayaç */
+.monoText{ color:#eaf2ff; text-shadow:0 0 10px rgba(0,229,255,.22); }
+.monoText.led.yellow{ color:#fff3c2; text-shadow:0 0 10px #ffd76a, 0 0 18px #ffb300 }
+.monoText.led.red{ color:#ffdada; text-shadow:0 0 10px #ff5c5c, 0 0 18px #ff2e2e }
+.reveal{ animation:revealPulse .9s ease-out }
+@keyframes revealPulse{
+  0%{ transform:scale(.98); text-shadow:0 0 0 rgba(0,229,255,0) }
+  50%{ transform:scale(1.04); text-shadow:0 0 18px rgba(0,229,255,.6) }
+  100%{ transform:scale(1.00); text-shadow:0 0 12px rgba(0,229,255,.3) }
+}
+
+/* KOD kutusu (sadece kod görünürken) */
+.codeBox{
+  color:#f2f7ff;
+  background:linear-gradient(180deg,#0f1730,#0d1428);
+  border:1px solid #202840;
+  border-radius:12px;
+  box-shadow: inset 0 0 22px rgba(0,0,0,.38), 0 0 22px rgba(255,255,255,.05), 0 0 28px rgba(0,229,255,.18);
+}
 
 /* CTA */
 .spx-cta{display:block; width:100%; text-align:center; margin-top:2px; padding:10px 12px; border-radius:12px;
