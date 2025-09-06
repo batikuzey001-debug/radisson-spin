@@ -4,11 +4,11 @@ import { type PromoActive } from "../api/promos";
 
 /**
  * QuickBonus — Promo Kodlar
- * - Upcoming: sayaç (>=1 saat sarı, <1 saat kırmızı yanıp söner); 0 olduğunda kod + flash + kopyala.
+ * - Upcoming: sayaç (>=1 saat sarı, <1 saat kırmızı yanıp söner); 0 olduğunda kod görünür.
  * - Active: doğrudan kod.
  * - CTA: BE'den gelen cta_text ve cta_url kullanılır (cta_text yoksa "Katıl").
- * - Max kişi: BE'den gelen participant_count gösterilir.
- * - Küçük kartlar (240px), aqua LED sol şerit (kayan).
+ * - Max kişi: YALNIZCA kod aktifken (countdown bittiğinde) büyük, dikkat çeken rozet.
+ * - Kartlar: 240px, aqua LED sol şerit (kayan).
  */
 
 type PromoEx = PromoActive & {
@@ -19,6 +19,7 @@ type PromoEx = PromoActive & {
   coupon_code?: string | null;
   cta_text?: string | null;
   cta_url?: string | null;
+  participant_count?: number | null;
 };
 
 export default function QuickBonus({ limit = 6 }: { limit?: number }) {
@@ -65,16 +66,14 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
     return () => clearInterval(t);
   }, [rows.length]);
 
-  // reveal flash tetikle (sayaç 0'a düştüğünde)
+  // sayaç 0→ kod görünür olduğunda kısa bir parıltı efekti
   useEffect(() => {
     const toFlash: string[] = [];
     rows.forEach((p) => {
       const id = String(p.id);
       const prevSec = prevSecsRef.current[id];
       const nowSecStart = p.state === "upcoming" ? p.seconds_to_start ?? 0 : undefined;
-      if (prevSec != null && prevSec > 0 && nowSecStart === 0) {
-        toFlash.push(id);
-      }
+      if (prevSec != null && prevSec > 0 && nowSecStart === 0) toFlash.push(id);
       prevSecsRef.current[id] = p.state === "upcoming" ? p.seconds_to_start ?? 0 : p.seconds_left ?? 0;
     });
     if (toFlash.length) {
@@ -114,7 +113,6 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
             const isUpcoming = p.state === "upcoming";
             const showCountdown = isUpcoming && (p.seconds_to_start ?? 0) > 0;
 
-            // BE alanlarıyla uyumlu: promo_code / coupon_code / code
             const codeText = (p.promo_code || p.coupon_code || p.code || "").toString().trim();
             const displayText = showCountdown ? formatCountdown(p.seconds_to_start ?? 0) : codeText || p.title || "KOD";
 
@@ -122,20 +120,20 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
               p.image_url ||
               "https://images.unsplash.com/photo-1519741497674-611481863552?q=80&w=1600&auto=format&fit=crop";
 
-            // Max kişi BE'den: participant_count
-            const maxCount = p.participant_count;
-            const maxText = typeof maxCount === "number" ? trNum(maxCount) : undefined;
-
             const idStr = String(p.id);
             const doFlash = !!flashIds[idStr] && !showCountdown;
 
-            // sayaç renk
+            // sayaç renk sınıfı
             let countdownClass = "wait";
             if (showCountdown) countdownClass = (p.seconds_to_start ?? 0) < 3600 ? "red" : "yellow";
 
-            // CTA (BE)
+            // CTA
             const ctaUrl = p.cta_url?.trim();
             const ctaText = p.cta_text?.trim() || "Katıl";
+
+            // Max kişi (yalnızca kod aktifken)
+            const maxCount = p.participant_count;
+            const showMax = !showCountdown && typeof maxCount === "number" && maxCount > 0;
 
             return (
               <article className="spx-card" key={idStr}>
@@ -155,23 +153,20 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
                       >
                         {displayText}
                       </div>
-                      {!showCountdown && codeText ? (
-                        <button className="copyBtn" onClick={() => copyToClipboard(codeText)}>
-                          Kopyala
-                        </button>
-                      ) : null}
                     </div>
                   </div>
 
-                  <div className="spx-scan" />
-
-                  {maxText && (
-                    <div className="spx-limit">
-                      <span>Max:</span> <b>{maxText}</b>
+                  {/* Max kişi — sadece kod aktifken, büyük rozet */}
+                  {showMax && (
+                    <div className="maxWrap" title="Maksimum Katılımcı">
+                      <span className="maxBadge">MAX</span>
+                      <span className="maxVal">{trNum(maxCount)}</span>
                     </div>
                   )}
 
-                  {/* CTA butonu: BE’den gelen metin ve link */}
+                  <div className="spx-scan" />
+
+                  {/* CTA butonu */}
                   {ctaUrl ? (
                     <a className="spx-cta" href={ctaUrl} target="_blank" rel="nofollow noopener" title={ctaText}>
                       {ctaText}
@@ -204,13 +199,6 @@ function formatCountdown(s: number) {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${pad(hh)}:${pad(mm)}:${pad(ss)}`;
 }
-async function copyToClipboard(text: string) {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    /* fallback */
-  }
-}
 function trNum(v: any) {
   try {
     const n = typeof v === "string" ? Number(v.replace(/\./g, "").replace(/,/g, ".")) : Number(v);
@@ -234,15 +222,9 @@ function Skeleton() {
             <div className="spx-timer">
               <div className="codeRow">
                 <div className="spx-code wait">--:--:--</div>
-                <button className="copyBtn" disabled>
-                  Kopyala
-                </button>
               </div>
             </div>
             <div className="spx-scan" />
-            <div className="spx-limit">
-              <span>Max:</span> <b>—</b>
-            </div>
             <a className="spx-cta" href="#" onClick={(e) => e.preventDefault()}>
               Katıl
             </a>
@@ -323,6 +305,20 @@ const css = `
  40%{transform:scale(1.04); box-shadow:0 0 26px rgba(0,229,255,.55), 0 0 52px rgba(0,179,255,.35)}
  100%{transform:scale(1.00); box-shadow:0 0 18px rgba(0,229,255,.30)}}
 
+/* MAX kişi rozet */
+.maxWrap{
+  margin:6px auto 2px; display:flex; align-items:center; justify-content:center; gap:8px;
+  background:rgba(0,229,255,.10); border:1px solid rgba(0,229,255,.28); padding:8px 10px; border-radius:12px;
+  box-shadow:0 0 16px rgba(0,229,255,.20) inset, 0 8px 18px rgba(0,0,0,.25);
+}
+.maxBadge{
+  font-weight:1000; font-size:11px; letter-spacing:.6px; padding:4px 8px; border-radius:8px;
+  color:#06121a; background:linear-gradient(90deg,var(--n1),var(--n2));
+}
+.maxVal{
+  font-family:Rajdhani,system-ui; font-weight:900; font-size:22px; letter-spacing:.6px; color:#eaf2ff;
+  text-shadow:0 0 14px rgba(0,229,255,.35), 0 0 24px rgba(0,179,255,.25);
+}
 
 /* LED scan */
 .spx-scan{height:3px; margin:8px auto 8px; width:150px; border-radius:999px; opacity:.98;
@@ -331,13 +327,6 @@ const css = `
   background-size:140px 100%,100% 100%; background-repeat:repeat,no-repeat; background-blend-mode:screen;
   animation:scanX 1.2s linear infinite; box-shadow:0 0 14px var(--n1), var(--n2)}
 @keyframes scanX{from{background-position:-40px 0,0 0}to{background-position:140px 0,0 0}}
-
-/* Max limit */
-.spx-limit{margin:2px 0 8px; display:flex; align-items:center; justify-content:center; gap:6px}
-.spx-limit span{color:#b2c6e9; font-weight:900; font-size:12px; letter-spacing:.5px; opacity:.9}
-.spx-limit b{font-family:Rajdhani,system-ui,sans-serif; font-weight:900; font-size:18px; letter-spacing:.6px;
-  background:linear-gradient(90deg,var(--n1),var(--n2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent;
-  text-shadow:0 0 14px rgba(0,229,255,.35),0 0 24px rgba(0,179,255,.28)}
 
 /* CTA */
 .spx-cta{display:block; width:100%; text-align:center; margin-top:2px; padding:10px 12px; border-radius:12px;
