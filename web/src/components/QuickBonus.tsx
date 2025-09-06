@@ -6,7 +6,7 @@ import { type PromoActive } from "../api/promos";
  * QuickBonus — Promo Kodlar
  * - Countdown: kutusuz LED dijital stil (T<1saat = kırmızı, aksi = sarı).
  * - Kod: GERİ SAYIM BİTİNCE çerçeveli kutu içinde büyük görünür.
- * - Max kişi: her kartta kutusuz, dikkat çekici.
+ * - Max kişi: her kartta kutusuz, dikkat çekici (CANLI KIRMIZI).
  * - CTA: BE'den (cta_text/cta_url). Sol şerit aqua neon.
  * - Simetri: Kod ve geri sayım aynı alanı kaplar.
  * - Şerit: GERİ SAYIM/KOD ile Max kişi arasındadır.
@@ -134,7 +134,7 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
                 <div className="spx-body">
                   <h3 className="spx-title" title={p.title ?? "Promo Kod"}>{p.title ?? "Promo Kod"}</h3>
 
-                  {/* SıRA DEĞİŞTİ: Önce sayaç/kod, sonra şerit, sonra Max kişi */}
+                  {/* Önce sayaç/kod, sonra şerit, sonra Max kişi */}
                   <div className="monoRow">
                     <span className="monoSlot">
                       {isCodeVisible ? (
@@ -152,11 +152,11 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
                   {/* NEON şerit */}
                   <div className="scanLine" />
 
-                  {/* Max kişi — kutusuz, güçlü vurgu */}
+                  {/* Max kişi — kutusuz, CANLI KIRMIZI */}
                   {maxLine != null && (
                     <div className="maxLine">
                       <span className="maxLabel">Max</span>
-                      <span className="maxValue">{trNum(maxLine)}</span>
+                      <span className="maxValue redLive">{trNum(maxLine)}</span>
                     </div>
                   )}
 
@@ -206,7 +206,7 @@ function Skeleton() {
             <h3 className="spx-title" style={{ opacity: 0.4 }}>Yükleniyor…</h3>
             <div className="monoRow"><span className="monoSlot"><span className="monoText led">--:--:--</span></span></div>
             <div className="scanLine" />
-            <div className="maxLine"><span className="maxLabel">Max</span><span className="maxValue">—</span></div>
+            <div className="maxLine"><span className="maxLabel">Max</span><span className="maxValue redLive">—</span></div>
             <a className="spx-cta" href="#" onClick={e=>e.preventDefault()}>Katıl</a>
           </div>
         </article>
@@ -271,23 +271,6 @@ const css = `
 .spx-body{padding:10px 12px 12px; text-align:center}
 .spx-title{margin:0 0 6px; color:var(--txt); font-weight:900; font-size:15px; letter-spacing:.2px}
 
-/* Max kişi — kutusuz, güçlü vurgu */
-.maxLine{ margin:4px 0 2px; display:flex; align-items:baseline; justify-content:center; gap:8px }
-.maxLabel{ font-size:12px; letter-spacing:.5px; text-transform:uppercase; color:#9ec8ff }
-.maxValue{
-  font-family:Rajdhani,system-ui; font-weight:1000; font-size:26px; letter-spacing:.04em;
-  background:linear-gradient(90deg,var(--n1),var(--n2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent;
-  text-shadow:0 0 16px rgba(0,229,255,.35), 0 0 28px rgba(0,179,255,.25);
-}
-
-/* NEON scan — sayaç/kod ile max arasında */
-.scanLine{height:3px; margin:6px auto 6px; width:150px; border-radius:999px; opacity:.98;
-  background-image:linear-gradient(90deg,rgba(255,255,255,0) 0%,rgba(255,255,255,.95) 12%,rgba(255,255,255,0) 24%),
-                   linear-gradient(90deg,var(--n1),var(--n2));
-  background-size:140px 100%,100% 100%; background-repeat:repeat,no-repeat;
-  animation:scanX 1.2s linear infinite; box-shadow:0 0 14px var(--n1),0 0 26px var(--n2)}
-@keyframes scanX{from{background-position:-40px 0,0 0}to{background-position:140px 0,0 0}}
-
 /* Sayaç/Kod alanı — simetrik slot */
 .monoRow{display:flex; align-items:center; justify-content:center; margin:2px 0 6px}
 .monoSlot{height:var(--monoH); display:flex; align-items:center; justify-content:center; min-width:160px}
@@ -317,6 +300,23 @@ const css = `
   border:1px solid #202840;
   border-radius:12px;
   box-shadow: inset 0 0 22px rgba(0,0,0,.38), 0 0 22px rgba(255,255,255,.05), 0 0 28px rgba(0,229,255,.18);
+}
+
+/* NEON scan — sayaç/kod ile max arasında */
+.scanLine{height:3px; margin:6px auto 6px; width:150px; border-radius:999px; opacity:.98;
+  background-image:linear-gradient(90deg,rgba(255,255,255,0) 0%,rgba(255,255,255,.95) 12%,rgba(255,255,255,0) 24%),
+                   linear-gradient(90deg,var(--n1),var(--n2));
+  background-size:140px 100%,100% 100%; background-repeat:repeat,no-repeat;
+  animation:scanX 1.2s linear infinite; box-shadow:0 0 14px var(--n1),0 0 26px var(--n2)}
+@keyframes scanX{from{background-position:-40px 0,0 0}to{background-position:140px 0,0 0}}
+
+/* Max kişi — kutusuz, CANLI KIRMIZI */
+.maxLine{ margin:4px 0 2px; display:flex; align-items:baseline; justify-content:center; gap:8px }
+.maxLabel{ font-size:12px; letter-spacing:.5px; text-transform:uppercase; color:#ffb3b3 }
+.maxValue{
+  font-family:Rajdhani,system-ui; font-weight:1000; font-size:26px; letter-spacing:.04em;
+  background:linear-gradient(90deg,#ff3b3b,#ff6b6b); -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+  text-shadow:0 0 16px rgba(255,80,80,.45), 0 0 30px rgba(255,40,40,.35);
 }
 
 /* CTA */
