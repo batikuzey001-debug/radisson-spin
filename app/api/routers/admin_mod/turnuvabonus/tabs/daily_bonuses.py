@@ -15,7 +15,7 @@ def render_daily_bonuses(
     rows: list[Any],
     tab_key: str = "daily-bonuses",
 ) -> str:
-    title_text = "Yeni Kayıt" if not editing else f"Kayıt Düzenle (#{editing.id})"
+    title_text = "Yeni Günlük Bonus" if not editing else f"Günlük Bonus Düzenle (#{editing.id})"
     sub_text = "Güne Özel Bonuslar"
     val = (lambda name, default="": _esc(getattr(editing, name, "") or default))
     current_cat = getattr(editing, "category", "") if editing else ""
@@ -26,18 +26,38 @@ def render_daily_bonuses(
         if editing else ""
     )
 
+    # ---------------- FORM (sade sıra) ----------------
     form = [
         "<div class='card form-card'>",
         f"<div class='form-head'><div><h1>{_esc(title_text)}</h1><div class='sub'>{_esc(sub_text)}</div></div>"
         f"<div class='head-actions'>{cancel_edit_btn}</div></div>",
+
         f"<form method='post' action='/admin/turnuvabonus/{tab_key}/upsert' autocomplete='on'>",
         f"{f'<input type=\"hidden\" name=\"id\" value=\"{editing.id}\">' if editing else ''}",
+
         "<div class='grid'>",
-        f"<label class='field'><span>Başlık</span><input name='title' value='{val('title')}' required></label>",
-        f"<label class='field'><span>Kapak Görseli URL</span><input name='image_url' value='{val('image_url')}' placeholder='https://... veya /static/...'></label>",
-        f"<label class='field'><span>Başlangıç</span><input type='datetime-local' name='start_at' value='{_dt_input(getattr(editing,'start_at',None))}'></label>",
-        f"<label class='field'><span>Bitiş</span><input type='datetime-local' name='end_at' value='{_dt_input(getattr(editing,'end_at',None))}'></label>",
-        "<label class='field'><span>Kategori</span><select name='category'>",
+
+        # Başlık
+        f"<label class='field span-12'><span>Başlık</span><input name='title' value='{val('title')}' required></label>",
+
+        # Görsel
+        f"<label class='field span-12'><span>Kapak Görseli URL</span><input name='image_url' value='{val('image_url')}' placeholder='https://... veya /static/...'></label>",
+
+        # Tarihler — input + yanında 📅 düğmesi, klavye girişi SERBEST
+        f"<label class='field span-6'><span>Başlangıç</span>"
+        f"<div class='dateRow'>"
+        f"<input id='start_at_input' type='datetime-local' class='dateInput' name='start_at' value='{_dt_input(getattr(editing,'start_at',None))}'>"
+        f"<button type='button' class='pickBtn' data-for='start_at_input' title='Tarih seç'>📅</button>"
+        f"</div></label>",
+
+        f"<label class='field span-6'><span>Bitiş</span>"
+        f"<div class='dateRow'>"
+        f"<input id='end_at_input' type='datetime-local' class='dateInput' name='end_at' value='{_dt_input(getattr(editing,'end_at',None))}'>"
+        f"<button type='button' class='pickBtn' data-for='end_at_input' title='Tarih seç'>📅</button>"
+        f"</div></label>",
+
+        # Kategori / Durum
+        "<label class='field span-6'><span>Kategori</span><select name='category'>",
         f"<option value='' {'selected' if not current_cat else ''}>— Seçiniz —</option>",
     ]
     for v, txt in CATEGORY_OPTIONS:
@@ -45,19 +65,27 @@ def render_daily_bonuses(
         form.append(f"<option value='{_esc(v)}' {sel}>{_esc(txt)}</option>")
     form.append("</select></label>")
 
-    form.append("<label class='field'><span>Durum</span><select name='status'>")
+    form.append("<label class='field span-6'><span>Durum</span><select name='status'>")
     for s in ("draft", "published"):
         sel = "selected" if status_now == s else ""
         form.append(f"<option value='{s}' {sel}>{'Yayında' if s=='published' else 'Taslak'}</option>")
     form.append("</select></label>")
 
+    # Bonus % alanı (yeni kutu)
+    if _has(Model, "bonus_percent"):
+        form.append(
+            f"<label class='field span-6'><span>Bonus %</span>"
+            f"<input name='bonus_percent' type='number' inputmode='decimal' min='0' step='0.01' value='{val('bonus_percent')}' placeholder='örn: 15.5'></label>"
+        )
+
+    # Opsiyonel açıklamalar
     if _has(Model, "short_desc"):
-        form.append(f"<label class='field'><span>Kısa Açıklama</span><textarea name='short_desc' rows='2' placeholder='Kart üzerinde kısa açıklama...'>{val('short_desc')}</textarea></label>")
+        form.append(f"<label class='field span-12'><span>Kısa Açıklama</span><textarea name='short_desc' rows='2' placeholder='Kart üzerinde kısa açıklama...'>{val('short_desc')}</textarea></label>")
     if _has(Model, "long_desc"):
-        form.append(f"<label class='field'><span>Detay Açıklama</span><textarea name='long_desc' rows='4' placeholder='Detaylar...'>{val('long_desc')}</textarea></label>")
+        form.append(f"<label class='field span-12'><span>Detay Açıklama</span><textarea name='long_desc' rows='4' placeholder='Detaylar...'>{val('long_desc')}</textarea></label>")
 
     form.extend([
-        "</div>",
+        "</div>",  # grid
         "<div class='form-actions'>"
         "<button class='btn primary' type='submit'>Kaydet</button>"
         f"{cancel_edit_btn}"
@@ -65,8 +93,12 @@ def render_daily_bonuses(
         "</form></div>",
     ])
 
+    # ---------------- TABLO ----------------
     t = ["<div class='card'><h1>Güne Özel Bonuslar</h1>"]
-    headers = "<tr><th>ID</th><th>Başlık</th><th>Durum</th><th>Başlangıç</th><th>Bitiş</th><th>Görsel</th><th style='width:180px'>İşlem</th></tr>"
+    headers = "<tr><th>ID</th><th>Başlık</th><th>Durum</th><th>Başlangıç</th><th>Bitiş</th>"
+    if _has(Model, "bonus_percent"):
+        headers += "<th>Bonus %</th>"
+    headers += "<th>Görsel</th><th style='width:160px'>İşlem</th></tr>"
     t.append("<div class='table-wrap'><table>" + headers)
 
     for r in rows:
@@ -76,6 +108,8 @@ def render_daily_bonuses(
         start_txt = _dt_input(getattr(r, "start_at", None)).replace("T", " ") or "-"
         end_txt = _dt_input(getattr(r, "end_at", None)).replace("T", " ") or "-"
 
+        bonus_pct_td = f"<td>{_esc(str(getattr(r, 'bonus_percent', '-') or '-'))}</td>" if _has(Model, "bonus_percent") else ""
+
         t.append(
             f"<tr>"
             f"<td>{r.id}</td>"
@@ -83,6 +117,7 @@ def render_daily_bonuses(
             f"<td>{_esc(getattr(r,'status','-') or '-')}</td>"
             f"<td>{start_txt}</td>"
             f"<td>{end_txt}</td>"
+            f"{bonus_pct_td}"
             f"<td class='img'>{img}</td>"
             f"<td class='actions'>"
             f"<a class='btn neon small' href='/admin/turnuvabonus?tab={tab_key}&edit={r.id}' title='Düzenle'>Düzenle</a>"
@@ -95,4 +130,43 @@ def render_daily_bonuses(
         )
     t.append("</table></div></div>")
 
-    return "".join(form) + "".join(t)
+    # ---------------- Stil + JS (tarih picker ikonu belirgin; tıklayınca showPicker; klavye de mümkün) ----------------
+    style_js = """
+    <style>
+      .field input, .field select, .field textarea{
+        border:1px solid var(--line, #1c1f28);
+        background:#0b0d13; color:#fff; padding:10px;
+      }
+      .field input:focus, .field select:focus, .field textarea:focus{
+        outline:none; box-shadow:none; border-color:var(--line, #1c1f28);
+      }
+
+      .dateRow{ display:flex; align-items:center; gap:6px; }
+      .dateInput{ flex:1 1 auto; }
+      input[type="datetime-local"]::-webkit-calendar-picker-indicator{
+        opacity:1; filter: invert(1) brightness(1.4); cursor:pointer;
+      }
+      .pickBtn{
+        padding:8px 10px; border:1px solid var(--line, #1c1f28);
+        background:#111523; color:#fff; cursor:pointer;
+      }
+      .pickBtn:hover{ filter:brightness(1.08); }
+    </style>
+    <script>
+      (function(){
+        try{
+          document.querySelectorAll('.pickBtn').forEach(function(btn){
+            btn.addEventListener('click', function(){
+              var id = btn.getAttribute('data-for');
+              var el = id ? document.getElementById(id) : null;
+              if(!el) return;
+              try{ if (el.showPicker) { el.showPicker(); return; } }catch(e){}
+              el.focus();
+            });
+          });
+        }catch(e){}
+      })();
+    </script>
+    """
+
+    return "".join(form) + "".join(t) + style_js
