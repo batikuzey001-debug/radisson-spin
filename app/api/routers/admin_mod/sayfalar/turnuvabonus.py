@@ -159,7 +159,9 @@ async def upsert_item(
     if _has(Model, "subtitle"):          data["subtitle"] = (form.get("subtitle") or "").strip() or None
     if _has(Model, "slug"):              data["slug"] = (form.get("slug") or "").strip() or None
     if _has(Model, "banner_url"):        data["banner_url"] = (form.get("banner_url") or "").strip() or None
-    if _has(Model, "cta_url"):           data["cta_url"] = (form.get("cta_url") or "").strip() or None
+    # ✅ CTA alanlarını da işle
+    if _has(Model, "cta_text"):          data["cta_text"] = (form.get("cta_text") or "").strip() or None
+    if _has(Model, "cta_url"):           data["cta_url"]  = (form.get("cta_url")  or "").strip() or None
     if _has(Model, "coupon_code"):       data["coupon_code"] = (form.get("coupon_code") or "").strip() or None
     if _has(Model, "short_desc"):        data["short_desc"] = (form.get("short_desc") or "").strip() or None
     if _has(Model, "long_desc"):         data["long_desc"] = (form.get("long_desc") or "").strip() or None
