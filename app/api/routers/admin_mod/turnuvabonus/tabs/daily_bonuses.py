@@ -26,7 +26,7 @@ def render_daily_bonuses(
         if editing else ""
     )
 
-    # ---------------- FORM (sade sıra + BONUS % için AYRI SATIR) ----------------
+    # ---------------- FORM (sade sıra + BONUS % için AYRI SATIR — HER ZAMAN GÖSTER) ----------------
     form = [
         "<div class='card form-card'>",
         f"<div class='form-head'><div><h1>{_esc(title_text)}</h1><div class='sub'>{_esc(sub_text)}</div></div>"
@@ -42,22 +42,19 @@ def render_daily_bonuses(
 
         # Görsel
         f"<label class='field span-12'><span>Kapak Görseli URL</span><input name='image_url' value='{val('image_url')}' placeholder='https://... veya /static/...'></label>",
+
+        # BONUS % — HER ZAMAN GÖRÜNSÜN (modelde alan olmasa bile formdan gelir; upsert _has ile güvenli)
+        "<label class='field span-12'>",
+        "<span>Bonus %</span>",
+        "<div class='pctRow'>",
+        f"<input class='pctInput' name='bonus_percent' type='number' inputmode='decimal' min='0' max='100' step='0.01' value='{val('bonus_percent')}' placeholder='örn: 15.5'>",
+        "<span class='pctSuffix'>%</span>",
+        "</div>",
+        "<div class='muted pctInfo'>Değer 0–100 arası olmalı. Örn: <b>15.5</b> → <b>%15,5</b></div>",
+        "</label>",
     ]
 
-    # BONUS % — İSTENEN YENİ SATIR (0–100 arası, yüzde biçiminde)
-    if _has(Model, "bonus_percent"):
-        form += [
-            "<label class='field span-12'>",
-            "<span>Bonus %</span>",
-            "<div class='pctRow'>",
-            f"<input class='pctInput' name='bonus_percent' type='number' inputmode='decimal' min='0' max='100' step='0.01' value='{val('bonus_percent')}' placeholder='örn: 15.5'>",
-            "<span class='pctSuffix'>%</span>",
-            "</div>",
-            "<div class='muted pctInfo'>Değer 0–100 arası olmalı. Örn: <b>15.5</b> → <b>%15,5</b></div>",
-            "</label>",
-        ]
-
-    # Tarihler — input + yanında 📅 düğmesi (klavye girişi de serbest)
+    # Tarihler — input + yanında 📅 düğmesi (klavye girişi serbest)
     form += [
         f"<label class='field span-6'><span>Başlangıç</span>"
         f"<div class='dateRow'>"
@@ -103,10 +100,8 @@ def render_daily_bonuses(
 
     # ---------------- TABLO ----------------
     t = ["<div class='card'><h1>Güne Özel Bonuslar</h1>"]
-    headers = "<tr><th>ID</th><th>Başlık</th><th>Durum</th><th>Başlangıç</th><th>Bitiş</th>"
-    if _has(Model, "bonus_percent"):
-        headers += "<th>Bonus %</th>"
-    headers += "<th>Görsel</th><th style='width:160px'>İşlem</th></tr>"
+    # Bonus % sütunu HER ZAMAN görünsün (modelde olmasa da '-' gösterir)
+    headers = "<tr><th>ID</th><th>Başlık</th><th>Durum</th><th>Başlangıç</th><th>Bitiş</th><th>Bonus %</th><th>Görsel</th><th style='width:160px'>İşlem</th></tr>"
     t.append("<div class='table-wrap'><table>" + headers)
 
     for r in rows:
@@ -115,13 +110,9 @@ def render_daily_bonuses(
             img = f"<img src='{_esc(r.image_url)}' alt='' loading='lazy' />"
         start_txt = _dt_input(getattr(r, "start_at", None)).replace("T", " ") or "-"
         end_txt = _dt_input(getattr(r, "end_at", None)).replace("T", " ") or "-"
-
-        if _has(Model, "bonus_percent"):
-            pct_val = getattr(r, "bonus_percent", None)
-            pct_txt = "-" if pct_val in (None, "") else f"{pct_val}%"
-            bonus_pct_td = f"<td>{_esc(str(pct_txt))}</td>"
-        else:
-            bonus_pct_td = ""
+        # Modelde alan yoksa getattr -> None döner; '-' basıyoruz
+        pct_val = getattr(r, "bonus_percent", None)
+        pct_txt = "-" if pct_val in (None, "") else f"{pct_val}%"
 
         t.append(
             f"<tr>"
@@ -130,7 +121,7 @@ def render_daily_bonuses(
             f"<td>{_esc(getattr(r,'status','-') or '-')}</td>"
             f"<td>{start_txt}</td>"
             f"<td>{end_txt}</td>"
-            f"{bonus_pct_td}"
+            f"<td>{_esc(str(pct_txt))}</td>"
             f"<td class='img'>{img}</td>"
             f"<td class='actions'>"
             f"<a class='btn neon small' href='/admin/turnuvabonus?tab={tab_key}&edit={r.id}' title='Düzenle'>Düzenle</a>"
@@ -166,10 +157,11 @@ def render_daily_bonuses(
       }
       .pickBtn:hover{ filter:brightness(1.08); }
 
-      /* BONUS % satırı */
+      /* BONUS % satırı (her zaman görünür) */
       .pctRow{ display:flex; align-items:center; gap:6px; }
       .pctInput{ flex:0 0 220px; min-width:180px; }
       .pctSuffix{ color:#cfe1ff; font-weight:800; }
+      .pctInfo{ margin-top:4px; }
 
       /* Tablo */
       .table-wrap{ overflow:auto; }
