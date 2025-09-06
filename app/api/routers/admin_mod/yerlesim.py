@@ -2,17 +2,6 @@
 from html import escape as _e
 from fastapi import Request
 
-# --- LOGO kaynağını CMS tarafındaki sabitten al (fallback'lı) ---
-try:
-    # En olası: home-banners sayfasında LOGO_URL tutuluyor
-    from app.api.routers.admin_mod.sayfalar.home_banners import LOGO_URL as CMS_LOGO_URL  # type: ignore
-except Exception:
-    try:
-        # Alternatif: cms.py altında olabilir
-        from app.api.routers.admin_mod.sayfalar.cms import LOGO_URL as CMS_LOGO_URL  # type: ignore
-    except Exception:
-        CMS_LOGO_URL = None  # Yoksa metin göster
-
 # ---------------- Flash API (değişmeden) ----------------
 def flash(request: Request, message: str, level: str = "info") -> None:
     message = _e(message)
@@ -35,9 +24,33 @@ def _render_flash_blocks(request: Request) -> str:
         return "notice"
     return "".join(f"<div class='{cls(m.get('level','info'))}'>{m['message']}</div>" for m in msgs)
 
+# ---------------- Logo URL (SiteConfig'ten oku) ----------------
+def _resolve_logo_url_from_db() -> str | None:
+    """
+    Logo URL'ünü CMS/SiteConfig tablosundan okur (key='logo_url').
+    Yerel değişken istemiyoruz; tek merkez: CMS.
+    """
+    try:
+        from app.db.session import get_db
+        from app.db.models import SiteConfig
+        gen = get_db()              # dependency generator
+        db = next(gen)              # Session
+        try:
+            row = db.get(SiteConfig, "logo_url")
+            url = (row.value_text or "").strip() if row else ""
+        finally:
+            # generator'ı kapat ki db.close() çalışsın
+            try:
+                gen.close()
+            except Exception:
+                pass
+        return url or None
+    except Exception:
+        return None
+
 # --------------- Menü (sol sidebar) ---------------------
 def _sidebar_links(active: str = "", is_super: bool = False) -> str:
-    # active paramı: "panel" | "kod" | "tb" | "home" | "users"
+    # active: "panel" | "kod" | "tb" | "home" | "users"
     items = [
         ("panel", "Dashboard",       "/admin"),
         ("kod",   "Kod Yönetimi",    "/admin/kod-yonetimi"),
@@ -58,12 +71,14 @@ def _sidebar_links(active: str = "", is_super: bool = False) -> str:
 # --------------- Kabuğu üret -----------------------------
 def _layout(body: str, title: str = "Yönetim", notice: str = "", active: str = "", is_super: bool = False) -> str:
     sidebar = _sidebar_links(active, is_super)
-    # Logo HTML: CMS_LOGO_URL varsa logo, yoksa metin
+    logo_url = _resolve_logo_url_from_db()
+    # Logo varsa göster; yoksa "YÖNETİM" yaz
     brand_html = (
-        f"<a href='/admin' class='brandLink'><img src='{_e(CMS_LOGO_URL)}' alt='Logo' class='brandLogo'></a>"
-        if CMS_LOGO_URL else
+        f"<a href='/admin' class='brandLink'><img src='{_e(logo_url)}' alt='Logo' class='brandLogo'></a>"
+        if logo_url else
         "YÖNETİM"
     )
+
     return f"""<!doctype html>
 <html lang="tr">
 <head>
