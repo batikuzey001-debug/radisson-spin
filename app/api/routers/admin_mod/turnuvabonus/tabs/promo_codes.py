@@ -15,7 +15,7 @@ def render_promo_codes(
     rows: list[Any],
     tab_key: str = "promo-codes",
 ) -> str:
-    title_text = "Yeni Kayıt" if not editing else f"Kayıt Düzenle (#{editing.id})"
+    title_text = "Yeni Promosyon" if not editing else f"Promosyon Düzenle (#{editing.id})"
     sub_text = "Promosyon Kodları"
     val = (lambda name, default="": _esc(getattr(editing, name, "") or default))
     current_cat = getattr(editing, "category", "") if editing else ""
@@ -26,43 +26,68 @@ def render_promo_codes(
         if editing else ""
     )
 
+    # ---------------- FORM (sade sıra + kupon kodu EN BAŞTA) ----------------
     form = [
         "<div class='card form-card'>",
         f"<div class='form-head'><div><h1>{_esc(title_text)}</h1><div class='sub'>{_esc(sub_text)}</div></div>"
         f"<div class='head-actions'>{cancel_edit_btn}</div></div>",
+
         f"<form method='post' action='/admin/turnuvabonus/{tab_key}/upsert' autocomplete='on'>",
         f"{f'<input type=\"hidden\" name=\"id\" value=\"{editing.id}\">' if editing else ''}",
+
         "<div class='grid'>",
-        f"<label class='field'><span>Başlık</span><input name='title' value='{val('title')}' required></label>",
-        f"<label class='field'><span>Kapak Görseli URL</span><input name='image_url' value='{val('image_url')}' placeholder='https://... veya /static/...'></label>",
-        f"<label class='field'><span>Başlangıç</span><input type='datetime-local' name='start_at' value='{_dt_input(getattr(editing,'start_at',None))}'></label>",
-        f"<label class='field'><span>Bitiş</span><input type='datetime-local' name='end_at' value='{_dt_input(getattr(editing,'end_at',None))}'></label>",
-        "<label class='field'><span>Kategori</span><select name='category'>",
-        f"<option value='' {'selected' if not current_cat else ''}>— Seçiniz —</option>",
     ]
+
+    # Kupon Kodu (en başta)
+    if _has(Model, "coupon_code"):
+        form.append(
+            f"<label class='field span-12'><span>Kupon Kodu</span>"
+            f"<input name='coupon_code' value='{val('coupon_code')}' placeholder='Örn: NEON50'></label>"
+        )
+
+    # Başlık
+    form.append(f"<label class='field span-12'><span>Başlık</span><input name='title' value='{val('title')}' required></label>")
+
+    # Kapak görseli
+    form.append(f"<label class='field span-12'><span>Kapak Görseli URL</span><input name='image_url' value='{val('image_url')}' placeholder='https://... veya /static/...'></label>")
+
+    # Tarihler — input + yanında 📅 düğmesi (klavye girişi de serbest)
+    form += [
+        f"<label class='field span-6'><span>Başlangıç</span>"
+        f"<div class='dateRow'>"
+        f"<input id='start_at_input' type='datetime-local' class='dateInput' name='start_at' value='{_dt_input(getattr(editing,'start_at',None))}'>"
+        f"<button type='button' class='pickBtn' data-for='start_at_input' title='Tarih seç'>📅</button>"
+        f"</div></label>",
+
+        f"<label class='field span-6'><span>Bitiş</span>"
+        f"<div class='dateRow'>"
+        f"<input id='end_at_input' type='datetime-local' class='dateInput' name='end_at' value='{_dt_input(getattr(editing,'end_at',None))}'>"
+        f"<button type='button' class='pickBtn' data-for='end_at_input' title='Tarih seç'>📅</button>"
+        f"</div></label>",
+    ]
+
+    # Kategori / Durum
+    form.append("<label class='field span-6'><span>Kategori</span><select name='category'>")
+    form.append(f"<option value='' {'selected' if not current_cat else ''}>— Seçiniz —</option>")
     for v, txt in CATEGORY_OPTIONS:
         sel = "selected" if str(current_cat) == v else ""
         form.append(f"<option value='{_esc(v)}' {sel}>{_esc(txt)}</option>")
     form.append("</select></label>")
 
-    form.append("<label class='field'><span>Durum</span><select name='status'>")
+    form.append("<label class='field span-6'><span>Durum</span><select name='status'>")
     for s in ("draft", "published"):
         sel = "selected" if status_now == s else ""
         form.append(f"<option value='{s}' {sel}>{'Yayında' if s=='published' else 'Taslak'}</option>")
     form.append("</select></label>")
 
-    if _has(Model, "cta_url"):
-        form.append(f"<label class='field'><span>Buton Bağlantısı</span><input name='cta_url' value='{val('cta_url')}' placeholder='https://... veya /sayfa'></label>")
-    if _has(Model, "coupon_code"):
-        form.append(f"<label class='field'><span>Kupon Kodu</span><input name='coupon_code' value='{val('coupon_code')}' placeholder='Örn: NEON50'></label>")
-
+    # Opsiyonel açıklamalar
     if _has(Model, "short_desc"):
-        form.append(f"<label class='field'><span>Kısa Açıklama</span><textarea name='short_desc' rows='2' placeholder='Kart üzerinde kısa açıklama...'>{val('short_desc')}</textarea></label>")
+        form.append(f"<label class='field span-12'><span>Kısa Açıklama</span><textarea name='short_desc' rows='2' placeholder='Kart üzerinde kısa açıklama...'>{val('short_desc')}</textarea></label>")
     if _has(Model, "long_desc"):
-        form.append(f"<label class='field'><span>Detay Açıklama</span><textarea name='long_desc' rows='4' placeholder='Detaylar...'>{val('long_desc')}</textarea></label>")
+        form.append(f"<label class='field span-12'><span>Detay Açıklama</span><textarea name='long_desc' rows='4' placeholder='Detaylar...'>{val('long_desc')}</textarea></label>")
 
     form.extend([
-        "</div>",
+        "</div>",  # grid
         "<div class='form-actions'>"
         "<button class='btn primary' type='submit'>Kaydet</button>"
         f"{cancel_edit_btn}"
@@ -70,6 +95,7 @@ def render_promo_codes(
         "</form></div>",
     ])
 
+    # ---------------- TABLO ----------------
     t = ["<div class='card'><h1>Promosyon Kodları</h1>"]
     headers = "<tr><th>ID</th><th>Başlık</th><th>Kupon</th><th>Durum</th><th>Başlangıç</th><th>Bitiş</th><th>Görsel</th><th style='width:180px'>İşlem</th></tr>"
     t.append("<div class='table-wrap'><table>" + headers)
@@ -102,4 +128,48 @@ def render_promo_codes(
         )
     t.append("</table></div></div>")
 
-    return "".join(form) + "".join(t)
+    # Tarih picker görünürlüğü + ikon butonu (klavye giriş serbest)
+    style_js = """
+    <style>
+      .field input, .field select, .field textarea{
+        border:1px solid var(--line, #1c1f28);
+        background:#0b0d13; color:#fff; padding:10px;
+      }
+      .field input:focus, .field select:focus, .field textarea:focus{
+        outline:none; box-shadow:none; border-color:var(--line, #1c1f28);
+      }
+
+      .dateRow{ display:flex; align-items:center; gap:6px; }
+      .dateInput{ flex:1 1 auto; }
+
+      /* WebKit ikonunu belirginleştir (koyu zemin) */
+      input[type="datetime-local"]::-webkit-calendar-picker-indicator{
+        opacity:1; filter: invert(1) brightness(1.4); cursor:pointer;
+      }
+
+      /* Yan "📅" butonu */
+      .pickBtn{
+        padding:8px 10px; border:1px solid var(--line, #1c1f28);
+        background:#111523; color:#fff; cursor:pointer;
+      }
+      .pickBtn:hover{ filter:brightness(1.08); }
+    </style>
+    <script>
+      // "📅" butonu → tarayıcı destekliyse showPicker; değilse focus
+      (function(){
+        try{
+          document.querySelectorAll('.pickBtn').forEach(function(btn){
+            btn.addEventListener('click', function(){
+              var id = btn.getAttribute('data-for');
+              var el = id ? document.getElementById(id) : null;
+              if(!el) return;
+              try{ if (el.showPicker) { el.showPicker(); return; } }catch(e){}
+              el.focus();
+            });
+          });
+        }catch(e){}
+      })();
+    </script>
+    """
+
+    return "".join(form) + "".join(t) + style_js
