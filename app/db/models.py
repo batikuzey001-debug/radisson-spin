@@ -92,7 +92,7 @@ class AdminUser(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
 
 # --- FEED MODELLERİ (Turnuva + diğerleri) ---
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, JSON
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, JSON, Numeric  # ✅ Numeric eklendi
 from datetime import datetime, timezone
 def _utcnow(): return datetime.now(timezone.utc)
 
@@ -106,7 +106,8 @@ class Tournament(Base):
     long_desc     = Column(Text)
     image_url     = Column(String(512), nullable=False)
     banner_url    = Column(String(512))
-    cta_url       = Column(String(512))
+    cta_text      = Column(String(128))          # ✅ eklendi
+    cta_url       = Column(String(512))          # mevcuttu
     status        = Column(String(20), default="draft")
     start_at      = Column(DateTime(timezone=True))
     end_at        = Column(DateTime(timezone=True))
@@ -137,6 +138,10 @@ class DailyBonus(Base):
     accent_color = Column(String(16))
     bg_color     = Column(String(16))
     variant      = Column(String(24))
+    # ✅ yeni alanlar
+    bonus_percent = Column(Numeric(6, 2))        # % alanı (0–100.00)
+    cta_text      = Column(String(128))
+    cta_url       = Column(String(512))
     created_at = Column(DateTime(timezone=True), default=_utcnow)
     updated_at = Column(DateTime(timezone=True), default=_utcnow)
 
@@ -155,7 +160,8 @@ class PromoCode(Base):
     bg_color     = Column(String(16))
     variant      = Column(String(24))
     coupon_code  = Column(String(64))
-    cta_url      = Column(String(512))
+    cta_text     = Column(String(128))           # ✅ eklendi
+    cta_url      = Column(String(512))           # mevcuttu
     created_at = Column(DateTime(timezone=True), default=_utcnow)
     updated_at = Column(DateTime(timezone=True), default=_utcnow)
 
@@ -173,7 +179,10 @@ class Event(Base):
     accent_color = Column(String(16))
     bg_color     = Column(String(16))
     variant      = Column(String(24))
-    prize_amount = Column(Integer)   # ← EKLENDİ: Etkinlik ödül miktarı (₺)
+    prize_amount = Column(Integer)               # Etkinlik ödül miktarı (₺)
+    # ✅ yeni alanlar
+    cta_text     = Column(String(128))
+    cta_url      = Column(String(512))
     created_at = Column(DateTime(timezone=True), default=_utcnow)
     updated_at = Column(DateTime(timezone=True), default=_utcnow)
 
