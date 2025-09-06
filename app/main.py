@@ -245,6 +245,20 @@ def on_startup() -> None:
               END IF;
             END $$;""")
 
+            # >>> EK: promo_codes.participant_count (yoksa ekle)
+            _run_safe(conn, """
+            DO $$
+            BEGIN
+              IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='promo_codes') THEN
+                IF NOT EXISTS (
+                  SELECT 1 FROM information_schema.columns
+                  WHERE table_name='promo_codes' AND column_name='participant_count'
+                ) THEN
+                  EXECUTE 'ALTER TABLE promo_codes ADD COLUMN participant_count INTEGER';
+                END IF;
+              END IF;
+            END $$;""")
+
             # events.prize_amount (yoksa ekle)
             _run_safe(conn, """
             DO $$
