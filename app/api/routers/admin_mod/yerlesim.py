@@ -35,7 +35,7 @@ def _sidebar_links(active: str = "", is_super: bool = False) -> str:
     ]
     if is_super:
         items.append(("users", "Adminler", "/admin/users"))
-    items.append(("logout", "Çıkış", "/admin/logout"))
+    # !!! Çıkış artık burada yok !!!
 
     out = ["<nav class='sideNav' role='navigation' aria-label='Admin menü'>"]
     for key, label, href in items:
