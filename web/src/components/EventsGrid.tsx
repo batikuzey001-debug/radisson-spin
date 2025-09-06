@@ -1,5 +1,5 @@
 // web/src/components/EventsGrid.tsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type EventCard = {
   id: number | string;
@@ -23,11 +23,20 @@ const fmtDate = (iso?: string | null) => {
   if (!iso) return "";
   try {
     const d = new Date(iso);
-    return d.toLocaleString("tr-TR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-  } catch { return iso || ""; }
+    return d.toLocaleString("tr-TR", {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso || "";
+  }
 };
 
-function pad2(n: number) { return String(n).padStart(2, "0"); }
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
+}
 function fmtT(total: number) {
   const hh = Math.floor(total / 3600);
   const mm = Math.floor((total % 3600) / 60);
@@ -39,25 +48,52 @@ function fmtT(total: number) {
 function toneOf(cat?: string | null) {
   const k = (cat || "all").toLowerCase();
   switch (k) {
-    case "sports":      return { label: "SPOR",        t1: "#23e06c", t2: "#14c15a" };
-    case "live-casino": return { label: "CANLI",       t1: "#ff3b3b", t2: "#ff6b6b" };
-    case "slots":       return { label: "SLOT",        t1: "#f7c948", t2: "#f59e0b" };
-    case "other":       return { label: "ÖZEL",        t1: "#bb86fc", t2: "#7c3aed" };
+    case "sports":
+      return { label: "SPOR", t1: "#23e06c", t2: "#14c15a" };
+    case "live-casino":
+      return { label: "CANLI", t1: "#ff3b3b", t2: "#ff6b6b" };
+    case "slots":
+      return { label: "SLOT", t1: "#f7c948", t2: "#f59e0b" };
+    case "other":
+      return { label: "ÖZEL", t1: "#bb86fc", t2: "#7c3aed" };
     case "all":
-    default:            return { label: "HEPSİ",       t1: "#06d6ff", t2: "#118ab2" };
+    default:
+      return { label: "HEPSİ", t1: "#06d6ff", t2: "#118ab2" };
   }
+}
+
+/** Güvenli sLeft hesabı (her saniye canlı azalır)
+ *  Tercih sırası:
+ *  1) start_at varsa -> start_at - now
+ *  2) yoksa seconds_to_start - elapsed (mount'tan beri)
+ */
+function calcSecondsLeft(ev: EventCard, nowMs: number, mountMs: number) {
+  if (ev.state !== "upcoming") return 0;
+  const startMs = ev.start_at ? Date.parse(ev.start_at) : NaN;
+  if (Number.isFinite(startMs)) {
+    return Math.max(0, Math.floor((startMs - nowMs) / 1000));
+  }
+  const base = typeof ev.seconds_to_start === "number" ? ev.seconds_to_start : 0;
+  const elapsed = Math.floor((nowMs - mountMs) / 1000);
+  return Math.max(0, base - elapsed);
 }
 
 export default function EventsGrid() {
   const [items, setItems] = useState<EventCard[]>([]);
   const [err, setErr] = useState("");
-  const [tick, setTick] = useState(0);
+  // Canlı sayaç için anlık zaman
+  const [now, setNow] = useState<number>(Date.now());
+  const mountAtRef = useRef<number>(Date.now());
 
+  // Veri çek
   useEffect(() => {
     let live = true;
     (async () => {
       try {
-        const r = await fetch(`${API}/api/events/active?limit=12&include_future=1`, { cache: "no-store" });
+        const r = await fetch(
+          `${API}/api/events/active?limit=12&include_future=1`,
+          { cache: "no-store" }
+        );
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const js = (await r.json()) as EventCard[];
         if (live) setItems(Array.isArray(js) ? js : []);
@@ -67,40 +103,56 @@ export default function EventsGrid() {
         if (live) setItems([]);
       }
     })();
-    return () => { live = false; };
+    return () => {
+      live = false;
+    };
   }, []);
 
+  // Her saniye yenile (sayaç için)
   useEffect(() => {
-    if (!items.length) return;
-    const t = setInterval(() => setTick(v => v + 1), 1000);
+    const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
-  }, [items.length]);
+  }, []);
 
-  const rows = useMemo(() => items, [items, tick]);
+  // Re-render için memo
+  const rows = useMemo(() => items, [items, now]);
 
   return (
     <section className="evWrap">
       <div className="evHead">
-        <h2><span className="tag">⚽</span> Etkinlikler</h2>
+        <h2>
+          <span className="tag">⚽</span> Etkinlikler
+        </h2>
         <div className="headGlow" aria-hidden />
         {err && !rows.length && <span className="muted">{err}</span>}
-        {!err && !rows.length && <span className="muted">Şu an gösterilecek etkinlik yok.</span>}
+        {!err && !rows.length && (
+          <span className="muted">Şu an gösterilecek etkinlik yok.</span>
+        )}
       </div>
 
       {rows.length > 0 && (
         <div className="evList">
-          {rows.map(ev => {
+          {rows.map((ev) => {
             const tone = toneOf(ev.category);
             const isUpcoming = ev.state === "upcoming";
-            const sLeft = Math.max(0, Math.floor(ev.seconds_to_start ?? 0));
 
-            const prizeText = typeof ev.prize_amount === "number" ? fmtTL(ev.prize_amount) : "";
+            // CANLI geri sayım
+            const sLeft = isUpcoming
+              ? calcSecondsLeft(ev, now, mountAtRef.current)
+              : 0;
 
-            const display = isUpcoming && sLeft > 0 ? fmtT(sLeft) : prizeText;
+            const prizeText =
+              typeof ev.prize_amount === "number" ? fmtTL(ev.prize_amount) : "";
 
-            const counterClass = isUpcoming && sLeft > 0
-              ? (sLeft < 3600 ? "red" : "yellow")
-              : "on";
+            const display =
+              isUpcoming && sLeft > 0 ? fmtT(sLeft) : prizeText;
+
+            const counterClass =
+              isUpcoming && sLeft > 0
+                ? sLeft < 3600
+                  ? "red"
+                  : "yellow"
+                : "on";
 
             const endPretty = ev.end_at ? fmtDate(ev.end_at) : "";
 
@@ -116,16 +168,26 @@ export default function EventsGrid() {
                 }
               >
                 <span className="stripe" aria-hidden />
-                <header className="evMedia" style={{ ["--img" as any]: `url('${ev.image_url || ""}')` }}>
+                <header
+                  className="evMedia"
+                  style={{ ["--img" as any]: `url('${ev.image_url || ""}')` }}
+                >
                   <span className="evRibbon" aria-label={tone.label}>
                     <span className="ribTxt">{tone.label}</span>
                   </span>
                 </header>
 
                 <div className="evBody">
-                  <h3 className="evTitle" title={ev.title}>{ev.title}</h3>
+                  <h3 className="evTitle" title={ev.title}>
+                    {ev.title}
+                  </h3>
                   <div className="evTimer">
-                    <div className={`evBadge ${counterClass}`} aria-live="polite">{display}</div>
+                    <div
+                      className={`evBadge ${counterClass}`}
+                      aria-live="polite"
+                    >
+                      {display}
+                    </div>
                   </div>
                   <div className="evScan" />
                   {endPretty && (
