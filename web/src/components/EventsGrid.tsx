@@ -11,7 +11,7 @@ type EventCard = {
   state: "active" | "upcoming";
   seconds_left?: number | null;
   seconds_to_start?: number | null;
-  prize_amount?: number | null;          // ÖDÜL — vurgulu gösterilecek
+  prize_amount?: number | null;          // ÖDÜL — rozet alanında gösterilecek
 };
 
 const API = import.meta.env.VITE_API_BASE_URL;
@@ -94,18 +94,18 @@ export default function EventsGrid() {
             const tone = toneOf(ev.category);
             const isUpcoming = ev.state === "upcoming";
             const sLeft = Math.max(0, Math.floor(ev.seconds_to_start ?? 0));
-            const counterClass = isUpcoming
+
+            // Rozette gösterilecek metin:
+            // - upcoming & sLeft>0 -> geri sayım
+            // - diğer tüm durumlarda -> ÖDÜL (aktif yazısı kaldırıldı)
+            const prizeBig = typeof ev.prize_amount === "number" ? fmtTL(ev.prize_amount) : "";
+            const display = isUpcoming && sLeft > 0 ? fmtT(sLeft) : (prizeBig || "");
+
+            // Renk sınıfı (sayaç için)
+            const counterClass = isUpcoming && sLeft > 0
               ? (sLeft < 3600 ? "red" : "yellow")
               : "on";
 
-            const display = isUpcoming && sLeft > 0
-              ? fmtT(sLeft)
-              : "AKTİF";
-
-            /* ÖDÜL — çerçeveden ayrı, büyük ve dikkat çekici (başlığın üstünde) */
-            const prize = typeof ev.prize_amount === "number" ? fmtTL(ev.prize_amount) : null;
-
-            /* Bitiş tarihi — daha belirgin (sağ altta rozet) */
             const endPretty = ev.end_at ? fmtDate(ev.end_at) : "";
 
             return (
@@ -122,9 +122,8 @@ export default function EventsGrid() {
                 {/* Sol kategori tonunda akan LED şerit */}
                 <span className="stripe" aria-hidden />
 
-                {/* Üst görsel */}
+                {/* Üst görsel + kurdele */}
                 <header className="evMedia" style={{ ["--img" as any]: `url('${ev.image_url || ""}')` }}>
-                  {/* Sağ üst kurdele (kategori renkte) */}
                   <span className="evRibbon" aria-label={tone.label}>
                     <span className="ribTxt">{tone.label}</span>
                   </span>
@@ -132,20 +131,19 @@ export default function EventsGrid() {
 
                 {/* Gövde */}
                 <div className="evBody">
-                  {/* ÖDÜL — en üstte büyük gradient metin */}
-                  {prize && <div className="evPrize" title={prize}>{prize}</div>}
-
                   <h3 className="evTitle" title={ev.title}>{ev.title}</h3>
 
-                  {/* Sayaç/AKTİF rozeti */}
+                  {/* Rozet alanı: sayaç veya ÖDÜL (büyük) */}
                   <div className="evTimer">
-                    <div className={`evBadge ${counterClass}`} aria-live="polite">{display}</div>
+                    <div className={`evBadge ${counterClass}`} aria-live="polite">
+                      {display}
+                    </div>
                   </div>
 
                   {/* Tarama çizgisi */}
                   <div className="evScan" />
 
-                  {/* Alt satır: Bitiş tarihi rozet – daha belirgin */}
+                  {/* Bitiş tarihi rozet — belirgin */}
                   {endPretty && (
                     <div className="evEnd">
                       <span className="endTag">Bitiş</span>
@@ -169,7 +167,7 @@ const css = `
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@700;800;900&family=Rajdhani:wght@700;800;900&display=swap');
 
 :root{
-  --radius:18px; --txt:#eaf2ff; --muted:#9fb3d9;
+  --radius:18px; --txt:#eaf2ff; --muted:#9fb1cc;
   --bg1:#0f162b; --bg2:#0a1224;
 }
 
@@ -184,7 +182,7 @@ const css = `
 .evHead .headGlow{position:absolute; left:0; right:0; bottom:-6px; height:2px; border-radius:2px;
   background:linear-gradient(90deg, transparent, rgba(35,224,108,.85), transparent);
   box-shadow:0 0 18px rgba(35,224,108,.55);}
-.muted{color:#9fb1cc;font-size:13px}
+.muted{color:var(--muted);font-size:13px}
 
 /* Liste — QuickBonus ile aynı boy */
 .evList{display:flex; flex-wrap:wrap; gap:16px 16px; justify-content:flex-start; align-content:flex-start;
@@ -227,21 +225,14 @@ const css = `
 .evBody{padding:10px 12px 12px; text-align:center; position:relative; z-index:1}
 .evTitle{margin:4px 0 6px; color:var(--txt); font-weight:900; font-size:15px}
 
-/* ÖDÜL — büyük gradient metin (çerçeve dışı) */
-.evPrize{
-  margin:6px 0 2px;
-  font-family:Rajdhani,system-ui,sans-serif; font-weight:900; font-size:28px; letter-spacing:.6px;
-  background:linear-gradient(90deg,var(--t1),var(--t2)); -webkit-background-clip:text; background-clip:text;
-  -webkit-text-fill-color:transparent;
-  text-shadow:0 0 16px color-mix(in oklab, var(--t1) 50%, transparent);
-}
-
-/* Sayaç/AKTİF rozet */
+/* Rozet alanı: sayaç veya ÖDÜL (büyük) */
 .evTimer{margin:2px 0 6px}
-.evBadge{font-family:Rajdhani,sans-serif; font-weight:900; font-size:26px; letter-spacing:1.2px; color:#f2f7ff;
+.evBadge{
+  font-family:Rajdhani,sans-serif; font-weight:900; font-size:26px; letter-spacing:1.2px; color:#f2f7ff;
   display:inline-block; padding:10px 12px; border-radius:12px; min-width:140px;
-  background:linear-gradient(180deg,#0f1730,#0d1428); border:1px solid #202840}
-.evBadge.on{ text-shadow:0 0 14px color-mix(in oklab, var(--t1) 60%, transparent)}
+  background:linear-gradient(180deg,#0f1730,#0d1428); border:1px solid #202840
+}
+.evBadge.on{ text-shadow:0 0 14px color-mix(in oklab, var(--t1) 60%, transparent) } /* ÖDÜL görünümü */
 .evBadge.yellow{color:#fff3c2; text-shadow:0 0 12px #ffda6b,0 0 22px #ffb300}
 .evBadge.red{color:#ffdada; text-shadow:0 0 14px #ff5c5c,0 0 28px #ff2e2e; animation:redPulse 1.4s ease-in-out infinite}
 @keyframes redPulse{0%,100%{opacity:1}50%{opacity:.55}}
