@@ -26,7 +26,7 @@ def render_promo_codes(
         if editing else ""
     )
 
-    # ---------------- FORM (Kupon en başta + CTA Metni/Linki + görünür tarih picker) ----------------
+    # ---------------- FORM (Kupon en başta + CTA Metni/Linki + Max kişi + görünür tarih picker) ----------------
     form = [
         "<div class='card form-card'>",
         f"<div class='form-head'><div><h1>{_esc(title_text)}</h1><div class='sub'>{_esc(sub_text)}</div></div>"
@@ -61,7 +61,18 @@ def render_promo_codes(
         )
 
     # Kapak görseli
-    form.append(f"<label class='field span-12'><span>Kapak Görseli URL</span><input name='image_url' value='{val('image_url')}' placeholder='https://... veya /static/...'></label>")
+    form.append(
+        f"<label class='field span-12'><span>Kapak Görseli URL</span>"
+        f"<input name='image_url' value='{val('image_url')}' placeholder='https://... veya /static/...'></label>"
+    )
+
+    # ✅ Max kişi sayısı (modelde participant_count varsa)
+    if _has(Model, "participant_count"):
+        form.append(
+            f"<label class='field span-6'><span>Max Kişi Sayısı</span>"
+            f"<input name='participant_count' type='number' inputmode='numeric' min='0' step='1' "
+            f"value='{val('participant_count')}' placeholder='örn: 5000'></label>"
+        )
 
     # Tarihler — input + yanında 📅 düğmesi (klavye de serbest)
     form += [
@@ -107,9 +118,9 @@ def render_promo_codes(
         "</form></div>",
     ])
 
-    # ---------------- TABLO (CTA Metni/Linki sütunları eklendi) ----------------
+    # ---------------- TABLO (CTA Metni/Linki + Max kişi) ----------------
     t = ["<div class='card'><h1>Promosyon Kodları</h1>"]
-    headers = "<tr><th>ID</th><th>Başlık</th><th>Kupon</th><th>CTA Metni</th><th>CTA Linki</th><th>Durum</th><th>Başlangıç</th><th>Bitiş</th><th>Görsel</th><th style='width:180px'>İşlem</th></tr>"
+    headers = "<tr><th>ID</th><th>Başlık</th><th>Kupon</th><th>CTA Metni</th><th>CTA Linki</th><th>Max Kişi</th><th>Durum</th><th>Başlangıç</th><th>Bitiş</th><th>Görsel</th><th style='width:180px'>İşlem</th></tr>"
     t.append("<div class='table-wrap'><table>" + headers)
 
     for r in rows:
@@ -121,6 +132,8 @@ def render_promo_codes(
         kupon = _esc(getattr(r, "coupon_code", "") or "-")
         cta_text = getattr(r, "cta_text", None) or "-"
         cta_url  = getattr(r, "cta_url",  None) or "-"
+        max_kisi = getattr(r, "participant_count", None)
+        max_kisi_txt = "-" if max_kisi in (None, "") else _esc(str(max_kisi))
 
         t.append(
             f"<tr>"
@@ -129,6 +142,7 @@ def render_promo_codes(
             f"<td><code>{kupon}</code></td>"
             f"<td>{_esc(cta_text)}</td>"
             f"<td>{_esc(cta_url)}</td>"
+            f"<td>{max_kisi_txt}</td>"
             f"<td>{_esc(getattr(r,'status','-') or '-')}</td>"
             f"<td>{start_txt}</td>"
             f"<td>{end_txt}</td>"
@@ -157,13 +171,10 @@ def render_promo_codes(
 
       .dateRow{ display:flex; align-items:center; gap:6px; }
       .dateInput{ flex:1 1 auto; }
-
-      /* WebKit ikonunu belirginleştir (koyu zemin) */
       input[type="datetime-local"]::-webkit-calendar-picker-indicator{
         opacity:1; filter: invert(1) brightness(1.4); cursor:pointer;
       }
 
-      /* Yan "📅" butonu */
       .pickBtn{
         padding:8px 10px; border:1px solid var(--line, #1c1f28);
         background:#111523; color:#fff; cursor:pointer;
@@ -171,13 +182,12 @@ def render_promo_codes(
       .pickBtn:hover{ filter:brightness(1.08); }
 
       .table-wrap{ overflow:auto; }
-      table{ width:100%; border-collapse:collapse; min-width:960px; }
+      table{ width:100%; border-collapse:collapse; min-width:1040px; }
       th,td{ padding:8px 6px; border-bottom:1px solid var(--line); white-space:nowrap; text-align:left; }
       th{ font-size:12px; color:#9aa3b7; text-transform:uppercase; }
       .img img{ height:26px; display:block }
     </style>
     <script>
-      // "📅" butonu → tarayıcı destekliyse showPicker; değilse focus
       (function(){
         try{
           document.querySelectorAll('.pickBtn').forEach(function(btn){
