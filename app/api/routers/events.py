@@ -44,7 +44,8 @@ async def get_active_events(
     Sıralama: pinned/priority -> (active önce) -> en yakın bitecek/başlayacak -> başlık
     Dönen alanlar: id, title, image_url, start_at, end_at, category, state,
                    seconds_left (active), seconds_to_start (upcoming),
-                   accent_color, bg_color, priority, is_pinned, prize_amount
+                   accent_color, bg_color, priority, is_pinned, prize_amount,
+                   cta_text, cta_url
     """
     now = _utcnow()
 
@@ -98,6 +99,9 @@ async def get_active_events(
             "priority": getattr(r, "priority", 0),
             "is_pinned": bool(getattr(r, "is_pinned", False)),
             "prize_amount": int(getattr(r, "prize_amount", 0)) if getattr(r, "prize_amount", None) is not None else None,
+            # ✅ CTA alanları
+            "cta_text": getattr(r, "cta_text", None),
+            "cta_url": getattr(r, "cta_url", None),
         })
 
     for r in future:
@@ -116,6 +120,9 @@ async def get_active_events(
             "priority": getattr(r, "priority", 0),
             "is_pinned": bool(getattr(r, "is_pinned", False)),
             "prize_amount": int(getattr(r, "prize_amount", 0)) if getattr(r, "prize_amount", None) is not None else None,
+            # ✅ CTA alanları
+            "cta_text": getattr(r, "cta_text", None),
+            "cta_url": getattr(r, "cta_url", None),
         })
 
     # sıralama
