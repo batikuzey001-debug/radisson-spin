@@ -3,11 +3,11 @@ import { useEffect, useRef, useState } from "react";
 import { type PromoActive } from "../api/promos";
 
 /**
- * QuickBonus — Promo Kodlar (Sayaç → Kod Reveal + Kopyala + Parlama)
- * - Upcoming: sayaç görünür; 0 olduğunda aynı alanda KOD gösterilir (reveal flash).
- * - Active: doğrudan KOD gösterilir.
- * - Kopyala butonu yalnızca kod varken görünür.
- * - Küçük kartlar, aqua LED sol şerit (kayan), state/yeşil nokta yok.
+ * QuickBonus — Promo Kodlar
+ * - Upcoming: sayaç (sarı); 0 olduğunda kod + flash + kopyala.
+ * - Active: doğrudan kod.
+ * - Son 1 saat kala: kırmızı yanıp söner.
+ * - Tasarım: küçük kartlar (240px), aqua LED şerit + kayan efekt.
  */
 
 type PromoEx = PromoActive & {
@@ -21,7 +21,6 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
   const [rows, setRows] = useState<PromoEx[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
-  // reveal anında 1.2s'lik parlama için id -> timestamp
   const [flashIds, setFlashIds] = useState<Record<string, number>>({});
   const prevSecsRef = useRef<Record<string, number>>({});
 
@@ -42,12 +41,10 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
     const t = setInterval(() => {
       setRows(prev => prev.map(p => {
         if (p.state === "upcoming" && p.seconds_to_start != null) {
-          const next = Math.max(0, p.seconds_to_start - 1);
-          return next !== p.seconds_to_start ? { ...p, seconds_to_start: next } : p;
+          return { ...p, seconds_to_start: Math.max(0, p.seconds_to_start - 1) };
         }
         if (p.state === "active" && p.seconds_left != null) {
-          const next = Math.max(0, p.seconds_left - 1);
-          return next !== p.seconds_left ? { ...p, seconds_left: next } : p;
+          return { ...p, seconds_left: Math.max(0, p.seconds_left - 1) };
         }
         return p;
       }));
@@ -55,7 +52,7 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
     return () => clearInterval(t);
   }, [rows.length]);
 
-  // reveal anını yakala (upcoming sec>0 → 0 olduğunda)
+  // reveal flash
   useEffect(() => {
     const toFlash: string[] = [];
     rows.forEach(p => {
@@ -75,7 +72,6 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
         const next = { ...prev };
         toFlash.forEach(id => {
           next[id] = now;
-          // 1.2s sonra sınıfı kaldır
           setTimeout(() => {
             setFlashIds(cur => {
               const c = { ...cur };
@@ -113,7 +109,14 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
             const img = p.image_url || "https://images.unsplash.com/photo-1519741497674-611481863552?q=80&w=1600&auto=format&fit=crop";
             const maxText = p.priority != null ? trNum(p.priority) : undefined;
             const idStr = String(p.id);
-            const doFlash = !!flashIds[idStr] && !showCountdown; // sadece yeni gösterimde
+            const doFlash = !!flashIds[idStr] && !showCountdown;
+
+            // countdown renk sınıfı
+            let countdownClass = "wait";
+            if (showCountdown) {
+              if ((p.seconds_to_start ?? 0) < 3600) countdownClass = "red";
+              else countdownClass = "yellow";
+            }
 
             return (
               <article className="spx-card" key={idStr}>
@@ -122,19 +125,12 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
                   <h3 className="spx-title" title={p.title ?? "Promo Kod"}>{p.title ?? "Promo Kod"}</h3>
 
                   <div className="spx-timer">
-                    <div className={`codeRow`}>
-                      <div className={`spx-code ${showCountdown ? "wait" : "on"} ${doFlash ? "revealFlash" : ""}`} aria-live="polite">
+                    <div className="codeRow">
+                      <div className={`spx-code ${showCountdown ? countdownClass : "on"} ${doFlash ? "revealFlash" : ""}`} aria-live="polite">
                         {displayText}
                       </div>
                       {!showCountdown && codeText ? (
-                        <button
-                          className="copyBtn"
-                          onClick={() => copyToClipboard(codeText)}
-                          aria-label="Kodu kopyala"
-                          title="Kopyala"
-                        >
-                          Kopyala
-                        </button>
+                        <button className="copyBtn" onClick={() => copyToClipboard(codeText)}>Kopyala</button>
                       ) : null}
                     </div>
                   </div>
@@ -148,12 +144,7 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
                   )}
 
                   {p.cta_url ? (
-                    <a className="spx-cta" href={p.cta_url} target="_blank" rel="nofollow noreferrer">
-                      Katıl
-                      <svg viewBox="0 0 24 24" className="spx-ic" aria-hidden="true">
-                        <path fill="currentColor" d="M9.2 16.7 9 20.7c.4 0 .6-.2.9-.4l2.1-1.7 4.3 3.1c.8.4 1.4.2 1.6-.8l2.9-13.6c.3-1.1-.4-1.6-1.2-1.3L2.7 9.9c-1 .4-1 1 0 1.3l4.9 1.5L18 6.9c.5-.3.9-.1.5.2l-9.3 8.3Z"/>
-                      </svg>
-                    </a>
+                    <a className="spx-cta" href={p.cta_url} target="_blank" rel="nofollow noreferrer">Katıl</a>
                   ) : null}
                 </div>
               </article>
@@ -177,20 +168,7 @@ function formatCountdown(s: number) {
   return `${pad(hh)}:${pad(mm)}:${pad(ss)}`;
 }
 async function copyToClipboard(text: string) {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    // Eski tarayıcılar için fallback
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    ta.setAttribute("readonly", "");
-    ta.style.position = "absolute";
-    ta.style.left = "-9999px";
-    document.body.appendChild(ta);
-    ta.select();
-    try { document.execCommand("copy"); } catch { /* ignore */ }
-    document.body.removeChild(ta);
-  }
+  try { await navigator.clipboard.writeText(text); } catch { /* fallback */ }
 }
 function trNum(v: any) {
   try {
@@ -208,15 +186,8 @@ function Skeleton() {
           <header className="spx-media" />
           <div className="spx-body">
             <h3 className="spx-title" style={{ opacity: 0.4 }}>Yükleniyor…</h3>
-            <div className="spx-timer">
-              <div className="codeRow">
-                <div className="spx-code wait">--:--:--</div>
-                <button className="copyBtn" disabled>Kopyala</button>
-              </div>
-            </div>
+            <div className="spx-timer"><div className="spx-code wait">--:--:--</div></div>
             <div className="spx-scan" />
-            <div className="spx-limit"><span>Max:</span> <b>—</b></div>
-            <a className="spx-cta" href="#" onClick={e=>e.preventDefault()}>Katıl</a>
           </div>
         </article>
       ))}
@@ -235,8 +206,6 @@ const css = `
 }
 
 .bonusSec{margin:16px 0}
-
-/* Başlık */
 .bonusHead{position:relative; display:flex; align-items:center; gap:12px; margin-bottom:12px}
 .bonusHead h2{
   margin:0; font-size:20px; color:#eaf2ff; font-weight:900; letter-spacing:.3px;
@@ -244,123 +213,79 @@ const css = `
 }
 .bonusHead .tag{display:inline-grid; place-items:center; width:26px; height:26px; border-radius:8px;
   background:linear-gradient(180deg, rgba(0,229,255,.25), rgba(0,179,255,.15)); box-shadow:0 0 18px rgba(0,229,255,.35)}
-.headGlow{
-  position:absolute; left:0; right:0; bottom:-6px; height:2px; border-radius:2px;
+.headGlow{position:absolute; left:0; right:0; bottom:-6px; height:2px; border-radius:2px;
   background:linear-gradient(90deg, transparent, rgba(0,229,255,.85), transparent);
-  box-shadow:0 0 18px rgba(0,229,255,.55);
-}
+  box-shadow:0 0 18px rgba(0,229,255,.55);}
 .muted{color:#9fb1cc;font-size:13px}
 
-/* Container (SOL HİZALI) */
-.spx-wrap{
-  width:100%;
-  display:flex; flex-wrap:wrap; gap:16px 16px;
-  justify-content:flex-start; align-content:flex-start;
-  font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif
-}
+/* Container */
+.spx-wrap{width:100%; display:flex; flex-wrap:wrap; gap:16px 16px; justify-content:flex-start; align-content:flex-start;
+  font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
 
-/* Card — küçük */
-.spx-card{
-  width:240px; border-radius:var(--radius); overflow:hidden;
+/* Card */
+.spx-card{width:240px; border-radius:var(--radius); overflow:hidden;
   background:linear-gradient(180deg,var(--bg1),var(--bg2));
-  border:1px solid rgba(255,255,255,.10);
-  box-shadow:0 12px 28px rgba(0,0,0,.45);
+  border:1px solid rgba(255,255,255,.10); box-shadow:0 12px 28px rgba(0,0,0,.45);
   display:flex; flex-direction:column; position:relative; isolation:isolate;
-  transition:transform .22s ease, box-shadow .22s ease, border-color .22s ease
-}
+  transition:transform .22s ease, box-shadow .22s ease, border-color .22s ease}
 .spx-card:hover{transform:translateY(-4px);box-shadow:0 18px 38px rgba(0,0,0,.6);border-color:rgba(255,255,255,.16)}
 
-/* Sol neon şerit — Aqua + kayan */
-.spx-card::before{
-  content:""; position:absolute; left:0; top:0; bottom:0; width:7px; border-radius:8px 0 0 8px; z-index:999;
-  background:linear-gradient(180deg,var(--n1),var(--n2));
-  box-shadow:0 0 20px var(--n1),0 0 44px var(--n2),0 0 70px var(--n1)
-}
-.spx-card::after{
-  content:""; position:absolute; left:0; top:-8%; width:7px; height:116%; border-radius:8px; z-index:1000;
-  background-image:
-    repeating-linear-gradient(180deg, rgba(255,255,255,.95) 0 6px, rgba(255,255,255,0) 6px 18px),
-    linear-gradient(180deg, var(--n1), var(--n2));
-  background-blend-mode:screen; animation:spSlide 1.35s linear infinite
-}
+/* Sol neon şerit */
+.spx-card::before{content:""; position:absolute; left:0; top:0; bottom:0; width:7px; border-radius:8px 0 0 8px; z-index:999;
+  background:linear-gradient(180deg,var(--n1),var(--n2)); box-shadow:0 0 20px var(--n1),0 0 44px var(--n2),0 0 70px var(--n1)}
+.spx-card::after{content:""; position:absolute; left:0; top:-8%; width:7px; height:116%; border-radius:8px; z-index:1000;
+  background-image: repeating-linear-gradient(180deg, rgba(255,255,255,.95) 0 6px, rgba(255,255,255,0) 6px 18px),
+                    linear-gradient(180deg, var(--n1), var(--n2));
+  background-blend-mode:screen; animation:spSlide 1.35s linear infinite}
 @keyframes spSlide{from{transform:translateY(0)}to{transform:translateY(18px)}}
 
-/* Media (arka plan: --img) */
+/* Media */
 .spx-media{position:relative;height:120px;overflow:hidden}
-.spx-media::before{
-  content:""; position:absolute; inset:0; background-image:var(--img);
-  background-size:cover; background-position:center; filter:saturate(1.05) contrast(1.05)
-}
+.spx-media::before{content:""; position:absolute; inset:0; background-image:var(--img);
+  background-size:cover; background-position:center; filter:saturate(1.05) contrast(1.05)}
 .spx-media::after{content:""; position:absolute; inset:0; background:linear-gradient(180deg,transparent 55%,rgba(10,15,28,.85))}
 
 /* Body */
 .spx-body{padding:10px 12px 12px; text-align:center}
 .spx-title{margin:0 0 6px; color:var(--txt); font-weight:900; font-size:15px; letter-spacing:.2px}
 
-/* Kod / Sayaç alanı */
+/* Kod / Sayaç */
 .spx-timer{margin:2px 0 6px}
 .codeRow{display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap}
-.spx-code{
-  font-family:Rajdhani,system-ui,sans-serif; font-weight:900; font-size:26px; letter-spacing:1.2px; color:#f2f7ff;
+.spx-code{font-family:Rajdhani,system-ui,sans-serif; font-weight:900; font-size:26px; letter-spacing:1.2px; color:#f2f7ff;
   display:inline-block; padding:10px 12px; border-radius:12px; min-width:140px;
   background:linear-gradient(180deg,#0f1730,#0d1428); border:1px solid #202840;
-  box-shadow: inset 0 0 22px rgba(0,0,0,.38), 0 0 22px rgba(255,255,255,.05), 0 0 28px rgba(0,229,255,.18);
-  transition: transform .18s ease, filter .18s ease, box-shadow .18s ease;
-}
+  box-shadow: inset 0 0 22px rgba(0,0,0,.38), 0 0 22px rgba(255,255,255,.05), 0 0 28px rgba(0,229,255,.18);}
 .spx-code.on{ text-shadow:0 0 14px rgba(0,229,255,.45) }
-.spx-code.wait{ opacity:.95 }
-
-/* Reveal parlaması */
-.spx-code.revealFlash{
-  animation: glowPop .9s ease-out;
-}
-@keyframes glowPop{
-  0%   { transform:scale(.96); box-shadow: 0 0 0 rgba(0,229,255,0); }
-  40%  { transform:scale(1.04); box-shadow: 0 0 26px rgba(0,229,255,.55), 0 0 52px rgba(0,179,255,.35); }
-  100% { transform:scale(1.00); box-shadow: 0 0 18px rgba(0,229,255,.30); }
-}
+.spx-code.yellow{ color:#fff3c2; text-shadow:0 0 12px #ffda6b, 0 0 22px #ffb300 }
+.spx-code.red{ color:#ffdada; text-shadow:0 0 14px #ff5c5c, 0 0 28px #ff2e2e; animation:redPulse 1.4s ease-in-out infinite }
+@keyframes redPulse{0%,100%{opacity:1}50%{opacity:.55}}
+.spx-code.revealFlash{animation: glowPop .9s ease-out}
+@keyframes glowPop{0%{transform:scale(.96); box-shadow:0 0 0 rgba(0,229,255,0)}
+ 40%{transform:scale(1.04); box-shadow:0 0 26px rgba(0,229,255,.55), 0 0 52px rgba(0,179,255,.35)}
+ 100%{transform:scale(1.00); box-shadow:0 0 18px rgba(0,229,255,.30)}}
 
 /* Kopyala butonu */
-.copyBtn{
-  appearance:none; border:0; cursor:pointer;
-  border-radius:10px; padding:9px 12px; font-weight:900; font-size:12px; letter-spacing:.3px;
-  background:rgba(0,229,255,.12); color:#c8f6ff;
-  box-shadow: inset 0 0 0 1px rgba(0,229,255,.45);
-}
+.copyBtn{appearance:none; border:0; cursor:pointer; border-radius:10px; padding:9px 12px; font-weight:900; font-size:12px;
+  background:rgba(0,229,255,.12); color:#c8f6ff; box-shadow: inset 0 0 0 1px rgba(0,229,255,.45);}
 .copyBtn:hover{ filter:brightness(1.06) }
 .copyBtn:active{ transform:translateY(1px) }
 
 /* LED scan */
-.spx-scan{
-  height:3px; margin:8px auto 8px; width:150px; border-radius:999px; opacity:.98;
-  background-image:
-    linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.95) 12%, rgba(255,255,255,0) 24%),
-    linear-gradient(90deg, var(--n1), var(--n2));
+.spx-scan{height:3px; margin:8px auto 8px; width:150px; border-radius:999px; opacity:.98;
+  background-image: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.95) 12%, rgba(255,255,255,0) 24%),
+                    linear-gradient(90deg, var(--n1), var(--n2));
   background-size:140px 100%,100% 100%; background-repeat:repeat,no-repeat; background-blend-mode:screen;
-  animation:scanX 1.2s linear infinite; box-shadow:0 0 14px var(--n1),0 0 26px var(--n2)
-}
+  animation:scanX 1.2s linear infinite; box-shadow:0 0 14px var(--n1),0 0 26px var(--n2)}
 @keyframes scanX{from{background-position:-40px 0,0 0}to{background-position:140px 0,0 0}}
 
 /* Max limit */
 .spx-limit{margin:2px 0 8px; display:flex; align-items:center; justify-content:center; gap:6px}
 .spx-limit span{color:#b2c6e9; font-weight:900; font-size:12px; letter-spacing:.5px; opacity:.9}
-.spx-limit b{
-  font-family:Rajdhani,system-ui,sans-serif; font-weight:900; font-size:18px; letter-spacing:.6px;
+.spx-limit b{font-family:Rajdhani,system-ui,sans-serif; font-weight:900; font-size:18px; letter-spacing:.6px;
   background:linear-gradient(90deg,var(--n1),var(--n2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent;
-  text-shadow:0 0 14px rgba(0,229,255,.35),0 0 24px rgba(0,179,255,.28)
-}
+  text-shadow:0 0 14px rgba(0,229,255,.35),0 0 24px rgba(0,179,255,.28)}
 
 /* CTA */
-.spx-cta{
-  display:block; width:100%; text-align:center; margin-top:2px; padding:10px 12px; border-radius:12px;
-  color:#06121a; font-weight:900; font-size:14px; font-family:Rajdhani,system-ui,sans-serif; letter-spacing:.6px; text-transform:uppercase;
-  border:1px solid rgba(255,255,255,.12); position:relative; overflow:hidden; transition:transform .18s, filter .18s;
-  background:linear-gradient(90deg,var(--n1),var(--n2)); box-shadow:0 0 16px rgba(0,229,255,.35)
-}
-.spx-cta:hover{transform:translateY(-2px); filter:brightness(1.06)}
-.spx-ic{width:18px;height:18px;margin-left:8px;vertical-align:-3px}
-
-/* Responsive */
-@media (max-width:900px){.spx-card{width:46%}}
-@media (max-width:560px){.spx-card{width:100%;max-width:340px}}
-`;
+.spx-cta{display:block; width:100%; text-align:center; margin-top:2px; padding:10px 12px; border-radius:12px;
+  color:#06121a; font-weight:900; font-size:14px; font-family:Rajdhani,system-ui,sans-serif; letter-spacing:.6px; text
