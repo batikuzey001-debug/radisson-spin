@@ -26,7 +26,7 @@ def render_promo_codes(
         if editing else ""
     )
 
-    # ---------------- FORM (sade sıra + kupon kodu EN BAŞTA) ----------------
+    # ---------------- FORM (Kupon en başta + CTA Metni/Linki + görünür tarih picker) ----------------
     form = [
         "<div class='card form-card'>",
         f"<div class='form-head'><div><h1>{_esc(title_text)}</h1><div class='sub'>{_esc(sub_text)}</div></div>"
@@ -48,10 +48,22 @@ def render_promo_codes(
     # Başlık
     form.append(f"<label class='field span-12'><span>Başlık</span><input name='title' value='{val('title')}' required></label>")
 
+    # CTA — METİN ve LİNK (modelde alan varsa)
+    if _has(Model, "cta_text"):
+        form.append(
+            f"<label class='field span-6'><span>CTA Metni</span>"
+            f"<input name='cta_text' value='{val('cta_text')}' placeholder='Örn: Hemen Katıl'></label>"
+        )
+    if _has(Model, "cta_url"):
+        form.append(
+            f"<label class='field span-6'><span>CTA Linki</span>"
+            f"<input name='cta_url' value='{val('cta_url')}' placeholder='https://... veya /sayfa'></label>"
+        )
+
     # Kapak görseli
     form.append(f"<label class='field span-12'><span>Kapak Görseli URL</span><input name='image_url' value='{val('image_url')}' placeholder='https://... veya /static/...'></label>")
 
-    # Tarihler — input + yanında 📅 düğmesi (klavye girişi de serbest)
+    # Tarihler — input + yanında 📅 düğmesi (klavye de serbest)
     form += [
         f"<label class='field span-6'><span>Başlangıç</span>"
         f"<div class='dateRow'>"
@@ -95,9 +107,9 @@ def render_promo_codes(
         "</form></div>",
     ])
 
-    # ---------------- TABLO ----------------
+    # ---------------- TABLO (CTA Metni/Linki sütunları eklendi) ----------------
     t = ["<div class='card'><h1>Promosyon Kodları</h1>"]
-    headers = "<tr><th>ID</th><th>Başlık</th><th>Kupon</th><th>Durum</th><th>Başlangıç</th><th>Bitiş</th><th>Görsel</th><th style='width:180px'>İşlem</th></tr>"
+    headers = "<tr><th>ID</th><th>Başlık</th><th>Kupon</th><th>CTA Metni</th><th>CTA Linki</th><th>Durum</th><th>Başlangıç</th><th>Bitiş</th><th>Görsel</th><th style='width:180px'>İşlem</th></tr>"
     t.append("<div class='table-wrap'><table>" + headers)
 
     for r in rows:
@@ -107,12 +119,16 @@ def render_promo_codes(
         start_txt = _dt_input(getattr(r, "start_at", None)).replace("T", " ") or "-"
         end_txt = _dt_input(getattr(r, "end_at", None)).replace("T", " ") or "-"
         kupon = _esc(getattr(r, "coupon_code", "") or "-")
+        cta_text = getattr(r, "cta_text", None) or "-"
+        cta_url  = getattr(r, "cta_url",  None) or "-"
 
         t.append(
             f"<tr>"
             f"<td>{r.id}</td>"
             f"<td>{_esc(r.title)}</td>"
             f"<td><code>{kupon}</code></td>"
+            f"<td>{_esc(cta_text)}</td>"
+            f"<td>{_esc(cta_url)}</td>"
             f"<td>{_esc(getattr(r,'status','-') or '-')}</td>"
             f"<td>{start_txt}</td>"
             f"<td>{end_txt}</td>"
@@ -153,6 +169,12 @@ def render_promo_codes(
         background:#111523; color:#fff; cursor:pointer;
       }
       .pickBtn:hover{ filter:brightness(1.08); }
+
+      .table-wrap{ overflow:auto; }
+      table{ width:100%; border-collapse:collapse; min-width:960px; }
+      th,td{ padding:8px 6px; border-bottom:1px solid var(--line); white-space:nowrap; text-align:left; }
+      th{ font-size:12px; color:#9aa3b7; text-transform:uppercase; }
+      .img img{ height:26px; display:block }
     </style>
     <script>
       // "📅" butonu → tarayıcı destekliyse showPicker; değilse focus
