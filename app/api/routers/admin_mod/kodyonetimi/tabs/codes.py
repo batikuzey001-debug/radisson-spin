@@ -14,7 +14,7 @@ def render_codes(db: Session) -> str:
 
     last = db.query(Code).order_by(Code.created_at.desc()).limit(20).all()
 
-    # ========== KOD OLUŞTUR — butonun SOLUNDA "son kod" (kopyalanabilir), auto-hide YOK ==========
+    # ========== KOD OLUŞTUR — minimal + butonun yanında "son kod" ==========#
     form = [
         "<div class='card codeCard'>",
         "<div class='codeHead'><h1>Kod Oluştur</h1></div>",
@@ -58,21 +58,20 @@ def render_codes(db: Session) -> str:
         "</div>",  # grid
         "<div class='hint muted'>Not: ‘Otomatik’ modda ödül, seçilen seviyeye ait dağılım yüzdelerine göre belirlenir.</div>",
 
-        # Sıra: [ SON KOD CHIP ] [ OLUŞTUR ]
+        # Oluştur butonu + hemen YANINDA son kod alanı (kopyalanabilir, tek tuş simgesi)
         "<div class='formActions'>",
-        # Son kod chip — sadece ?new=KOD varsa görünür, kopyalanabilir metin; buton simgesi var ama tek iş kopyalama
-        "<div class='lastChip' id='lastChip' hidden>",
-        "  <code class='chipCode' id='lastCode' title='Kodu kopyalamak için tıklayın'>—</code>",
-        "  <button type='button' class='chipBtn' id='copyBtn' title='Kopyala' aria-label='Kopyala'>📋</button>",
-        "</div>",
         "<button class='btn primary' type='submit'>Oluştur</button>",
+        "<div class='lastArea' id='lastArea' hidden>",
+        "<code class='lastCode' id='lastCode' title='Kodu seçip kopyalayabilirsiniz'>—</code>",
+        "<button type='button' class='iconBtn' id='copyBtn' title='Kopyala' aria-label='Kopyala'>📋</button>",
+        "</div>",
         "</div>",
 
         "</form>",
         "</div>",  # card
     ]
 
-    # ========== SON 20 KOD — minimal tablo + durum ikonları ==========
+    # ========== SON 20 KOD — minimal tablo + durum ikonları ==========#
     table = [
         "<div class='card'>",
         "<h1>Son 20 Kod</h1>",
@@ -90,6 +89,7 @@ def render_codes(db: Session) -> str:
         return "<span class='st bad' title='Pasif/Geçersiz'>✕</span>"
 
     for c in last:
+        # Seviye etiketi
         tier_label = "-"
         if c.tier_key:
             t = next((x for x in all_tiers if x.key == c.tier_key), None)
@@ -113,9 +113,10 @@ def render_codes(db: Session) -> str:
             f"<td>{status_icon(getattr(c, 'status', ''))}</td>"
             "</tr>"
         )
+
     table.append("</table></div></div>")
 
-    # ========== Stil + JS (auto-hide YOK, sadece göster ve kopyala) ==========
+    # ========== Stil + JS ==========#
     style_js = """
     <style>
       :root{ --line:#1c1f28; --muted:#a3aec2; --text:#f2f4f8; --panel:#0d0f15; --panel2:#0b0d13; --red:#ff0033; }
@@ -138,11 +139,10 @@ def render_codes(db: Session) -> str:
       .btn{ appearance:none; border:1px solid var(--line); background:#151824; color:#fff; padding:8px 12px; cursor:pointer; text-decoration:none; }
       .btn.primary{ background:linear-gradient(90deg,var(--red),#ff334f); border-color:#2a0e15; }
 
-      /* Son kod chip (butonun solunda) */
-      .lastChip{ display:flex; align-items:center; gap:6px; border:1px solid var(--line); background:#0e121b; padding:6px 8px; }
-      .chipCode{ font-weight:900; color:#fff; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; user-select:text; cursor:pointer; }
-      .chipBtn{ appearance:none; border:1px solid var(--line); background:#0b0d13; color:#fff; padding:6px 8px; cursor:pointer; }
-      .chipBtn:hover{ filter:brightness(1.08); }
+      .lastArea{ display:flex; align-items:center; gap:6px; }
+      .lastCode{ background:#0b0d13; border:1px solid var(--line); padding:6px 8px; font-weight:900; color:#fff; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      .iconBtn{ appearance:none; border:1px solid var(--line); background:#0e121b; color:#fff; padding:6px 8px; cursor:pointer; }
+      .iconBtn:hover{ filter:brightness(1.08); }
 
       .table-wrap{ overflow:auto; }
       table.codesTable{ width:100%; border-collapse:collapse; min-width:720px; }
@@ -157,6 +157,7 @@ def render_codes(db: Session) -> str:
     </style>
 
     <script>
+      // Ödül modu (manuel/auto)
       function kMode(){
         var m=document.getElementById('modeSel');
         var s=document.getElementById('manualSel');
@@ -164,28 +165,34 @@ def render_codes(db: Session) -> str:
         s.disabled = (m.value!=='manual');
       }
 
-      // Son kod: ?new=KOD varsa göster; auto-hide YOK. Kopyalayınca da yerinde kalsın.
+      // Oluşturulan kodu butonun yanında göster:
+      // 1) Tercih edilen: URL'de ?new=KOD ile gelir.
+      // 2) Eğer yoksa: "Son 20 Kod" tablosunun ilk satırındaki kodu kullan (en güncel).
       (function(){
         try{
-          var wrap   = document.getElementById('lastChip');
+          var wrap = document.getElementById('lastArea');
           var codeEl = document.getElementById('lastCode');
-          var copyBtn= document.getElementById('copyBtn');
+          var copyBtn = document.getElementById('copyBtn');
           if(!wrap || !codeEl || !copyBtn) return;
 
           var params = new URLSearchParams(window.location.search);
           var v = (params.get('new') || '').trim();
 
-          if(!v) return;                     // param yoksa chip gizli kalsın
-          wrap.hidden = false;               // göster
-          codeEl.textContent = v;            // kodu yaz
-
-          // Kopyalama (chip kapanmaz; kullanıcı isterse tekrar bakar/kopyalar)
-          function copy(){
-            try{ navigator.clipboard.writeText(v); }catch(e){}
+          // Fallback: tablo ilk satır (header'dan sonra) -> en yeni kod
+          if(!v){
+            var firstCode = document.querySelector('.codesTable tr:nth-child(2) td:first-child code');
+            if(firstCode && firstCode.textContent) {
+              v = firstCode.textContent.trim();
+            }
           }
-          codeEl.onclick = copy;
-          copyBtn.onclick = copy;
 
+          if(v){
+            wrap.hidden = false;
+            codeEl.textContent = v;
+            copyBtn.onclick = function(){
+              try{ navigator.clipboard.writeText(v); }catch(e){}
+            };
+          }
         }catch(e){}
       })();
     </script>
