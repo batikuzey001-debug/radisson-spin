@@ -245,7 +245,7 @@ def on_startup() -> None:
               END IF;
             END $$;""")
 
-            # >>> YENİ: daily_bonuses.bonus_percent (yoksa ekle) <<<
+            # >>> daily_bonuses.bonus_percent (yoksa ekle)
             _run_safe(conn, """
             DO $$
             BEGIN
@@ -258,7 +258,68 @@ def on_startup() -> None:
                 END IF;
               END IF;
             END $$;""")
-            # <<< YENİ SON >>>
+
+            # >>> CTA TEXT/LINK alanları (yoksa ekle)
+            # tournaments.cta_text / cta_url
+            _run_safe(conn, """
+            DO $$
+            BEGIN
+              IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='tournaments') THEN
+                IF NOT EXISTS (
+                  SELECT 1 FROM information_schema.columns
+                  WHERE table_name='tournaments' AND column_name='cta_text'
+                ) THEN
+                  EXECUTE 'ALTER TABLE tournaments ADD COLUMN cta_text VARCHAR(128)';
+                END IF;
+                IF NOT EXISTS (
+                  SELECT 1 FROM information_schema.columns
+                  WHERE table_name='tournaments' AND column_name='cta_url'
+                ) THEN
+                  EXECUTE 'ALTER TABLE tournaments ADD COLUMN cta_url VARCHAR(512)';
+                END IF;
+              END IF;
+            END $$;""")
+
+            # daily_bonuses.cta_text / cta_url
+            _run_safe(conn, """
+            DO $$
+            BEGIN
+              IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='daily_bonuses') THEN
+                IF NOT EXISTS (
+                  SELECT 1 FROM information_schema.columns
+                  WHERE table_name='daily_bonuses' AND column_name='cta_text'
+                ) THEN
+                  EXECUTE 'ALTER TABLE daily_bonuses ADD COLUMN cta_text VARCHAR(128)';
+                END IF;
+                IF NOT EXISTS (
+                  SELECT 1 FROM information_schema.columns
+                  WHERE table_name='daily_bonuses' AND column_name='cta_url'
+                ) THEN
+                  EXECUTE 'ALTER TABLE daily_bonuses ADD COLUMN cta_url VARCHAR(512)';
+                END IF;
+              END IF;
+            END $$;""")
+
+            # events.cta_text / cta_url
+            _run_safe(conn, """
+            DO $$
+            BEGIN
+              IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='events') THEN
+                IF NOT EXISTS (
+                  SELECT 1 FROM information_schema.columns
+                  WHERE table_name='events' AND column_name='cta_text'
+                ) THEN
+                  EXECUTE 'ALTER TABLE events ADD COLUMN cta_text VARCHAR(128)';
+                END IF;
+                IF NOT EXISTS (
+                  SELECT 1 FROM information_schema.columns
+                  WHERE table_name='events' AND column_name='cta_url'
+                ) THEN
+                  EXECUTE 'ALTER TABLE events ADD COLUMN cta_url VARCHAR(512)';
+                END IF;
+              END IF;
+            END $$;""")
+            # <<< CTA alanları SON >>>
 
             # prize_tiers tabloları (idempotent)
             _run_safe(conn, """
