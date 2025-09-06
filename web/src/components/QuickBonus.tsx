@@ -6,7 +6,7 @@ import { type PromoActive } from "../api/promos";
  * QuickBonus — Promo Kodlar
  * - Countdown: kutusuz LED dijital stil (T<1saat = kırmızı, aksi = sarı).
  * - Kod: GERİ SAYIM BİTİNCE çerçeveli kutu içinde büyük görünür.
- * - Max kişi: her kartta kutusuz, dikkat çekici (CANLI KIRMIZI).
+ * - Max kişi: her kartta kutusuz, dikkat çekici (FISTIK YEŞİLİ).
  * - CTA: BE'den (cta_text/cta_url). Sol şerit aqua neon.
  * - Simetri: Kod ve geri sayım aynı alanı kaplar.
  * - Şerit: GERİ SAYIM/KOD ile Max kişi arasındadır.
@@ -152,11 +152,11 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
                   {/* NEON şerit */}
                   <div className="scanLine" />
 
-                  {/* Max kişi — kutusuz, CANLI KIRMIZI */}
+                  {/* Max kişi — kutusuz, FISTIK YEŞİLİ */}
                   {maxLine != null && (
                     <div className="maxLine">
-                      <span className="maxLabel">Max</span>
-                      <span className="maxValue redLive">{trNum(maxLine)}</span>
+                      <span className="maxLabel pist">Max</span>
+                      <span className="maxValue pist">{trNum(maxLine)}</span>
                     </div>
                   )}
 
@@ -206,7 +206,7 @@ function Skeleton() {
             <h3 className="spx-title" style={{ opacity: 0.4 }}>Yükleniyor…</h3>
             <div className="monoRow"><span className="monoSlot"><span className="monoText led">--:--:--</span></span></div>
             <div className="scanLine" />
-            <div className="maxLine"><span className="maxLabel">Max</span><span className="maxValue redLive">—</span></div>
+            <div className="maxLine"><span className="maxLabel pist">Max</span><span className="maxValue pist">—</span></div>
             <a className="spx-cta" href="#" onClick={e=>e.preventDefault()}>Katıl</a>
           </div>
         </article>
@@ -224,6 +224,9 @@ const css = `
   --bg1:#0f162b; --bg2:#0a1224;
   --n1:#00e5ff; --n2:#00b3ff; /* Aqua LED */
   --monoH: 46px;              /* kod/geri sayım slot yüksekliği */
+  /* Pistachio tones */
+  --pistA:#93C572; /* ana */
+  --pistB:#7ACB5A; /* canlı */
 }
 
 .bonusSec{margin:16px 0}
@@ -310,13 +313,13 @@ const css = `
   animation:scanX 1.2s linear infinite; box-shadow:0 0 14px var(--n1),0 0 26px var(--n2)}
 @keyframes scanX{from{background-position:-40px 0,0 0}to{background-position:140px 0,0 0}}
 
-/* Max kişi — kutusuz, CANLI KIRMIZI */
+/* Max kişi — kutusuz, FISTIK YEŞİLİ */
 .maxLine{ margin:4px 0 2px; display:flex; align-items:baseline; justify-content:center; gap:8px }
-.maxLabel{ font-size:12px; letter-spacing:.5px; text-transform:uppercase; color:#ffb3b3 }
-.maxValue{
+.maxLabel.pist{ font-size:12px; letter-spacing:.5px; text-transform:uppercase; color:#BFF7A6 } /* açık pistachio */
+.maxValue.pist{
   font-family:Rajdhani,system-ui; font-weight:1000; font-size:26px; letter-spacing:.04em;
-  background:linear-gradient(90deg,#ff3b3b,#ff6b6b); -webkit-background-clip:text; -webkit-text-fill-color:transparent;
-  text-shadow:0 0 16px rgba(255,80,80,.45), 0 0 30px rgba(255,40,40,.35);
+  background:linear-gradient(90deg,var(--pistA),var(--pistB)); -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+  text-shadow:0 0 16px rgba(147,197,114,.45), 0 0 30px rgba(122,203,90,.35);
 }
 
 /* CTA */
