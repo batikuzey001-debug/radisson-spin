@@ -12,7 +12,6 @@ type EventCard = {
   seconds_left?: number | null;
   seconds_to_start?: number | null;
   prize_amount?: number | null;
-  /** ✅ CTA alanları (BE JSON’da gönderiliyor olmalı) */
   cta_text?: string | null;
   cta_url?: string | null;
 };
@@ -70,11 +69,10 @@ function toneOf(cat?: string | null) {
  *  2) yoksa seconds_to_start - elapsed (mount'tan beri)
  */
 function calcSecondsLeft(ev: EventCard, nowMs: number, mountMs: number) {
-  if (ev.state !== "upcoming") return 0;
   const startMs = ev.start_at ? Date.parse(ev.start_at) : NaN;
   if (Number.isFinite(startMs)) {
     return Math.max(0, Math.floor((startMs - nowMs) / 1000));
-    }
+  }
   const base = typeof ev.seconds_to_start === "number" ? ev.seconds_to_start : 0;
   const elapsed = Math.floor((nowMs - mountMs) / 1000);
   return Math.max(0, base - elapsed);
@@ -83,7 +81,6 @@ function calcSecondsLeft(ev: EventCard, nowMs: number, mountMs: number) {
 export default function EventsGrid() {
   const [items, setItems] = useState<EventCard[]>([]);
   const [err, setErr] = useState("");
-  // Canlı sayaç için anlık zaman
   const [now, setNow] = useState<number>(Date.now());
   const mountAtRef = useRef<number>(Date.now());
 
@@ -136,30 +133,36 @@ export default function EventsGrid() {
         <div className="evList">
           {rows.map((ev) => {
             const tone = toneOf(ev.category);
-            const isUpcoming = ev.state === "upcoming";
 
-            // CANLI geri sayım
-            const sLeft = isUpcoming
-              ? calcSecondsLeft(ev, now, mountAtRef.current)
-              : 0;
-
+            // prize: HER ZAMAN ana rozet
             const prizeText =
-              typeof ev.prize_amount === "number" ? fmtTL(ev.prize_amount) : "";
+              typeof ev.prize_amount === "number" ? fmtTL(ev.prize_amount) : "—";
 
-            const display =
-              isUpcoming && sLeft > 0 ? fmtT(sLeft) : prizeText;
+            // zaman / durum
+            const startMs = ev.start_at ? Date.parse(ev.start_at) : NaN;
+            const endMs = ev.end_at ? Date.parse(ev.end_at) : NaN;
+            const isActiveWindow =
+              Number.isFinite(startMs) &&
+              Number.isFinite(endMs) &&
+              startMs <= now &&
+              now < endMs;
 
-            const counterClass =
-              isUpcoming && sLeft > 0
-                ? sLeft < 3600
-                  ? "red"
-                  : "yellow"
-                : "on";
+            const sLeft =
+              ev.state === "upcoming" ? calcSecondsLeft(ev, now, mountAtRef.current) : 0;
+
+            let statusLabel = "";
+            let statusClass = "";
+            if (sLeft > 0) {
+              statusLabel = fmtT(sLeft); // başlangıca geri sayım
+              statusClass = sLeft < 3600 ? "red" : "yellow";
+            } else if (isActiveWindow || ev.state === "active") {
+              statusLabel = "AKTİF!";
+              statusClass = "live";
+            }
 
             const endPretty = ev.end_at ? fmtDate(ev.end_at) : "";
-
             const ctaUrl = ev.cta_url?.trim();
-            const ctaText = (ev.cta_text?.trim() || "Katıl");
+            const ctaText = ev.cta_text?.trim() || "Katıl";
 
             return (
               <article
@@ -187,14 +190,17 @@ export default function EventsGrid() {
                     {ev.title}
                   </h3>
 
-                  <div className="evTimer">
-                    <div
-                      className={`evBadge ${counterClass}`}
-                      aria-live="polite"
-                    >
-                      {display}
-                    </div>
+                  {/* Ana rozet: ÖDÜL HER ZAMAN */}
+                  <div className="evPrize" aria-label="Ödül">
+                    {prizeText}
                   </div>
+
+                  {/* İkincil durum: başlangıca geri sayım (ödülün ALTINDA) veya aktif etiketi */}
+                  {statusLabel && (
+                    <div className={`evStatus ${statusClass}`} aria-live="polite">
+                      {statusLabel}
+                    </div>
+                  )}
 
                   <div className="evScan" />
 
@@ -205,13 +211,14 @@ export default function EventsGrid() {
                     </div>
                   )}
 
-                  {/* ✅ CTA butonu: API cta_url varsa çıkar; metin cta_text ya da "Katıl" */}
+                  {/* CTA daha uzun (tam genişlik) */}
                   {ctaUrl ? (
                     <a
-                      className="evCta"
+                      className="evCta wide"
                       href={ctaUrl}
                       target="_blank"
                       rel="noopener noreferrer"
+                      title={ctaText}
                     >
                       {ctaText}
                     </a>
@@ -272,6 +279,7 @@ const css = `
 .evMedia::before{content:""; position:absolute; inset:0; background-image:var(--img);
   background-size:cover; background-position:center; filter:saturate(1.05) contrast(1.05)}
 .evMedia::after{content:""; position:absolute; inset:0; background:linear-gradient(180deg,transparent 55%,rgba(10,15,28,.85))}
+
 .evRibbon{position:absolute; right:-42px; top:12px; transform:rotate(45deg);
   width:136px; padding:5px 0; text-align:center; z-index:4;
   color:#071018; font-weight:900; font-size:12px; letter-spacing:.6px; text-transform:uppercase;
@@ -282,15 +290,27 @@ const css = `
 .evBody{padding:10px 12px 12px; text-align:center; position:relative; z-index:1}
 .evTitle{margin:4px 0 6px; color:#eaf2ff; font-weight:900; font-size:15px}
 
-/* Rozet alanı: sayaç veya ÖDÜL */
-.evTimer{margin:2px 0 6px}
-.evBadge{font-family:Rajdhani,sans-serif; font-weight:900; font-size:26px; letter-spacing:1.2px;
+/* ÖDÜL (her zaman) */
+.evPrize{
+  font-family:Rajdhani,sans-serif; font-weight:1000; font-size:26px; letter-spacing:1.2px;
   display:inline-block; padding:10px 12px; border-radius:12px; min-width:140px;
-  background:transparent; border:none; color:var(--t1); text-shadow:0 0 14px var(--t1), 0 0 28px var(--t2)}
-.evBadge.yellow{color:#fff3c2; text-shadow:0 0 12px #ffda6b,0 0 22px #ffb300}
-.evBadge.red{color:#ffdada; text-shadow:0 0 14px #ff5c5c,0 0 28px #ff2e2e; animation:redPulse 1.4s ease-in-out infinite}
+  background:linear-gradient(180deg,#0f1730,#0d1428); border:1px solid #202840;
+  color:#f2f7ff;
+  box-shadow: inset 0 0 22px rgba(0,0,0,.38), 0 0 22px rgba(255,255,255,.05), 0 0 28px rgba(255,255,255,.12);
+}
+
+/* Durum (ödülün altında): geri sayım ya da AKTİF! */
+.evStatus{
+  margin-top:6px; font-weight:900; font-size:15px; letter-spacing:.4px;
+  display:inline-block; padding:6px 10px; border-radius:10px;
+  background:rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.10);
+}
+.evStatus.yellow{color:#fff3c2; text-shadow:0 0 12px #ffda6b,0 0 22px #ffb300}
+.evStatus.red{color:#ffdada; text-shadow:0 0 14px #ff5c5c,0 0 28px #ff2e2e; animation:redPulse 1.4s ease-in-out infinite}
+.evStatus.live{color:#c1ffd6; text-shadow:0 0 12px #2dd36f,0 0 22px #2eca6a}
 @keyframes redPulse{0%,100%{opacity:1}50%{opacity:.55}}
 
+/* Tarama çizgisi */
 .evScan{height:3px; margin:8px auto 8px; width:150px; border-radius:999px; opacity:.98;
   background-image:linear-gradient(90deg,rgba(255,255,255,0) 0%,rgba(255,255,255,.95) 12%,rgba(255,255,255,0) 24%),
                    linear-gradient(90deg,var(--t1),var(--t2));
@@ -298,6 +318,7 @@ const css = `
   animation:scanX 1.2s linear infinite; box-shadow:0 0 14px var(--t1),0 0 26px var(--t2)}
 @keyframes scanX{from{background-position:-40px 0,0 0}to{background-position:140px 0,0 0}}
 
+/* Bitiş etiketi */
 .evEnd{margin-top:6px; display:inline-flex; align-items:center; gap:8px; padding:8px 10px;
   border-radius:10px; background:rgba(12,18,36,.55);
   border:1px solid rgba(255,255,255,.10); box-shadow: inset 0 0 0 1px rgba(255,255,255,.04);}
@@ -305,10 +326,10 @@ const css = `
   color:#071018; background:linear-gradient(180deg,var(--t1),var(--t2))}
 .evEnd .endVal{ color:#eaf2ff; font-weight:800; font-size:13px }
 
-/* ✅ CTA butonu */
+/* CTA (daha uzun) */
 .evCta{
-  margin-top:10px; display:inline-flex; align-items:center; justify-content:center;
-  padding:10px 14px; border-radius:12px; text-decoration:none; font-weight:900; letter-spacing:.4px;
+  width:100%; margin-top:10px; display:block; text-align:center;
+  padding:12px 16px; border-radius:12px; text-decoration:none; font-weight:900; letter-spacing:.4px; font-size:15px;
   background: linear-gradient(90deg, var(--t1), var(--t2));
   color:#071018; border:1px solid rgba(255,255,255,.12);
   box-shadow:0 8px 20px rgba(0,0,0,.25), 0 0 0 1px rgba(255,255,255,.14) inset;
