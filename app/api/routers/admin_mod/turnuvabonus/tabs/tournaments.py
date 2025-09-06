@@ -37,7 +37,7 @@ def render_tournaments(
         "<div class='grid'>",
     ]
 
-    # Ödül havuzu başta, başlığın hemen altında
+    # Ödül havuzu BAŞTA
     if _has(Model, "prize_pool"):
         form.append(
             f"<label class='field span-12'><span>Ödül Havuzu (₺)</span>"
@@ -45,17 +45,17 @@ def render_tournaments(
             f"value='{val('prize_pool')}' placeholder='örn: 250000'></label>"
         )
 
-    # Temel başlık ve alt başlık
+    # Başlık / Alt başlık
     form.append(f"<label class='field span-12'><span>Başlık</span><input name='title' value='{val('title')}' required></label>")
     if _has(Model, "subtitle"):
         form.append(f"<label class='field span-12'><span>Alt Başlık</span><input name='subtitle' value='{val('subtitle')}' placeholder='Kısa vurucu metin'></label>")
 
-    # Görsel alanları
+    # Görseller
     form.append(f"<label class='field span-12'><span>Kapak Görseli URL</span><input name='image_url' value='{val('image_url')}' placeholder='https://... veya /static/...'></label>")
     if _has(Model, "banner_url"):
         form.append(f"<label class='field span-12'><span>Banner Görseli URL</span><input name='banner_url' value='{val('banner_url')}' placeholder='Sayfa üst görseli (opsiyonel)'></label>")
 
-    # Tarih seçimleri (datetime-local -> picker görünür)
+    # Tarihler (datetime-local)  — picker alanı beyaz, kırmızı şerit YOK
     form.append(
         f"<label class='field span-6'><span>Başlangıç Tarihi</span>"
         f"<input type='datetime-local' class='dateInput' name='start_at' value='{_dt_input(getattr(editing,'start_at',None))}'></label>"
@@ -65,7 +65,7 @@ def render_tournaments(
         f"<input type='datetime-local' class='dateInput' name='end_at' value='{_dt_input(getattr(editing,'end_at',None))}'></label>"
     )
 
-    # Kategori ve Durum
+    # Kategori / Durum
     form.append("<label class='field span-6'><span>Kategori</span><select name='category'>")
     form.append(f"<option value='' {'selected' if not current_cat else ''}>— Seçiniz —</option>")
     for v, txt in CATEGORY_OPTIONS:
@@ -83,14 +83,14 @@ def render_tournaments(
     if _has(Model, "participant_count"):
         form.append(f"<label class='field span-6'><span>Katılımcı Sayısı</span><input name='participant_count' type='number' inputmode='numeric' min='0' step='1' value='{val('participant_count')}' placeholder='örn: 5000'></label>")
 
-    # Ekstra alanlar
+    # Açıklamalar
     if _has(Model, "short_desc"):
         form.append(f"<label class='field span-12'><span>Kısa Açıklama</span><textarea name='short_desc' rows='2' placeholder='Kart üzerinde kısa açıklama...'>{val('short_desc')}</textarea></label>")
     if _has(Model, "long_desc"):
         form.append(f"<label class='field span-12'><span>Detay Açıklama</span><textarea name='long_desc' rows='4' placeholder='Detaylar...'>{val('long_desc')}</textarea></label>")
 
     form.extend([
-        "</div>",  # grid
+        "</div>",
         "<div class='form-actions'>"
         "<button class='btn primary' type='submit'>Kaydet</button>"
         f"{cancel_edit_btn}"
@@ -133,20 +133,40 @@ def render_tournaments(
         )
     t.append("</table></div></div>")
 
-    # Basit CSS ile tarih picker'ı belirginleştir
+    # --- Tarih inputu: picker alanını beyaz göster, kırmızı şerit YOK ---
     style = """
     <style>
-      input[type="datetime-local"].dateInput {
-        padding: 10px;
-        font-weight: 600;
-        border: 1px solid var(--red, #ff0033);
-        background: #0b0d13;
-        color: #fff;
-        cursor: pointer;
+      /* Temel input stilleri (kırmızı çerçeve yok) */
+      .field input, .field select, .field textarea{
+        border:1px solid var(--line, #1c1f28);
+        background:#0b0d13; color:#fff; padding:10px;
       }
-      input[type="datetime-local"].dateInput:focus {
-        outline: none;
-        box-shadow: 0 0 0 2px rgba(255,0,51,.25);
+      .field input:focus, .field select:focus, .field textarea:focus{
+        outline:none; box-shadow:none; border-color:var(--line, #1c1f28);
+      }
+
+      /* datetime-local: sağdaki picker tuşu beyaz bir patch üzerinde olsun */
+      input[type="datetime-local"].dateInput{
+        padding:10px 40px 10px 10px; /* sağda picker için boşluk */
+        border:1px solid var(--line, #1c1f28);
+        background:
+          linear-gradient(90deg, transparent 0 calc(100% - 36px), #fff calc(100% - 36px) 100%),
+          #0b0d13;
+        color:#fff;
+        cursor:pointer;
+      }
+      /* WebKit takımı (Chrome/Safari) için ikon görünürlüğü */
+      input[type="datetime-local"].dateInput::-webkit-calendar-picker-indicator{
+        opacity:1;
+        filter:none;              /* siyah ikon */
+        background:transparent;
+        cursor:pointer;
+      }
+      /* Firefox için ek görünürlük (tam destek sınırlı) */
+      @-moz-document url-prefix(){
+        input[type="datetime-local"].dateInput{
+          background-color:#0b0d13;
+        }
       }
     </style>
     """
