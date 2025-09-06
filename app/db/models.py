@@ -1,13 +1,18 @@
 # app/db/models.py
-from datetime import datetime
+from datetime import datetime, timezone
 import enum
 
 from sqlalchemy import (
-    Integer, String, Text, DateTime, ForeignKey, text, Enum, Boolean
+    Column, Integer, String, Text, DateTime, Boolean, ForeignKey,
+    text, Enum, JSON, Numeric
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
+
+# ==== Yardımcı ====
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 # === Çekiliş Modelleri ===
 class Prize(Base):
@@ -92,10 +97,6 @@ class AdminUser(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
 
 # --- FEED MODELLERİ (Turnuva + diğerleri) ---
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, JSON, Numeric  # ✅ Numeric eklendi
-from datetime import datetime, timezone
-def _utcnow(): return datetime.now(timezone.utc)
-
 class Tournament(Base):
     __tablename__ = "tournaments"
     id            = Column(Integer, primary_key=True)
@@ -106,8 +107,8 @@ class Tournament(Base):
     long_desc     = Column(Text)
     image_url     = Column(String(512), nullable=False)
     banner_url    = Column(String(512))
-    cta_text      = Column(String(128))          # ✅ eklendi
-    cta_url       = Column(String(512))          # mevcuttu
+    cta_text      = Column(String(128))          # CTA Metni
+    cta_url       = Column(String(512))          # CTA Linki
     status        = Column(String(20), default="draft")
     start_at      = Column(DateTime(timezone=True))
     end_at        = Column(DateTime(timezone=True))
@@ -138,7 +139,7 @@ class DailyBonus(Base):
     accent_color = Column(String(16))
     bg_color     = Column(String(16))
     variant      = Column(String(24))
-    # ✅ yeni alanlar
+    # Yeni alanlar
     bonus_percent = Column(Numeric(6, 2))        # % alanı (0–100.00)
     cta_text      = Column(String(128))
     cta_url       = Column(String(512))
@@ -160,8 +161,8 @@ class PromoCode(Base):
     bg_color     = Column(String(16))
     variant      = Column(String(24))
     coupon_code  = Column(String(64))
-    cta_text     = Column(String(128))           # ✅ eklendi
-    cta_url      = Column(String(512))           # mevcuttu
+    cta_text     = Column(String(128))           # CTA Metni
+    cta_url      = Column(String(512))           # CTA Linki
     created_at = Column(DateTime(timezone=True), default=_utcnow)
     updated_at = Column(DateTime(timezone=True), default=_utcnow)
 
@@ -180,9 +181,8 @@ class Event(Base):
     bg_color     = Column(String(16))
     variant      = Column(String(24))
     prize_amount = Column(Integer)               # Etkinlik ödül miktarı (₺)
-    # ✅ yeni alanlar
-    cta_text     = Column(String(128))
-    cta_url      = Column(String(512))
+    cta_text     = Column(String(128))           # CTA Metni
+    cta_url      = Column(String(512))           # CTA Linki
     created_at = Column(DateTime(timezone=True), default=_utcnow)
     updated_at = Column(DateTime(timezone=True), default=_utcnow)
 
