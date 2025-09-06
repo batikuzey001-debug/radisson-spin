@@ -18,9 +18,10 @@ def render_events(
 ) -> str:
     """
     'Etkinlikler' sekmesi: FORM + LİSTE (sade)
-    İstenilenler:
+    Güncelleme:
       - Tarih seçiciler: görünür ikon + picker; klavye ile manuel giriş de mümkün
-      - Kupon kodu: BAŞLIĞIN ÜSTÜNDE
+      - Kupon kodu: başlığın üstünde
+      - CTA: Metin ve URL alanları (modelde varsa kaydedilir)
     """
     title_text = "Yeni Kayıt" if not editing else f"Kayıt Düzenle (#{editing.id})"
     sub_text = "Etkinlikler"
@@ -55,6 +56,18 @@ def render_events(
     # Başlık
     form.append(f"<label class='field span-12'><span>Başlık</span><input name='title' value='{val('title')}' required></label>")
 
+    # CTA — METİN ve LİNK alanları (modelde varsa)
+    if _has(Model, "cta_text"):
+        form.append(
+            f"<label class='field span-6'><span>CTA Metni</span>"
+            f"<input name='cta_text' value='{val('cta_text')}' placeholder='Örn: Hemen Katıl'></label>"
+        )
+    if _has(Model, "cta_url"):
+        form.append(
+            f"<label class='field span-6'><span>CTA Linki</span>"
+            f"<input name='cta_url' value='{val('cta_url')}' placeholder='https://... veya /sayfa'></label>"
+        )
+
     # Kapak görseli
     form.append(f"<label class='field span-12'><span>Kapak Görseli URL</span><input name='image_url' value='{val('image_url')}' placeholder='https://... veya /static/...'></label>")
 
@@ -88,8 +101,6 @@ def render_events(
     form.append("</select></label>")
 
     # Etkinlik özel alanları (varsa)
-    if _has(Model, "cta_url"):
-        form.append(f"<label class='field span-12'><span>Buton Bağlantısı</span><input name='cta_url' value='{val('cta_url')}' placeholder='https://... veya /sayfa'></label>")
     if _has(Model, "prize_amount"):
         form.append(
             f"<label class='field span-6'><span>Ödül Miktarı (₺)</span>"
