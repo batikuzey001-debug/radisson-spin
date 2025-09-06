@@ -35,11 +35,18 @@ def render_tournaments(
         f"{f'<input type=\"hidden\" name=\"id\" value=\"{editing.id}\">' if editing else ''}",
 
         "<div class='grid'>",
-
-        # Temel başlık ve alt başlık
-        f"<label class='field span-12'><span>Başlık</span><input name='title' value='{val('title')}' required></label>",
     ]
 
+    # Ödül havuzu başta, başlığın hemen altında
+    if _has(Model, "prize_pool"):
+        form.append(
+            f"<label class='field span-12'><span>Ödül Havuzu (₺)</span>"
+            f"<input name='prize_pool' type='number' inputmode='numeric' min='0' step='1' "
+            f"value='{val('prize_pool')}' placeholder='örn: 250000'></label>"
+        )
+
+    # Temel başlık ve alt başlık
+    form.append(f"<label class='field span-12'><span>Başlık</span><input name='title' value='{val('title')}' required></label>")
     if _has(Model, "subtitle"):
         form.append(f"<label class='field span-12'><span>Alt Başlık</span><input name='subtitle' value='{val('subtitle')}' placeholder='Kısa vurucu metin'></label>")
 
@@ -48,9 +55,15 @@ def render_tournaments(
     if _has(Model, "banner_url"):
         form.append(f"<label class='field span-12'><span>Banner Görseli URL</span><input name='banner_url' value='{val('banner_url')}' placeholder='Sayfa üst görseli (opsiyonel)'></label>")
 
-    # Tarih seçimleri (datetime-local -> daha görünür)
-    form.append(f"<label class='field span-6'><span>Başlangıç Tarihi</span><input type='datetime-local' name='start_at' value='{_dt_input(getattr(editing,'start_at',None))}'></label>")
-    form.append(f"<label class='field span-6'><span>Bitiş Tarihi</span><input type='datetime-local' name='end_at' value='{_dt_input(getattr(editing,'end_at',None))}'></label>")
+    # Tarih seçimleri (datetime-local -> picker görünür)
+    form.append(
+        f"<label class='field span-6'><span>Başlangıç Tarihi</span>"
+        f"<input type='datetime-local' class='dateInput' name='start_at' value='{_dt_input(getattr(editing,'start_at',None))}'></label>"
+    )
+    form.append(
+        f"<label class='field span-6'><span>Bitiş Tarihi</span>"
+        f"<input type='datetime-local' class='dateInput' name='end_at' value='{_dt_input(getattr(editing,'end_at',None))}'></label>"
+    )
 
     # Kategori ve Durum
     form.append("<label class='field span-6'><span>Kategori</span><select name='category'>")
@@ -66,16 +79,11 @@ def render_tournaments(
         form.append(f"<option value='{s}' {sel}>{'Yayında' if s=='published' else 'Taslak'}</option>")
     form.append("</select></label>")
 
-    # Ödül ve katılımcı
-    if _has(Model, "prize_pool"):
-        form.append(f"<label class='field span-6'><span>Ödül Havuzu (₺)</span><input name='prize_pool' type='number' inputmode='numeric' min='0' step='1' value='{val('prize_pool')}' placeholder='örn: 250000'></label>")
+    # Katılımcı
     if _has(Model, "participant_count"):
         form.append(f"<label class='field span-6'><span>Katılımcı Sayısı</span><input name='participant_count' type='number' inputmode='numeric' min='0' step='1' value='{val('participant_count')}' placeholder='örn: 5000'></label>")
 
     # Ekstra alanlar
-    if _has(Model, "rank_visible"):
-        checked = "checked" if bool(getattr(editing, "rank_visible", False)) else ""
-        form.append(f"<label class='field span-6'><span>Liderlik Tablosu</span><label class='cb'><input type='checkbox' name='rank_visible' {checked}> Görünsün</label></label>")
     if _has(Model, "short_desc"):
         form.append(f"<label class='field span-12'><span>Kısa Açıklama</span><textarea name='short_desc' rows='2' placeholder='Kart üzerinde kısa açıklama...'>{val('short_desc')}</textarea></label>")
     if _has(Model, "long_desc"):
@@ -125,4 +133,22 @@ def render_tournaments(
         )
     t.append("</table></div></div>")
 
-    return "".join(form) + "".join(t)
+    # Basit CSS ile tarih picker'ı belirginleştir
+    style = """
+    <style>
+      input[type="datetime-local"].dateInput {
+        padding: 10px;
+        font-weight: 600;
+        border: 1px solid var(--red, #ff0033);
+        background: #0b0d13;
+        color: #fff;
+        cursor: pointer;
+      }
+      input[type="datetime-local"].dateInput:focus {
+        outline: none;
+        box-shadow: 0 0 0 2px rgba(255,0,51,.25);
+      }
+    </style>
+    """
+
+    return "".join(form) + "".join(t) + style
