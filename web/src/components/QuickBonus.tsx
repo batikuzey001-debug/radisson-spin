@@ -6,7 +6,8 @@ import { type PromoActive } from "../api/promos";
  * QuickBonus — Promo Kodlar
  * - Upcoming: sayaç (>=1 saat sarı, <1 saat kırmızı yanıp söner); 0 olduğunda kod + flash + kopyala.
  * - Active: doğrudan kod.
- * - Küçük kartlar (240px), aqua LED sol şerit (kayan), yeşil nokta/state yok.
+ * - CTA: BE'den gelen cta_text ve cta_url kullanılır (cta_text yoksa "Katıl")
+ * - Küçük kartlar (240px), aqua LED sol şerit (kayan), yeşil nokta yok.
  */
 
 type PromoEx = PromoActive & {
@@ -14,6 +15,9 @@ type PromoEx = PromoActive & {
   seconds_to_start?: number | null;
   code?: string | null;
   promo_code?: string | null;
+  /** ✅ CTA alanları (BE JSON’unda gelmeli) */
+  cta_text?: string | null;
+  cta_url?: string | null;
 };
 
 export default function QuickBonus({ limit = 6 }: { limit?: number }) {
@@ -26,27 +30,44 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    fetch(`${import.meta.env.VITE_API_BASE_URL}/api/promos/active?limit=${limit}&include_future=1&window_hours=48`)
-      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-      .then((arr: PromoEx[]) => alive && (setRows(Array.isArray(arr) ? arr : []), setErr("")))
-      .catch(e => alive && (setErr(e?.message ?? "Hata"), setRows([])))
+    fetch(
+      `${import.meta.env.VITE_API_BASE_URL}/api/promos/active?limit=${limit}&include_future=1&window_hours=48`
+    )
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then(
+        (arr: PromoEx[]) =>
+          alive && (setRows(Array.isArray(arr) ? arr : []), setErr(""))
+      )
+      .catch(
+        (e) => alive && (setErr(e?.message ?? "Hata"), setRows([]))
+      )
       .finally(() => alive && setLoading(false));
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [limit]);
 
   // sayaç tick
   useEffect(() => {
     if (!rows.length) return;
     const t = setInterval(() => {
-      setRows(prev => prev.map(p => {
-        if (p.state === "upcoming" && p.seconds_to_start != null) {
-          return { ...p, seconds_to_start: Math.max(0, p.seconds_to_start - 1) };
-        }
-        if (p.state === "active" && p.seconds_left != null) {
-          return { ...p, seconds_left: Math.max(0, p.seconds_left - 1) };
-        }
-        return p;
-      }));
+      setRows((prev) =>
+        prev.map((p) => {
+          if (p.state === "upcoming" && p.seconds_to_start != null) {
+            return {
+              ...p,
+              seconds_to_start: Math.max(0, p.seconds_to_start - 1),
+            };
+          }
+          if (p.state === "active" && p.seconds_left != null) {
+            return { ...p, seconds_left: Math.max(0, p.seconds_left - 1) };
+          }
+          return p;
+        })
+      );
     }, 1000);
     return () => clearInterval(t);
   }, [rows.length]);
@@ -54,25 +75,27 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
   // reveal flash tetikle
   useEffect(() => {
     const toFlash: string[] = [];
-    rows.forEach(p => {
+    rows.forEach((p) => {
       const id = String(p.id);
       const prevSec = prevSecsRef.current[id];
-      const nowSecStart = p.state === "upcoming" ? (p.seconds_to_start ?? 0) : undefined;
+      const nowSecStart =
+        p.state === "upcoming" ? p.seconds_to_start ?? 0 : undefined;
       if (prevSec != null && prevSec > 0 && nowSecStart === 0) {
         toFlash.push(id);
       }
-      prevSecsRef.current[id] = p.state === "upcoming"
-        ? (p.seconds_to_start ?? 0)
-        : (p.seconds_left ?? 0);
+      prevSecsRef.current[id] =
+        p.state === "upcoming"
+          ? p.seconds_to_start ?? 0
+          : p.seconds_left ?? 0;
     });
     if (toFlash.length) {
       const now = Date.now();
-      setFlashIds(prev => {
+      setFlashIds((prev) => {
         const next = { ...prev };
-        toFlash.forEach(id => {
+        toFlash.forEach((id) => {
           next[id] = now;
           setTimeout(() => {
-            setFlashIds(cur => {
+            setFlashIds((cur) => {
               const c = { ...cur };
               delete c[id];
               return c;
@@ -87,9 +110,13 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
   return (
     <section className="bonusSec">
       <div className="bonusHead">
-        <h2><span className="tag">🎟️</span> Promo Kodlar</h2>
+        <h2>
+          <span className="tag">🎟️</span> Promo Kodlar
+        </h2>
         <div className="headGlow" aria-hidden />
-        {!loading && !rows.length && <span className="muted">Şu an gösterilecek promo yok.</span>}
+        {!loading && !rows.length && (
+          <span className="muted">Şu an gösterilecek promo yok.</span>
+        )}
       </div>
 
       {loading && <Skeleton />}
@@ -98,38 +125,66 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
         <div className="spx-wrap">
           {rows.map((p) => {
             const isUpcoming = p.state === "upcoming";
-            const showCountdown = isUpcoming && (p.seconds_to_start ?? 0) > 0;
+            const showCountdown =
+              isUpcoming && (p.seconds_to_start ?? 0) > 0;
 
-            const codeText = (p.promo_code || p.code || "").toString().trim();
+            const codeText = (p.promo_code || p.code || "")
+              .toString()
+              .trim();
             const displayText = showCountdown
               ? formatCountdown(p.seconds_to_start ?? 0)
-              : (codeText || (p.title ?? "KOD"));
+              : codeText || p.title || "KOD";
 
-            const img = p.image_url || "https://images.unsplash.com/photo-1519741497674-611481863552?q=80&w=1600&auto=format&fit=crop";
-            const maxText = p.priority != null ? trNum(p.priority) : undefined;
+            const img =
+              p.image_url ||
+              "https://images.unsplash.com/photo-1519741497674-611481863552?q=80&w=1600&auto=format&fit=crop";
+            const maxText =
+              p.priority != null ? trNum(p.priority) : undefined;
             const idStr = String(p.id);
             const doFlash = !!flashIds[idStr] && !showCountdown;
 
             // countdown renk sınıfı
             let countdownClass = "wait";
             if (showCountdown) {
-              if ((p.seconds_to_start ?? 0) < 3600) countdownClass = "red";
-              else countdownClass = "yellow";
+              countdownClass =
+                (p.seconds_to_start ?? 0) < 3600 ? "red" : "yellow";
             }
+
+            // ✅ CTA metni & linki (BE’den düzenlenebilir)
+            const ctaUrl = p.cta_url?.trim();
+            const ctaText = (p as any).cta_text?.trim() || "Katıl";
 
             return (
               <article className="spx-card" key={idStr}>
-                <header className="spx-media" style={{ ["--img" as any]: `url('${img}')` }} />
+                <header
+                  className="spx-media"
+                  style={{ ["--img" as any]: `url('${img}')` }}
+                />
                 <div className="spx-body">
-                  <h3 className="spx-title" title={p.title ?? "Promo Kod"}>{p.title ?? "Promo Kod"}</h3>
+                  <h3
+                    className="spx-title"
+                    title={p.title ?? "Promo Kod"}
+                  >
+                    {p.title ?? "Promo Kod"}
+                  </h3>
 
                   <div className="spx-timer">
                     <div className="codeRow">
-                      <div className={`spx-code ${showCountdown ? countdownClass : "on"} ${doFlash ? "revealFlash" : ""}`} aria-live="polite">
+                      <div
+                        className={`spx-code ${
+                          showCountdown ? countdownClass : "on"
+                        } ${doFlash ? "revealFlash" : ""}`}
+                        aria-live="polite"
+                      >
                         {displayText}
                       </div>
                       {!showCountdown && codeText ? (
-                        <button className="copyBtn" onClick={() => copyToClipboard(codeText)}>Kopyala</button>
+                        <button
+                          className="copyBtn"
+                          onClick={() => copyToClipboard(codeText)}
+                        >
+                          Kopyala
+                        </button>
                       ) : null}
                     </div>
                   </div>
@@ -142,11 +197,25 @@ export default function QuickBonus({ limit = 6 }: { limit?: number }) {
                     </div>
                   )}
 
-                  {p.cta_url ? (
-                    <a className="spx-cta" href={p.cta_url} target="_blank" rel="nofollow noreferrer">
-                      Katıl
-                      <svg viewBox="0 0 24 24" className="spx-ic" aria-hidden="true">
-                        <path fill="currentColor" d="M9.2 16.7 9 20.7c.4 0 .6-.2.9-.4l2.1-1.7 4.3 3.1c.8.4 1.4.2 1.6-.8l2.9-13.6c.3-1.1-.4-1.6-1.2-1.3L2.7 9.9c-1 .4-1 1 0 1.3l4.9 1.5L18 6.9c.5-.3.9-.1.5.2l-9.3 8.3Z"/>
+                  {/* ✅ CTA butonu: BE’den gelen metin ve link */}
+                  {ctaUrl ? (
+                    <a
+                      className="spx-cta"
+                      href={ctaUrl}
+                      target="_blank"
+                      rel="nofollow noopener"
+                      title={ctaText}
+                    >
+                      {ctaText}
+                      <svg
+                        viewBox="0 0 24 24"
+                        className="spx-ic"
+                        aria-hidden="true"
+                      >
+                        <path
+                          fill="currentColor"
+                          d="M9.2 16.7 9 20.7c.4 0 .6-.2.9-.4l2.1-1.7 4.3 3.1c.8.4 1.4.2 1.6-.8l2.9-13.6c.3-1.1-.4-1.6-1.2-1.3L2.7 9.9c-1 .4-1 1 0 1.3l4.9 1.5L18 6.9c.5-.3.9-.1.5.2l-9.3 8.3Z"
+                        />
                       </svg>
                     </a>
                   ) : null}
@@ -172,13 +241,22 @@ function formatCountdown(s: number) {
   return `${pad(hh)}:${pad(mm)}:${pad(ss)}`;
 }
 async function copyToClipboard(text: string) {
-  try { await navigator.clipboard.writeText(text); } catch { /* fallback */ }
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    /* fallback */
+  }
 }
 function trNum(v: any) {
   try {
-    const n = typeof v === "string" ? Number(v.replace(/\./g, "").replace(/,/g, ".")) : Number(v);
+    const n =
+      typeof v === "string"
+        ? Number(v.replace(/\./g, "").replace(/,/g, "."))
+        : Number(v);
     return Number.isFinite(n) ? n.toLocaleString("tr-TR") : String(v ?? "");
-  } catch { return String(v ?? ""); }
+  } catch {
+    return String(v ?? "");
+  }
 }
 
 /* ---------------- Skeleton ---------------- */
@@ -189,16 +267,28 @@ function Skeleton() {
         <article key={i} className="spx-card">
           <header className="spx-media" />
           <div className="spx-body">
-            <h3 className="spx-title" style={{ opacity: 0.4 }}>Yükleniyor…</h3>
+            <h3 className="spx-title" style={{ opacity: 0.4 }}>
+              Yükleniyor…
+            </h3>
             <div className="spx-timer">
               <div className="codeRow">
                 <div className="spx-code wait">--:--:--</div>
-                <button className="copyBtn" disabled>Kopyala</button>
+                <button className="copyBtn" disabled>
+                  Kopyala
+                </button>
               </div>
             </div>
             <div className="spx-scan" />
-            <div className="spx-limit"><span>Max:</span> <b>—</b></div>
-            <a className="spx-cta" href="#" onClick={e=>e.preventDefault()}>Katıl</a>
+            <div className="spx-limit">
+              <span>Max:</span> <b>—</b>
+            </div>
+            <a
+              className="spx-cta"
+              href="#"
+              onClick={(e) => e.preventDefault()}
+            >
+              Katıl
+            </a>
           </div>
         </article>
       ))}
@@ -206,7 +296,7 @@ function Skeleton() {
   );
 }
 
-/* ---------------- CSS (tamamı, kapatma backtick ile) ---------------- */
+/* ---------------- CSS ---------------- */
 const css = `
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@700;800;900&family=Rajdhani:wght@700;800;900&display=swap');
 
@@ -227,7 +317,7 @@ const css = `
 .headGlow{position:absolute; left:0; right:0; bottom:-6px; height:2px; border-radius:2px;
   background:linear-gradient(90deg, transparent, rgba(0,229,255,.85), transparent);
   box-shadow:0 0 18px rgba(0,229,255,.55);}
-.muted{color:#9fb1cc;font-size:13px}
+.muted{color:#9fb3d9;font-size:13px}
 
 /* Container */
 .spx-wrap{width:100%; display:flex; flex-wrap:wrap; gap:16px 16px; justify-content:flex-start; align-content:flex-start;
@@ -246,7 +336,7 @@ const css = `
   background:linear-gradient(180deg,var(--n1),var(--n2)); box-shadow:0 0 20px var(--n1),0 0 44px var(--n2),0 0 70px var(--n1)}
 .spx-card::after{content:""; position:absolute; left:0; top:-8%; width:7px; height:116%; border-radius:8px; z-index:1000;
   background-image: repeating-linear-gradient(180deg, rgba(255,255,255,.95) 0 6px, rgba(255,255,255,0) 6px 18px),
-                    linear-gradient(180deg, var(--n1), var(--n2));
+                    linear-gradient(180deg, var(--n1),var(--n2));
   background-blend-mode:screen; animation:spSlide 1.35s linear infinite}
 @keyframes spSlide{from{transform:translateY(0)}to{transform:translateY(18px)}}
 
