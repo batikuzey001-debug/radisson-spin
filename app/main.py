@@ -231,6 +231,20 @@ def on_startup() -> None:
               END IF;
             END $$;""")
 
+            # >>> EK: promo_codes.cta_text (yoksa ekle)
+            _run_safe(conn, """
+            DO $$
+            BEGIN
+              IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='promo_codes') THEN
+                IF NOT EXISTS (
+                  SELECT 1 FROM information_schema.columns
+                  WHERE table_name='promo_codes' AND column_name='cta_text'
+                ) THEN
+                  EXECUTE 'ALTER TABLE promo_codes ADD COLUMN cta_text VARCHAR(128)';
+                END IF;
+              END IF;
+            END $$;""")
+
             # events.prize_amount (yoksa ekle)
             _run_safe(conn, """
             DO $$
